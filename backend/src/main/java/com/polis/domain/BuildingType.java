@@ -1,0 +1,28 @@
+package com.polis.domain;
+
+/** Static catalog of buildings, mirroring the game's balance. */
+public enum BuildingType {
+  //         wood stone silver  mul  time(s) max pop  produces
+  SENATE    (120, 100,  80,   1.5,  20,   30,  4, null),
+  TIMBER    ( 90,  60,  40,   1.6,  15,   40,  3, ResourceType.WOOD),
+  QUARRY    ( 80,  90,  40,   1.6,  15,   40,  3, ResourceType.STONE),
+  MINE      (100,  80,  60,   1.6,  18,   40,  3, ResourceType.SILVER),
+  FARM      ( 80,  60,  40,   1.5,  16,   40,  0, null),
+  WAREHOUSE ( 70,  90,  40,   1.5,  14,   40,  1, null),
+  BARRACKS  (150, 120,  90,   1.5,  22,   30,  4, null),
+  HARBOR    (180, 180, 130,   1.5,  24,   30,  4, null),
+  TEMPLE    (180, 180, 130,   1.5,  24,   30,  3, null),
+  WALL      (150, 220,  60,   1.5,  20,   25,  2, null),
+  AGORA     (120, 120,  90,   1.5,  18,   20,  2, null),
+  ACADEMY   (220, 200, 200,   1.5,  28,   20,  3, null);
+
+  public final int baseWood, baseStone, baseSilver;
+  public final double mul;
+  public final int baseTime, max, pop;
+  public final ResourceType produces;
+
+  BuildingType(int w,int s,int si,double mul,int t,int max,int pop,ResourceType produces){
+    this.baseWood=w; this.baseStone=s; this.baseSilver=si; this.mul=mul;
+    this.baseTime=t; this.max=max; this.pop=pop; this.produces=produces;
+  }
+}

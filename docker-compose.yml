@@ -1,0 +1,16 @@
+# Spins up PostgreSQL for local development.
+# Usage:  docker compose up -d
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: polis-db
+    environment:
+      POSTGRES_DB: polis
+      POSTGRES_USER: polis
+      POSTGRES_PASSWORD: polis
+    ports:
+      - "5432:5432"
+    volumes:
+      - polis_pg:/var/lib/postgresql/data
+volumes:
+  polis_pg:

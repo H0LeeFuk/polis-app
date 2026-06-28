@@ -1,0 +1,30 @@
+package com.polis.domain;
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+
+@Entity @Table(name="movements")
+@Getter @Setter @NoArgsConstructor
+public class Movement {
+  @Id @GeneratedValue(strategy=GenerationType.IDENTITY) private Long id;
+  @Column(name="world_id", nullable=false) private Long worldId;
+  @Column(name="player_id") private Long playerId;
+  @Column(name="source_city_id") private Long sourceCityId;
+  @Column(name="target_city_id") private Long targetCityId;
+  @Column(name="target_island_id") private Long targetIslandId;
+  @Column(name="target_slot") private Integer targetSlot;
+  @Enumerated(EnumType.STRING) private MovementPhase phase;
+
+  @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition="json")
+  private Map<String,Integer> units = new HashMap<>();
+  @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition="json")
+  private Map<String,Long> loot;
+
+  @Column(name="depart_at") private Instant departAt = Instant.now();
+  @Column(name="arrive_at") private Instant arriveAt;
+  private boolean resolved = false;
+}

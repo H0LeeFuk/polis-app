@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/polis
+    username: polis
+    password: polis
+  jpa:
+    hibernate:
+      ddl-auto: none              # Flyway fully owns the schema
+    open-in-view: false
+    properties:
+      hibernate.format_sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+polis:
+  jwt:
+    # Override in production via POLIS_JWT_SECRET env var. Must be >= 32 bytes.
+    secret: ${POLIS_JWT_SECRET:dev-secret-change-me-please-32bytes-minimum!!}
+    ttl-hours: 72
+  tick:
+    interval-ms: 5000             # how often the scheduler finalizes due jobs/movements
+
+logging:
+  level:
+    org.hibernate.SQL: warn
