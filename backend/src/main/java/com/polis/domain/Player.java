@@ -14,6 +14,7 @@ public class Player {
   @Column(name="alliance_id") private Long allianceId;
   private int level = 1;
   @Column(name="combat_points") private int combatPoints = 0;
+  private int gold = 500;   // premium currency: rush construction/training
   @Column(name="is_npc") private boolean npc = false;
   private Instant createdAt = Instant.now();
 }

@@ -35,6 +35,8 @@ public class AuthService {
 
     long[] slot = firstFreeSlot(world.getId());
     cityFactory.createPlayerCity(world.getId(), p.getId(), slot[0], (int)slot[1], username + "’s Polis", true);
+    long[] slot2 = firstFreeSlot(world.getId());
+    cityFactory.createPlayerCity(world.getId(), p.getId(), slot2[0], (int)slot2[1], username + "’s Colony", false);
     return jwt.issue(p.getId(), p.getUsername());
   }
 

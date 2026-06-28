@@ -47,6 +47,7 @@ public class GameService {
     Map<String,Object> m=new LinkedHashMap<>();
     m.put("id",p.getId()); m.put("username",p.getUsername()); m.put("level",p.getLevel());
     m.put("combatPoints",p.getCombatPoints()); m.put("combatToNext",GameRules.levelReq(p.getLevel()));
+    m.put("gold",p.getGold());
     m.put("citySlots",GameRules.citySlots(p.getLevel())); m.put("ownedCities",cityCount);
     m.put("totalPoints",ranking.playerPoints(p.getId()));
     if (p.getAllianceId()!=null) alliances.findById(p.getAllianceId()).ifPresent(a->m.put("alliance",a.getName()));
@@ -130,6 +131,10 @@ public class GameService {
     Map<String,Object> res=new LinkedHashMap<>();
     res.put("wood",(long)c.getWood()); res.put("stone",(long)c.getStone()); res.put("silver",(long)c.getSilver());
     res.put("capacity",cap); res.put("favor",(long)c.getFavor());
+    res.put("woodProd",(long)GameRules.prodPerHour(lv.get(BuildingType.TIMBER)));
+    res.put("stoneProd",(long)GameRules.prodPerHour(lv.get(BuildingType.QUARRY)));
+    res.put("silverProd",(long)GameRules.prodPerHour(lv.get(BuildingType.MINE)));
+    res.put("favorProd",(long)GameRules.favorPerHour(lv.get(BuildingType.TEMPLE)));
     m.put("resources",res);
     m.put("pop", cityService.popUsed(id)); m.put("maxPop", cityService.maxPop(id, bounty));
     m.put("buildings",bld); m.put("queues",queues); m.put("units",us);

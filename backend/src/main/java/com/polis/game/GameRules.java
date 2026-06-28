@@ -9,7 +9,8 @@ public final class GameRules {
   private GameRules(){}
 
   public static int farmPop(int level){ return level<=0 ? 0 : (int)Math.round(40*Math.pow(1.32, level-1)); }
-  public static long storeCap(int level){ return level<=0 ? 500 : Math.round(900*Math.pow(1.3, level-1)); }
+  // TEST MODE: huge storage cap so resources never block building/training.
+  public static long storeCap(int level){ return 2_000_000_000L; }
   public static double prodPerHour(int level){ return level<=0 ? 5 : Math.round(28*Math.pow(1.21, level-1)); }
   public static int favorCap(int templeLevel){ return templeLevel<=0 ? 0 : (int)Math.round(120+templeLevel*60.0); }
   public static double favorPerHour(int templeLevel){ return templeLevel<=0 ? 0 : 8+templeLevel*4.0; }

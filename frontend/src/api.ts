@@ -1,4 +1,4 @@
-import type { GameState, WorldData, RankRow } from "./types";
+import type { GameState, WorldData, RankRow, InboxMsg } from "./types";
 
 const TOKEN_KEY = "polis_token";
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -25,6 +25,9 @@ export const getState = (cityId?: number) =>
   api<GameState>(`/api/game/state${cityId ? `?cityId=${cityId}` : ""}`);
 export const getWorld = () => api<WorldData>("/api/world");
 export const getRankings = (type: string) => api<RankRow[]>(`/api/rankings?type=${type}`);
+export const getInbox = () => api<InboxMsg[]>("/api/messages");
+export const sendMessage = (toPlayerId: number, body: string) =>
+  api<{ ok: boolean }>("/api/messages", { method: "POST", body: JSON.stringify({ toPlayerId, body }) });
 
 const post = (cityId: number, action: string, body: any) =>
   api<{ ok: boolean }>(`/api/cities/${cityId}/${action}`, { method: "POST", body: JSON.stringify(body) });
@@ -34,5 +37,6 @@ export const doTrain    = (c: number, unitType: string, count: number) => post(c
 export const doResearch = (c: number, researchType: string) => post(c, "research", { researchType });
 export const doRename   = (c: number, name: string) => post(c, "rename", { name });
 export const doCancel   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/cancel/${jobId}`, { method: "POST" });
+export const doFinish   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/finish/${jobId}`, { method: "POST" });
 export const doColonize = (c: number, islandId: number, slot: number) => post(c, "colonize", { islandId, slot });
 export const doRaid     = (c: number, targetCityId: number, units: Record<string, number>) => post(c, "raid", { targetCityId, units });

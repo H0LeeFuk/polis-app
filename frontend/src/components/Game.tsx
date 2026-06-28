@@ -1,14 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  getState, doBuild, doTrain, doResearch, doCancel, doRename,
+  getState, doBuild, doTrain, doResearch, doCancel, doRename, doFinish, getInbox,
 } from "../api";
-import type { GameState, CityDetail } from "../types";
-import { buildingSvg, constructionSvg } from "../buildings";
+import type { GameState, CityDetail, PlayerDto, InboxMsg } from "../types";
+import { buildingSvg, constructionSvg, emptyPlotSvg } from "../buildings";
 import WorldView from "./WorldView";
 import Rankings from "./Rankings";
 
 const fmt = (n: number) => n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : Math.floor(n).toString();
 const RES_GLYPH: Record<string, string> = { wood: "🪵", stone: "🪨", silver: "🪙", favor: "✨" };
+
+const ResIcon = ({ kind }: { kind: string }) => {
+  const i: Record<string, React.ReactNode> = {
+    wood: <g><rect x="3" y="13" width="18" height="6" rx="3" fill="#8a5a2b" stroke="#5e3a17" strokeWidth="1.2" /><ellipse cx="6" cy="16" rx="2" ry="3" fill="#c98f4e" stroke="#5e3a17" strokeWidth="1.2" /><rect x="4" y="6" width="16" height="6" rx="3" fill="#9c6a36" stroke="#5e3a17" strokeWidth="1.2" /><ellipse cx="6.5" cy="9" rx="2" ry="3" fill="#d6a05c" stroke="#5e3a17" strokeWidth="1.2" /></g>,
+    stone: <g><path d="M5 18 L3 11 L8 6 L15 6 L21 12 L19 18 Z" fill="#9aa3ad" stroke="#5b6570" strokeWidth="1.3" strokeLinejoin="round" /><path d="M8 6 L11 12 L19 18 M3 11 L11 12 L5 18" fill="none" stroke="#6b7681" strokeWidth="1" /></g>,
+    silver: <g><circle cx="12" cy="12" r="8.5" fill="#d9dde3" stroke="#9098a3" strokeWidth="1.4" /><circle cx="12" cy="12" r="5.5" fill="none" stroke="#aab0bb" strokeWidth="1.2" /><text x="12" y="16" fontSize="8" textAnchor="middle" fill="#8a909b" fontWeight="700">$</text></g>,
+    favor: <path d="M12 2 L14.6 8.6 L21.5 9.2 L16.2 13.8 L17.9 20.6 L12 16.9 L6.1 20.6 L7.8 13.8 L2.5 9.2 L9.4 8.6 Z" fill="#ffd35a" stroke="#d6a020" strokeWidth="1.2" strokeLinejoin="round" />,
+    pop: <g><circle cx="9" cy="8" r="3.4" fill="#e6c98f" stroke="#9c7a3e" strokeWidth="1.2" /><path d="M3 20 c0-4 3-6.5 6-6.5 s6 2.5 6 6.5" fill="#cf9d52" stroke="#9c7a3e" strokeWidth="1.2" /><circle cx="16" cy="9" r="2.8" fill="#d9b878" stroke="#9c7a3e" strokeWidth="1.2" /><path d="M13.5 20 c0-3.3 2-5.5 4.5-5.5 s4 2 4 5.5" fill="#bd8c46" stroke="#9c7a3e" strokeWidth="1.2" /></g>,
+    gold: <g><circle cx="12" cy="12" r="8.5" fill="#f2c94c" stroke="#b8860b" strokeWidth="1.6" /><circle cx="12" cy="12" r="5.5" fill="none" stroke="#d9a520" strokeWidth="1.2" /><text x="12" y="16" fontSize="9" textAnchor="middle" fill="#9a6b08" fontWeight="700">★</text></g>,
+  };
+  return <svg className="resicon" viewBox="0 0 24 24" width="22" height="22">{i[kind]}</svg>;
+};
 
 function remaining(finishAt: string | null, now: number) {
   if (!finishAt) return null;
@@ -27,7 +39,11 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [err, setErr] = useState("");
   const [now, setNow] = useState(Date.now());
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const polling = useRef<number>();
+
+  useEffect(() => { if (!err) return; const t = setTimeout(() => setErr(""), 3500); return () => clearTimeout(t); }, [err]);
 
   async function refresh(cityId = activeCityId) {
     try {
@@ -53,12 +69,11 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
     setErr("");
     try { await fn(); await refresh(); } catch (e: any) { setErr(e.message); }
   };
-  const switchCity = (id: number) => { setActiveCityId(id); refresh(id); };
-  const nextCity = () => {
-    const ids = cities.map(c => c.id).sort((a, b) => a - b);
-    if (ids.length < 2) return;
-    const i = ids.indexOf(active.id);
-    switchCity(ids[(i + 1) % ids.length]);
+  const switchCity = (id: number) => { setEditing(false); setActiveCityId(id); refresh(id); };
+  const commitRename = () => {
+    const nm = nameDraft.trim();
+    setEditing(false);
+    if (nm && nm !== active.name) action(() => doRename(active.id, nm))();
   };
 
   return (
@@ -67,24 +82,30 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         <div className="topbar-left">
           <div className="brand">POLIS</div>
           <div className="cityswitch">
-            <button className={"cs-name" + (cities.length < 2 ? " solo" : "")}
-              onClick={() => {
-                const name = prompt("Rename this city", active.name);
-                if (name && name.trim()) action(() => doRename(active.id, name.trim()))();
-              }}>{active.name}</button>
-            {cities.length > 1 && <button className="cs-next" title="Next city" onClick={nextCity}>❯</button>}
+            {editing ? (
+              <input className="cs-edit" autoFocus value={nameDraft} maxLength={40}
+                onChange={e => setNameDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditing(false); }}
+                onBlur={commitRename} />
+            ) : cities.length > 1 ? (
+              <select className="cs-select" value={active.id} onChange={e => switchCity(Number(e.target.value))}>
+                {cities.map(c => <option key={c.id} value={c.id}>{c.capital ? "★ " : ""}{c.name}</option>)}
+              </select>
+            ) : <span className="cs-name solo">{active.name}</span>}
+            {!editing && <button className="cs-rename" title="Rename city"
+              onClick={() => { setNameDraft(active.name); setEditing(true); }}>✎</button>}
           </div>
         </div>
 
-        <ResourceBar active={active} />
+        <ResourceBar active={active} gold={player.gold} />
 
         <div className="topbar-right">
-          <div className="who">Lv <b>{player.level}</b> · <b>{fmt(player.totalPoints)}</b> pts{player.alliance ? ` · ${player.alliance}` : ""}</div>
+          <PlayerCrest player={player} />
           <button className="logout" onClick={onLogout}>log out</button>
         </div>
       </div>
 
-      {err && <div className="err">{err}</div>}
+      {err && <div className="toast" onClick={() => setErr("")}>{err}</div>}
 
       <div className="view-toggle">
         <button className={"view-btn" + (tab === "city" ? " active" : "")} onClick={() => setTab("city")}>City View</button>
@@ -92,19 +113,23 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
       </div>
 
       <div className="fullscreen-view">
+        {tab === "city" && <CityTab key={active.id} active={active} now={now} counts={counts} setCounts={setCounts}
+          onBuild={(t) => action(() => doBuild(active.id, t))()}
+          onTrain={(t, c) => action(() => doTrain(active.id, t, c))()}
+          onResearch={(t) => action(() => doResearch(active.id, t))()}
+          onCancel={(j) => action(() => doCancel(active.id, j))()}
+          onFinish={(j) => action(() => doFinish(active.id, j))()} />}
+
+        {tab === "world" && <WorldView activeCityId={active.id} myUnits={active.units} onChanged={() => refresh()} setErr={setErr} />}
+
+        {tab === "city" && <TroopsPanel units={active.units} />}
+
         <div className="panel-actions">
           <button className="panel-action-btn" onClick={() => setModal("rankings")}>Rankings</button>
           <button className="panel-action-btn" onClick={() => setModal("profile")}>Profile</button>
           <button className="panel-action-btn" onClick={() => setModal("alliance")}>Alliance</button>
           <button className="panel-action-btn" onClick={() => setModal("messages")}>Messages</button>
         </div>
-        {tab === "city" && <CityTab active={active} now={now} counts={counts} setCounts={setCounts}
-          onBuild={(t) => action(() => doBuild(active.id, t))()}
-          onTrain={(t, c) => action(() => doTrain(active.id, t, c))()}
-          onResearch={(t) => action(() => doResearch(active.id, t))()}
-          onCancel={(j) => action(() => doCancel(active.id, j))()} />}
-
-        {tab === "world" && <WorldView activeCityId={active.id} onChanged={() => refresh()} setErr={setErr} />}
       </div>
 
       {modal === "rankings" && <Modal title="Rankings" onClose={() => setModal(null)}><Rankings /></Modal>}
@@ -117,7 +142,6 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
             <div><strong>Cities</strong><span>{player.ownedCities}</span></div>
             <div><strong>Alliance</strong><span>{player.alliance || "None"}</span></div>
           </div>
-          <p className="muted">Manage your profile, see stats, and track your progress in the Aegean.</p>
         </div>
       </Modal>}
       {modal === "alliance" && <Modal title="Alliance" onClose={() => setModal(null)}>
@@ -131,49 +155,117 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
       </Modal>}
-      {modal === "messages" && <Modal title="Messages" onClose={() => setModal(null)}>
-        <div className="popup-panel">
-          <h3>Inbox</h3>
-          <p className="muted">No new messages. Your communications will appear here when you receive reports, diplomacy notes, or alerts.</p>
-        </div>
-      </Modal>}
+      {modal === "messages" && <Modal title="Messages" onClose={() => setModal(null)}><Inbox /></Modal>}
     </div>
   );
 }
 
-function ResourceBar({ active }: { active: CityDetail }) {
+function TroopsPanel({ units }: { units: { type: string; count: number }[] }) {
+  return (
+    <div className="troops-panel">
+      <h3>Troops</h3>
+      {units.length === 0
+        ? <p className="muted tp-empty">No troops yet. Train them in the Barracks or Harbor.</p>
+        : units.map(u => (
+          <div className="tp-row" key={u.type}>
+            <span className="tp-name">⚔ {titleCase(u.type)}</span>
+            <span className="tp-count">{u.count}</span>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function Inbox() {
+  const [msgs, setMsgs] = useState<InboxMsg[] | null>(null);
+  useEffect(() => { getInbox().then(setMsgs).catch(() => setMsgs([])); }, []);
+  if (!msgs) return <p className="muted">Loading…</p>;
+  if (msgs.length === 0) return <div className="popup-panel"><h3>Inbox</h3><p className="muted">No messages yet. Other players can message you from the world map.</p></div>;
+  return (
+    <div className="popup-panel">
+      <h3>Inbox</h3>
+      {msgs.map(m => (
+        <div className="msg-row" key={m.id}>
+          <div className="msg-head"><strong>{m.from}</strong><small className="muted">{new Date(m.sentAt).toLocaleString()}</small></div>
+          <div>{m.body}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlayerCrest({ player }: { player: PlayerDto }) {
+  return (
+    <div className="crest" title={player.username}>
+      <div className="crest-shield">
+        <svg viewBox="0 0 60 64" width="58" height="62">
+          <defs>
+            <clipPath id="shieldClip"><path d="M30 2 L56 10 V32 C56 48 44 58 30 62 C16 58 4 48 4 32 V10 Z" /></clipPath>
+          </defs>
+          <path d="M30 2 L56 10 V32 C56 48 44 58 30 62 C16 58 4 48 4 32 V10 Z" fill="#d8ad53" stroke="#7a5a1e" strokeWidth="2.5" />
+          <g clipPath="url(#shieldClip)">
+            <rect x="0" y="0" width="60" height="64" fill="#e9dcc0" />
+            <circle cx="30" cy="24" r="11" fill="#e8b98a" />
+            <path d="M19 23 C19 14 41 14 41 23 C41 18 36 12 30 12 C24 12 19 18 19 23 Z" fill="#6e4a2a" />
+            <path d="M22 26 q8 9 16 0 q1 8 -8 9 q-9 -1 -8 -9 Z" fill="#7a5230" />
+            <path d="M18 40 C18 32 42 32 42 40 L42 64 L18 64 Z" fill="#5b8f3a" />
+            <path d="M30 40 L34 50 L30 52 L26 50 Z" fill="#cdbf9e" opacity="0.6" />
+          </g>
+        </svg>
+        <span className="crest-lv">Lv {player.level}</span>
+      </div>
+      <div className="crest-meta">
+        <span className="crest-name">{player.username}</span>
+        <span className="crest-pts">⚔ {fmt(player.combatPoints)} <small>cp</small></span>
+      </div>
+    </div>
+  );
+}
+
+function ResourceBar({ active, gold }: { active: CityDetail; gold: number }) {
   const r = active.resources;
-  const chip = (k: string, v: number, sub?: string, full?: boolean) => (
-    <div className={"chip" + (full ? " full" : "")} key={k}>
-      <span className="glyph">{RES_GLYPH[k]}</span>
-      <span className="v">{fmt(v)}<small>{sub}</small></span>
+  const res = (k: string, v: number, max: number, full?: boolean) => (
+    <div className={"rescard" + (full ? " full" : "")} key={k}>
+      <ResIcon kind={k} />
+      <span className="rescard-val">{fmt(v)}<small>/{fmt(max)}</small></span>
     </div>
   );
   return (
     <div className="resbar">
-      {chip("wood", r.wood, `/${fmt(r.capacity)}`, r.wood >= r.capacity)}
-      {chip("stone", r.stone, `/${fmt(r.capacity)}`, r.stone >= r.capacity)}
-      {chip("silver", r.silver, `/${fmt(r.capacity)}`, r.silver >= r.capacity)}
-      {active.god && chip("favor", r.favor, "favor")}
-      <div className="chip"><span className="glyph">👥</span><span className="v">{active.pop}<small>{`${active.maxPop} pop`}</small></span></div>
+      {res("wood", r.wood, r.capacity, r.wood >= r.capacity)}
+      {res("stone", r.stone, r.capacity, r.stone >= r.capacity)}
+      {res("silver", r.silver, r.capacity, r.silver >= r.capacity)}
+      {active.god && res("favor", r.favor, r.capacity, r.favor >= r.capacity)}
+      <div className="rescard">
+        <ResIcon kind="pop" />
+        <span className="rescard-val">{active.pop}<small>/{active.maxPop}</small></span>
+      </div>
+      <div className="rescard premium">
+        <ResIcon kind="gold" />
+        <span className="rescard-val">{fmt(gold)}<small>gold</small></span>
+      </div>
     </div>
   );
 }
 
-function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch, onCancel }: {
+function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch, onCancel, onFinish }: {
   active: CityDetail; now: number; counts: Record<string, number>;
   setCounts: (c: Record<string, number>) => void;
   onBuild: (t: string) => void; onTrain: (t: string, c: number) => void;
-  onResearch: (t: string) => void; onCancel: (j: number) => void;
+  onResearch: (t: string) => void; onCancel: (j: number) => void; onFinish: (j: number) => void;
 }) {
-  const [panel, setPanel] = useState<"build" | "train" | "research" | "status">("build");
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(null);
   const r = active.resources;
   const afford = (cost: number[]) => r.wood >= cost[0] && r.stone >= cost[1] && r.silver >= cost[2];
   const constructing = new Set(active.queues.BUILDING.map(j => j.label));
+  const buildQueueFull = active.queues.BUILDING.length >= 5;
+  const queuedSame = (t: string) => active.queues.BUILDING.filter(j => j.label === t).length;
+  const freePop = active.maxPop - active.pop;
+  const lack = (have: number, need: number) => have < need ? " lack" : "";
 
-  const selected = active.buildings.find(b => b.type === selectedBuilding) || active.buildings[0] || null;
+  const selected = selectedBuilding ? active.buildings.find(b => b.type === selectedBuilding) ?? null : null;
   const buildingInfo: Record<string, string> = {
+    SENATE: "The heart of your city. Raise its level to unlock new construction.",
     BARRACKS: "Train troops, house soldiers and strengthen your army.",
     HARBOR: "Build naval units and send raids across the sea.",
     ACADEMY: "Research upgrades, unlock units and boost your combat power.",
@@ -182,92 +274,130 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
     QUARRY: "Produce stone for construction and military upgrades.",
     FARM: "Grow food to support a larger population and faster growth.",
     MINE: "Extract silver for trade, army upkeep and city development.",
+    TIMBER: "Harvest timber to fuel construction across the city.",
+    AGORA: "Marketplace and civic gathering place of the polis.",
+    WALL: "Fortify your city against raids and invasions.",
     GARRISON: "Hold troops and reinforce your city defenses.",
   };
 
-  useEffect(() => {
-    setSelectedBuilding(active.buildings[0]?.type ?? null);
-  }, [active.buildings]);
+  // Place buildings on a town map: senate at the centre, the rest spread across
+  // concentric rings (mimics the ringed-road layout).
+  const center = active.buildings.find(b => b.type === "SENATE");
+  const others = active.buildings.filter(b => b.type !== "SENATE");
+  // distribute roughly a third per ring so all three rings are populated
+  const per = Math.ceil(others.length / 3);
+  const rings = [
+    { rx: 16, ry: 12, cap: per, start: -90 },
+    { rx: 30, ry: 22, cap: per, start: -64 },
+    { rx: 44, ry: 32, cap: others.length, start: -78 },
+  ];
+  const placed: { b: typeof others[number]; x: number; y: number }[] = [];
+  let idx = 0;
+  for (const ring of rings) {
+    const slice = others.slice(idx, idx + ring.cap);
+    slice.forEach((b, i) => {
+      const a = (ring.start + (360 / Math.max(slice.length, 1)) * i) * Math.PI / 180;
+      placed.push({ b, x: 50 + ring.rx * Math.cos(a), y: 50 + ring.ry * Math.sin(a) });
+    });
+    idx += ring.cap;
+  }
+
+  const Badge = ({ lv, building }: { lv: number; building: boolean }) =>
+    <span className={"bld-badge" + (building ? " constructing" : "")}>{building ? "⛏" : lv}</span>;
 
   return (
     <div className="city-view">
-      <div className="city-bg" />
-      <div className="city-overlay">
-        <div className="city-menu">
-          <button className={"city-ring-btn" + (panel === "build" ? " active" : "")} onClick={() => setPanel("build")}>Buildings</button>
-          <button className={"city-ring-btn" + (panel === "train" ? " active" : "")} onClick={() => setPanel("train")}>Troops</button>
-          <button className={"city-ring-btn" + (panel === "research" ? " active" : "")} onClick={() => setPanel("research")}>Research</button>
-          <button className={"city-ring-btn" + (panel === "status" ? " active" : "")} onClick={() => setPanel("status")}>City Status</button>
-        </div>
+      <svg className="city-map-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient id="grass" cx="50%" cy="46%" r="65%">
+            <stop offset="0%" stopColor="#8ec64a" /><stop offset="100%" stopColor="#6fae36" />
+          </radialGradient>
+        </defs>
+        <rect x="0" y="0" width="100" height="100" fill="url(#grass)" />
+        {/* river */}
+        <path d="M-5 30 Q30 42 50 46 Q72 50 105 78" fill="none" stroke="#4aa3df" strokeWidth="9" strokeLinecap="round" opacity="0.92" />
+        <path d="M-5 30 Q30 42 50 46 Q72 50 105 78" fill="none" stroke="#6cc0ee" strokeWidth="4.5" strokeLinecap="round" opacity="0.7" />
+        {/* ring roads */}
+        {rings.map((rg, i) =>
+          <ellipse key={i} cx="50" cy="50" rx={rg.rx} ry={rg.ry} fill="none" stroke="#cdb98f" strokeWidth={i === 2 ? 5 : 3.2} opacity="0.85" />
+        )}
+        <ellipse cx="50" cy="50" rx="8" ry="6" fill="#d8c79c" opacity="0.6" />
+      </svg>
 
-        <div className="city-main">
-          <div className="city-side">
-            <div className="city-panel">
-              <h2>City Command</h2>
-              <div className="chip-row" style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: 10 }}>
-                <div className="chip"><span className="glyph">🏛</span><span className="v">{active.capital ? "Capital" : "City"}<small>{titleCase(active.island)}</small></span></div>
-                <div className="chip"><span className="glyph">👥</span><span className="v">{active.pop}/{active.maxPop}<small>Population</small></span></div>
-                <div className="chip"><span className="glyph">🪵</span><span className="v">{fmt(r.wood)}<small>Wood</small></span></div>
-                <div className="chip"><span className="glyph">🪨</span><span className="v">{fmt(r.stone)}<small>Stone</small></span></div>
-                <div className="chip"><span className="glyph">🪙</span><span className="v">{fmt(r.silver)}<small>Silver</small></span></div>
-                {active.god && <div className="chip"><span className="glyph">✨</span><span className="v">{fmt(r.favor)}<small>Favor</small></span></div>}
+      {/* central senate */}
+      {center && (
+        <button className="bld-tile bld-center" style={{ left: "50%", top: "50%" }}
+          onClick={() => setSelectedBuilding("SENATE")} title="Senate">
+          <span className="bld-art" dangerouslySetInnerHTML={{ __html: constructing.has("SENATE") ? constructionSvg() : buildingSvg("SENATE", center.level) }} />
+          <Badge lv={center.level} building={constructing.has("SENATE")} />
+        </button>
+      )}
+
+      {/* ringed buildings */}
+      {placed.map(({ b, x, y }) => {
+        const buildingThis = constructing.has(b.type);
+        const built = b.level > 0;
+        return (
+          <button className={"bld-tile" + (selectedBuilding === b.type ? " sel" : "") + (built || buildingThis ? "" : " plot")} key={b.type}
+            style={{ left: x + "%", top: y + "%" }}
+            onClick={() => setSelectedBuilding(b.type)}
+            title={built || buildingThis ? titleCase(b.type) : `Build ${titleCase(b.type)}`}>
+            <span className="bld-art" dangerouslySetInnerHTML={{ __html: buildingThis ? constructionSvg() : built ? buildingSvg(b.type, b.level) : emptyPlotSvg() }} />
+            {(built || buildingThis) && <Badge lv={b.level} building={buildingThis} />}
+          </button>
+        );
+      })}
+
+      {/* construction queue bar (bottom-centre) */}
+      <ConstructionBar jobs={active.queues.BUILDING} now={now} onCancel={onCancel} onFinish={onFinish} />
+
+      {/* building detail drawer */}
+      {selected && (
+        <div className="bld-drawer-backdrop" onClick={() => setSelectedBuilding(null)}>
+          <div className="bld-drawer" onClick={e => e.stopPropagation()}>
+            <button className="bld-drawer-close" onClick={() => setSelectedBuilding(null)}>✕</button>
+            <div className="bld-drawer-head">
+              <span className="bld-art big" dangerouslySetInnerHTML={{ __html: buildingSvg(selected.type, selected.level) }} />
+              <div>
+                <h2>{titleCase(selected.type)}</h2>
+                <div className="muted">Level {selected.level}{selected.atMax ? " (max)" : ""}</div>
+                <p className="muted" style={{ marginTop: 4 }}>{buildingInfo[selected.type] || ""}</p>
               </div>
             </div>
-            <div className="city-panel">
-              <h2>Construction</h2>
-              <Queue title="Construction" jobs={active.queues.BUILDING} now={now} onCancel={onCancel} suffix={(j) => `→ Lv ${j.toLevel}`} />
-            </div>
-          </div>
 
-          <div className="city-core">
-            <div className="city-map-card">
-              <div className="city-map-inner">
-                <div className="city-map-title">
-                  <div>
-                    <h2>{titleCase(active.name)}</h2>
-                    <small>{active.god ? `Blessed by ${titleCase(active.god)}` : "No god chosen yet"}</small>
+            {!selected.atMax && (() => {
+              const targetLv = selected.level + queuedSame(selected.type) + 1;
+              const maxed = targetLv > selected.max;
+              const popNeed = selected.pop;                 // 0 for FARM — needs no population
+              const popShort = popNeed > 0 && freePop < popNeed;
+              return (
+                <div className="bld-upgrade">
+                  <div className="cost">
+                    <span className={"costitem" + lack(r.wood, selected.cost[0])}>🪵 {fmt(selected.cost[0])}</span>
+                    <span className={"costitem" + lack(r.stone, selected.cost[1])}>🪨 {fmt(selected.cost[1])}</span>
+                    <span className={"costitem" + lack(r.silver, selected.cost[2])}>🪙 {fmt(selected.cost[2])}</span>
+                    {popNeed > 0 && <span className={"costitem" + lack(freePop, popNeed)}>👥 {popNeed} pop</span>}
+                    <span className="costitem">⏱ {clock(selected.seconds)}</span>
                   </div>
-                  <div className="pill">{active.capital ? "Capital" : "City"}</div>
+                  {selected.type === "FARM" && <small className="muted">Raises your city population limit. Needs no population.</small>}
+                  <button className="btn" disabled={!afford(selected.cost) || popShort || buildQueueFull || maxed}
+                    onClick={() => onBuild(selected.type)}>
+                    {buildQueueFull ? "Queue full (max 5)"
+                      : maxed ? "Max level reached"
+                      : popShort ? "Not enough population"
+                      : selected.level === 0 && queuedSame(selected.type) === 0 ? "Build"
+                      : `Upgrade to Lv ${targetLv}`}
+                  </button>
+                  {queuedSame(selected.type) > 0 && <small className="muted">{queuedSame(selected.type)} upgrade(s) queued</small>}
                 </div>
-                <div className="city-map-splash">
-                  <div className="city-map-feature">🏛</div>
-                  <div className="city-map-feature city-feature-small">Barracks</div>
-                  <div className="city-map-feature city-feature-small">Harbor</div>
-                  <div className="city-map-feature city-feature-small">Academy</div>
-                </div>
-                <div className="city-map-legend">
-                  <div className="city-summary">Wood<br /><strong>{fmt(r.wood)}</strong></div>
-                  <div className="city-summary">Stone<br /><strong>{fmt(r.stone)}</strong></div>
-                  <div className="city-summary">Silver<br /><strong>{fmt(r.silver)}</strong></div>
-                  <div className="city-summary">Population<br /><strong>{active.pop}/{active.maxPop}</strong></div>
-                </div>
-              </div>
-            </div>
-          </div>
+              );
+            })()}
 
-          <div className="city-side">
-            {panel === "build" && (
-              <div className="city-panel">
-                <h2>Buildings</h2>
+            {(selected.type === "BARRACKS" || selected.type === "HARBOR") && selected.level > 0 && (
+              <div className="bld-section">
+                <h3>Train troops</h3>
                 <div className="grid">
-                  {active.buildings.map(b => (
-                    <div className={"card" + (selected?.type === b.type ? " selected" : "")} key={b.type} onClick={() => setSelectedBuilding(b.type)}>
-                      <div className="svg" dangerouslySetInnerHTML={{ __html: constructing.has(b.type) ? constructionSvg() : buildingSvg(b.type, b.level) }} />
-                      <h3>{titleCase(b.type)}</h3>
-                      <div className="muted">Level {b.level}{b.atMax ? " (max)" : ""}</div>
-                      {!b.atMax && <div className="cost">🪵 <b>{fmt(b.cost[0])}</b> · 🪨 <b>{fmt(b.cost[1])}</b> · 🪙 <b>{fmt(b.cost[2])}</b><br />⏱ {clock(b.seconds)}</div>}
-                      <button className="btn" disabled>{selected?.type === b.type ? "Selected" : "View"}</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {panel === "train" && (
-              <div className="city-panel">
-                <h2>Troops</h2>
-                <div className="grid">
-                  {active.trainable.map(u => (
+                  {active.trainable.filter(u => u.from === selected.type).map(u => (
                     <div className="card" key={u.type}>
                       <h3>{titleCase(u.type)}</h3>
                       <div className="muted">⚔ {u.atk} · 🛡 {u.def} · {u.kind === "SEA" ? "🌊" : "🏃"} {u.speed}{u.carry ? ` · 🎒${u.carry}` : ""}</div>
@@ -282,17 +412,35 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
                     </div>
                   ))}
                 </div>
+                {(selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR).length > 0 && (
+                  <div className="train-queue">
+                    <h4>In training</h4>
+                    {(selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR).map((j, i) => {
+                      const rem = remaining(j.finishAt, now);
+                      const pct = rem != null ? Math.round((1 - rem / j.totalSeconds) * 100) : 0;
+                      return (
+                        <div className="tq-row" key={j.id}>
+                          <span>{j.batch}× {titleCase(j.label)} {j.position > 0 && <em className="muted">#{j.position}</em>}</span>
+                          <span className="tq-actions">
+                            <span className="muted">{rem != null ? clock(rem) : "queued"}</span>
+                            {i === 0 && rem != null && <button className="btn ghost gold-btn" onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rem / 60))}</button>}
+                            <a className="tq-cancel" onClick={() => onCancel(j.id)}>✕</a>
+                          </span>
+                          <div className="bar" style={{ gridColumn: "1 / -1" }}><i style={{ width: pct + "%" }} /></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {active.units.length > 0 && (
-                  <p className="muted" style={{ marginTop: 10 }}>
-                    Garrison: {active.units.map(u => `${u.count}× ${titleCase(u.type)}`).join(" · ")}
-                  </p>
+                  <p className="muted" style={{ marginTop: 10 }}>Garrison: {active.units.map(u => `${u.count}× ${titleCase(u.type)}`).join(" · ")}</p>
                 )}
               </div>
             )}
 
-            {panel === "research" && (
-              <div className="city-panel">
-                <h2>Academy research</h2>
+            {selected.type === "ACADEMY" && selected.level > 0 && (
+              <div className="bld-section">
+                <h3>Research</h3>
                 <div className="grid">
                   {active.research.map(rs => (
                     <div className="card" key={rs.type}>
@@ -307,35 +455,40 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
                 </div>
               </div>
             )}
-
-            {panel === "status" && (
-              <div className="city-panel">
-                <h2>City status</h2>
-                <div className="muted">Buildings, queues and movements around your city.</div>
-                <Queue title="Barracks" jobs={active.queues.BARRACKS} now={now} onCancel={onCancel} suffix={(j) => `×${j.batch}`} />
-                <Queue title="Harbour" jobs={active.queues.HARBOR} now={now} onCancel={onCancel} suffix={(j) => `×${j.batch}`} />
-                {active.movements.length > 0 && (
-                  <div style={{ marginTop: 10 }}>
-                    <h3 style={{ marginBottom: 8 }}>Fleets & armies</h3>
-                    {active.movements.map(m => (
-                      <div className="qrow" key={m.id} style={{ display: "block" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <span>{phaseLabel(m.phase)} → <b>{m.target}</b></span>
-                          <span className="pill">{etaLabel(m.arriveAt, now)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
 
-        <div className="city-footer">
-          <span className="muted">Tap one of the city menus to see buildings, troops, research and status around your city.</span>
-        </div>
-      </div>
+const HammerIcon = () => (
+  <svg viewBox="0 0 24 24" width="26" height="26" className="cb-hammer">
+    <path d="M14.5 3.5 L20.5 9.5 L18 12 L12 6 Z" fill="#9aa3ad" stroke="#5b6570" strokeWidth="1" strokeLinejoin="round" />
+    <rect x="4" y="14.5" width="13" height="3.2" rx="1.4" transform="rotate(-45 10 16)" fill="#8a5a2b" stroke="#5e3a17" strokeWidth="1" />
+  </svg>
+);
+
+const BUILD_QUEUE_SLOTS = 5;   // matches server-side BUILD_QUEUE_MAX
+function ConstructionBar({ jobs, now, onCancel, onFinish }: { jobs: any[]; now: number; onCancel: (j: number) => void; onFinish: (j: number) => void; }) {
+  const shown = jobs.slice(0, BUILD_QUEUE_SLOTS);
+  return (
+    <div className="city-build-bar">
+      {Array.from({ length: BUILD_QUEUE_SLOTS }).map((_, i) => {
+        const j = shown[i];
+        if (!j) return <div className="cbslot empty" key={i}><HammerIcon /></div>;
+        const rem = remaining(j.finishAt, now);
+        const pct = rem != null ? Math.round((1 - rem / j.totalSeconds) * 100) : 0;
+        return (
+          <div className={"cbslot" + (i === 0 ? " active" : "")} key={j.id} title={`${titleCase(j.label)} → Lv ${j.toLevel}`}>
+            <span className="cbart" dangerouslySetInnerHTML={{ __html: buildingSvg(j.label, j.toLevel || 1) }} />
+            <span className="cbtime">{j.position > 0 ? `#${j.position}` : rem != null ? clock(rem) : "…"}</span>
+            <div className="cbbar"><i style={{ width: pct + "%" }} /></div>
+            {i === 0 && rem != null && <button className="cbrush" title={`Rush for ${Math.max(1, Math.ceil(rem / 60))} gold`} onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rem / 60))}</button>}
+            <a className="cbcancel" onClick={() => onCancel(j.id)}>✕</a>
+          </div>
+        );
+      })}
     </div>
   );
 }

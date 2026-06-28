@@ -40,6 +40,10 @@ public class CityController {
   public Map<String,Object> cancel(@PathVariable Long cityId, @PathVariable Long jobId){
     build.cancel(me(), cityId, jobId); return ok();
   }
+  @PostMapping("/finish/{jobId}")
+  public Map<String,Object> finish(@PathVariable Long cityId, @PathVariable Long jobId){
+    build.finishWithGold(me(), cityId, jobId); return ok();
+  }
   @PostMapping("/colonize")
   public Map<String,Object> colonize(@PathVariable Long cityId, @RequestBody ColonizeRequest r){
     build.colonize(me(), cityId, r.islandId(), r.slot()); return ok();

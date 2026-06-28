@@ -5,6 +5,7 @@ import com.polis.repo.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -52,11 +53,17 @@ public class BuildService {
     City c = owned(playerId, cityId);
     if (jobs.countByCityIdAndQueueType(cityId, QueueType.BUILDING) >= BUILD_QUEUE_MAX)
       throw new IllegalStateException("Construction queue is full (max " + BUILD_QUEUE_MAX + ")");
-    int lv = cityService.level(cityId, type);
+    // Effective level = built level + upgrades of this building already queued, so
+    // stacking multiple upgrades targets the right next level each time.
+    int queuedSame = (int) jobs.findByCityIdAndQueueTypeOrderByPositionAsc(cityId, QueueType.BUILDING)
+        .stream().filter(j -> j.getBuildingType()==type).count();
+    int lv = cityService.level(cityId, type) + queuedSame;
     if (lv >= type.max) throw new IllegalStateException(type + " is already at max level");
     long[] cost = GameRules.buildCost(type, lv);
     if (!afford(c, cost[0], cost[1], cost[2])) throw new IllegalStateException("Not enough resources");
-    if (cityService.maxPop(cityId, hasResearch(cityId, ResearchType.BOUNTY)) - cityService.popUsed(cityId) < type.pop)
+    // type.pop == 0 (e.g. FARM) needs no population — and must never be blocked, else
+    // an over-populated city could never upgrade the Farm to raise its own pop cap.
+    if (type.pop > 0 && cityService.maxPop(cityId, hasResearch(cityId, ResearchType.BOUNTY)) - cityService.popUsed(cityId) < type.pop)
       throw new IllegalStateException("Not enough free population — upgrade the Farm");
     pay(c, cost[0], cost[1], cost[2]); cities.save(c);
     int secs = GameRules.buildSeconds(type, lv, cityService.level(cityId, BuildingType.SENATE));
@@ -123,11 +130,31 @@ public class BuildService {
     jobs.saveAll(q);
   }
 
+  /** Gold cost to instantly finish a job: 1 gold per minute of remaining time, min 1. */
+  public static int rushCost(long remainingSeconds){ return (int)Math.max(1, Math.ceil(remainingSeconds/60.0)); }
+
+  @Transactional
+  public void finishWithGold(Long playerId, Long cityId, Long jobId){
+    City c = cities.findById(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
+    if (!Objects.equals(c.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
+    BuildJob j = jobs.findById(jobId).orElseThrow(() -> new IllegalArgumentException("Job not found"));
+    if (!Objects.equals(j.getCityId(), cityId)) throw new IllegalStateException("Wrong city");
+    if (j.getPosition() != 0) throw new IllegalStateException("Only the active job can be rushed");
+    Instant now = Instant.now();
+    long rem = j.getFinishAt()==null ? j.getTotalSeconds() : Math.max(0, Duration.between(now, j.getFinishAt()).getSeconds());
+    int cost = rushCost(rem);
+    Player p = players.findById(playerId).orElseThrow();
+    if (p.getGold() < cost) throw new IllegalStateException("Not enough gold (need " + cost + ")");
+    p.setGold(p.getGold() - cost); players.save(p);
+    j.setFinishAt(now); jobs.save(j);
+    cityService.finalizeJobs(c, now);
+  }
+
   @Transactional
   public void rename(Long playerId, Long cityId, String name){
-    City c = owned(playerId, cityId);
-    c.setName(name.length()>40 ? name.substring(0,40) : name);
-    cities.save(c);
+    City c = cities.findById(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
+    if (!Objects.equals(c.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
+    cities.renameById(cityId, name.length()>40 ? name.substring(0,40) : name);
   }
 
   @Transactional

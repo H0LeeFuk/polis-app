@@ -18,5 +18,7 @@ public class City {
   private int points;
   @Column(name="last_tick_at") private Instant lastTickAt = Instant.now();
   private Instant createdAt = Instant.now();
-  @Version private Long version;  // optimistic locking guards against double-spend races
+  // NOTE: optimistic @Version removed — the per-read sync() + 5s background tick
+  // both write cities, so version checks lost frequent races (500s on build/train).
+  // Last-write-wins is acceptable here; the DB 'version' column is left unused.
 }

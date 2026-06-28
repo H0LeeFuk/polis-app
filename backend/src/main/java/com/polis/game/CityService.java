@@ -66,6 +66,13 @@ public class CityService {
         c.setFavor(Math.min(GameRules.favorCap(temple), c.getFavor()+GameRules.favorPerHour(temple)/3600.0*elapsed));
       c.setLastTickAt(now);
     }
+    // TEST MODE: keep player cities topped up with resources for free testing.
+    if (c.getPlayerId()!=null){
+      double TEST = 1_000_000_000d;
+      if (c.getWood()<TEST)   c.setWood(TEST);
+      if (c.getStone()<TEST)  c.setStone(TEST);
+      if (c.getSilver()<TEST) c.setSilver(TEST);
+    }
     if (c.getPlayerId()!=null) c.setPoints(GameRules.cityPoints(levels(c.getId())));
     return cities.save(c);
   }
