@@ -23,14 +23,16 @@ public class BuildService {
   private final UnitRepo units;
   private final ResearchRepo research;
   private final JobRepo jobs;
-  private final IslandRepo islands;
   private final MovementRepo movements;
   private final PlayerRepo players;
+  private final TravelTimeService travel;
 
   public BuildService(CityService cityService, CityRepo cities, BuildingRepo buildings, UnitRepo units,
-                      ResearchRepo research, JobRepo jobs, IslandRepo islands, MovementRepo movements, PlayerRepo players){
+                      ResearchRepo research, JobRepo jobs, MovementRepo movements, PlayerRepo players,
+                      TravelTimeService travel){
     this.cityService=cityService; this.cities=cities; this.buildings=buildings; this.units=units;
-    this.research=research; this.jobs=jobs; this.islands=islands; this.movements=movements; this.players=players;
+    this.research=research; this.jobs=jobs; this.movements=movements; this.players=players;
+    this.travel=travel;
   }
 
   private City owned(Long playerId, Long cityId){
@@ -170,7 +172,7 @@ public class BuildService {
       throw new IllegalStateException("Not enough resources to outfit a colony ship");
     pay(src, COLONY_COST[0], COLONY_COST[1], COLONY_COST[2]); cities.save(src);
 
-    int secs = travelSeconds(src.getIslandId(), islandId, 11);
+    int secs = travel.seconds(src.getIslandId(), islandId, 11);
     Movement m = new Movement();
     m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
     m.setTargetIslandId(islandId); m.setTargetSlot(slot); m.setPhase(MovementPhase.COLONY);
@@ -193,7 +195,7 @@ public class BuildService {
       minSpeed = Math.min(minSpeed, u.speed);
     }
     if (army.isEmpty()) throw new IllegalArgumentException("Select at least one unit");
-    int secs = travelSeconds(src.getIslandId(), tgt.getIslandId(), minSpeed==99?15:minSpeed);
+    int secs = travel.seconds(src.getIslandId(), tgt.getIslandId(), minSpeed==99?15:minSpeed);
     Movement m = new Movement();
     m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
     m.setTargetCityId(targetCityId); m.setPhase(MovementPhase.OUT);
@@ -203,11 +205,5 @@ public class BuildService {
 
   private boolean hasResearch(Long cityId, ResearchType t){
     return research.findByCityId(cityId).stream().anyMatch(r->r.getType()==t);
-  }
-  private int travelSeconds(Long fromIsland, Long toIsland, int speed){
-    Island a = islands.findById(fromIsland).orElseThrow();
-    Island b = islands.findById(toIsland).orElseThrow();
-    double dist = Math.max(8, Math.hypot(a.getPx()-b.getPx(), a.getPy()-b.getPy())/12.0);
-    return (int)Math.round(dist*(18.0/Math.max(1,speed)));
   }
 }

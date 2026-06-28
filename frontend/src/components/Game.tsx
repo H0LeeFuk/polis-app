@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  getState, doBuild, doTrain, doResearch, doCancel, doRename, doFinish, getInbox,
+  getState, doBuild, doTrain, doResearch, doCancel, doRename, doFinish, getInbox, getMyMovements,
 } from "../api";
-import type { GameState, CityDetail, PlayerDto, InboxMsg } from "../types";
+import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements } from "../types";
 import { buildingSvg, constructionSvg, emptyPlotSvg } from "../buildings";
 import WorldView from "./WorldView";
 import Rankings from "./Rankings";
+import MovementsOverview from "./MovementsOverview";
+import { CityMovementsPanel } from "../movements";
 
 const fmt = (n: number) => n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : Math.floor(n).toString();
 const RES_GLYPH: Record<string, string> = { wood: "🪵", stone: "🪨", silver: "🪙", favor: "✨" };
@@ -41,6 +43,8 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [moves, setMoves] = useState<PlayerMovements | null>(null);
+  const [showMoves, setShowMoves] = useState(false);
   const polling = useRef<number>();
 
   useEffect(() => { if (!err) return; const t = setTimeout(() => setErr(""), 3500); return () => clearTimeout(t); }, [err]);
@@ -62,6 +66,14 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
     return () => { clearInterval(polling.current); clearInterval(t); };
   }, [activeCityId]);
 
+  // empire-wide movement feed: drives the nav badge and the global overview
+  useEffect(() => {
+    const f = () => getMyMovements().then(setMoves).catch(() => {});
+    f();
+    const t = window.setInterval(f, 15000);
+    return () => clearInterval(t);
+  }, []);
+
   if (!state) return <div className="app"><p className="muted">Loading the Aegean…</p></div>;
   const { player, cities, active } = state;
 
@@ -70,6 +82,12 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
     try { await fn(); await refresh(); } catch (e: any) { setErr(e.message); }
   };
   const switchCity = (id: number) => { setEditing(false); setActiveCityId(id); refresh(id); };
+  const goToCity = (id: number | null) => {
+    if (id == null) return;
+    if (cities.some(c => c.id === id)) { setShowMoves(false); setTab("city"); switchCity(id); }
+  };
+  const moveCount = moves?.movements.length ?? 0;
+  const hostileInbound = (moves?.summary.incomingThreats ?? 0) > 0;
   const commitRename = () => {
     const nm = nameDraft.trim();
     setEditing(false);
@@ -123,14 +141,21 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         {tab === "world" && <WorldView activeCityId={active.id} myUnits={active.units} onChanged={() => refresh()} setErr={setErr} />}
 
         {tab === "city" && <TroopsPanel units={active.units} />}
+        {tab === "city" && <CityMovementsPanel cityId={active.id} now={now} />}
 
         <div className="panel-actions">
+          <button className={"panel-action-btn" + (hostileInbound ? " alert" : "")} onClick={() => setShowMoves(true)}>
+            🪖 Movements
+            {moveCount > 0 && <span className={"nav-badge" + (hostileInbound ? " hostile" : "")}>{moveCount}</span>}
+          </button>
           <button className="panel-action-btn" onClick={() => setModal("rankings")}>Rankings</button>
           <button className="panel-action-btn" onClick={() => setModal("profile")}>Profile</button>
           <button className="panel-action-btn" onClick={() => setModal("alliance")}>Alliance</button>
           <button className="panel-action-btn" onClick={() => setModal("messages")}>Messages</button>
         </div>
       </div>
+
+      {showMoves && <MovementsOverview data={moves} now={now} onClose={() => setShowMoves(false)} onGoCity={goToCity} />}
 
       {modal === "rankings" && <Modal title="Rankings" onClose={() => setModal(null)}><Rankings /></Modal>}
       {modal === "profile" && <Modal title="Profile" onClose={() => setModal(null)}>

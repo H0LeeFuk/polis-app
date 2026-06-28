@@ -1,4 +1,4 @@
-import type { GameState, WorldData, RankRow, InboxMsg } from "./types";
+import type { GameState, WorldData, RankRow, InboxMsg, Movement, AttackPreview, PlayerMovements } from "./types";
 
 const TOKEN_KEY = "polis_token";
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -40,3 +40,9 @@ export const doCancel   = (c: number, jobId: number) => api<{ ok: boolean }>(`/a
 export const doFinish   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/finish/${jobId}`, { method: "POST" });
 export const doColonize = (c: number, islandId: number, slot: number) => post(c, "colonize", { islandId, slot });
 export const doRaid     = (c: number, targetCityId: number, units: Record<string, number>) => post(c, "raid", { targetCityId, units });
+
+// --- troop movements ---
+export const getCityMovements = (cityId: number) => api<Movement[]>(`/api/cities/${cityId}/movements`);
+export const getMyMovements = () => api<PlayerMovements>("/api/players/me/movements");
+export const previewAttack = (cityId: number, targetCityId: number, units: Record<string, number>) =>
+  api<AttackPreview>(`/api/cities/${cityId}/attack/preview?targetCityId=${targetCityId}&units=${encodeURIComponent(JSON.stringify(units))}`);

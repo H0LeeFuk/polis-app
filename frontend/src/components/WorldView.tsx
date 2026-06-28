@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getWorld, doColonize, doRaid, sendMessage } from "../api";
 import type { WorldData, WorldIsland, WorldCity, UnitDto } from "../types";
+import { TravelPreview } from "../movements";
 
 const fmt = (n: number) => n >= 10000 ? (n / 1000).toFixed(1) + "k" : Math.floor(n).toString();
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
@@ -215,6 +216,7 @@ export default function WorldView({ activeCityId, myUnits, onChanged, setErr }: 
                           onChange={e => setRaidCounts({ ...raidCounts, [u.type]: Math.max(0, Math.min(u.count, +e.target.value)) })} />
                       </div>
                     ))}
+                    <TravelPreview originCityId={activeCityId} targetCityId={raidTarget.id} units={raidCounts} />
                     <button className="btn" onClick={sendRaid}>⚔ Send raid</button>
                   </>
                 )}
