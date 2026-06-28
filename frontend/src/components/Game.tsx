@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  getState, doBuild, doTrain, doResearch, doCancel, doRename, doFinish, getInbox, getMyMovements,
-  getUnreadReportCount, doRaid, getHeroes, getFoundingStatus, getMissions,
+  getState, doBuild, doTrain, doCancel, doRename, doFinish, getInbox, getMyMovements,
+  getUnreadReportCount, doAttack, getHeroes, getFoundingStatus, getMissions,
 } from "../api";
 import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements, UnitDto, Hero, FoundingStatus } from "../types";
 import { FoundingBanner, FoundCityModal, RaceBadge } from "./FoundCity";
@@ -18,6 +18,12 @@ import { CityMovementsPanel, TravelPreview, UnitTooltip, ATTACK_GLYPH, HeroPicke
 
 const fmt = (n: number) => n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : Math.floor(n).toString();
 const RES_GLYPH: Record<string, string> = { wood: "🪵", stone: "🪨", silver: "🪙", favor: "✨" };
+const MOVE_BADGE: Record<string, string> = { LAND: "🚶", FLYING: "🕊", SWIMMING: "🌊" };
+const MOVE_LABEL: Record<string, string> = {
+  LAND: "Land — needs a transport ship to cross open water",
+  FLYING: "Flying — crosses water freely",
+  SWIMMING: "Swimming — crosses water freely, slower on land",
+};
 
 const ResIcon = ({ kind }: { kind: string }) => {
   const i: Record<string, React.ReactNode> = {
@@ -84,7 +90,10 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
       if (cityId === undefined) setActiveCityId(s.active.id);
     } catch (e: any) {
       const m = String(e.message);
-      if (m.includes("401") || m.includes("403")) onLogout(); else setErr(m);
+      // A failure during the very first load means a dead session (e.g. a stale token from a
+      // previous database). Drop to the login screen instead of hanging on "Loading…".
+      if (m.includes("401") || m.includes("403") || state === null) onLogout();
+      else setErr(m);
     }
   }
 
@@ -204,7 +213,6 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         {tab === "city" && <CityTab key={active.id} active={active} now={now} counts={counts} setCounts={setCounts}
           onBuild={(t) => action(() => doBuild(active.id, t))()}
           onTrain={(t, c) => action(() => doTrain(active.id, t, c))()}
-          onResearch={(t) => action(() => doResearch(active.id, t))()}
           onCancel={(j) => action(() => doCancel(active.id, j))()}
           onFinish={(j) => action(() => doFinish(active.id, j))()} />}
 
@@ -265,7 +273,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         heroes={heroesHere} target={raidAgain} onClose={() => setRaidAgain(null)}
         onSend={async (units, heroId) => {
           setErr("");
-          try { await doRaid(active.id, raidAgain.id, units, heroId); setRaidAgain(null); await refresh(); refreshHeroes(); }
+          try { await doAttack(active.id, raidAgain.id, units, heroId); setRaidAgain(null); await refresh(); refreshHeroes(); }
           catch (e: any) { setErr(e.message); }
         }} />}
 
@@ -385,11 +393,11 @@ function ResourceBar({ active, gold }: { active: CityDetail; gold: number }) {
   );
 }
 
-function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch, onCancel, onFinish }: {
+function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, onFinish }: {
   active: CityDetail; now: number; counts: Record<string, number>;
   setCounts: (c: Record<string, number>) => void;
   onBuild: (t: string) => void; onTrain: (t: string, c: number) => void;
-  onResearch: (t: string) => void; onCancel: (j: number) => void; onFinish: (j: number) => void;
+  onCancel: (j: number) => void; onFinish: (j: number) => void;
 }) {
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -405,8 +413,8 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
   const buildingInfo: Record<string, string> = {
     SENATE: "The heart of your city. Raise its level to unlock new construction.",
     BARRACKS: "Train troops, house soldiers and strengthen your army.",
-    HARBOR: "Build naval units and send raids across the sea.",
-    ACADEMY: "The Library. Spend research points on a tree of arcane knowledge — War, Wards, Lore & Dominion.",
+    HARBOR: "Build naval units and send attacks across the sea.",
+    LIBRARY: "Spend research points on a tree of arcane knowledge — War, Wards, Lore & Dominion.",
     WAREHOUSE: "Increase resource storage and protect your stockpile.",
     TEMPLE: "Gain favor from the gods and unlock divine blessings.",
     QUARRY: "Produce stone for construction and military upgrades.",
@@ -414,7 +422,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
     MINE: "Extract silver for trade, army upkeep and city development.",
     TIMBER: "Harvest timber to fuel construction across the city.",
     AGORA: "Marketplace and civic gathering place of the polis.",
-    WALL: "Fortify your city against raids and invasions.",
+    WALL: "Fortify your city against attacks and invasions.",
     GARRISON: "Hold troops and reinforce your city defenses.",
   };
 
@@ -502,7 +510,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
             <div className="bld-drawer-head">
               <span className="bld-art big" dangerouslySetInnerHTML={{ __html: buildingSvg(selected.type, selected.level) }} />
               <div>
-                <h2>{selected.type === "ACADEMY" ? "Library" : titleCase(selected.type)}</h2>
+                <h2>{titleCase(selected.type)}</h2>
                 <div className="muted">Level {selected.level}{selected.atMax ? " (max)" : ""}</div>
                 <p className="muted" style={{ marginTop: 4 }}>{buildingInfo[selected.type] || ""}</p>
               </div>
@@ -522,6 +530,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
                     {popNeed > 0 && <span className={"costitem" + lack(freePop, popNeed)}>👥 {popNeed} pop</span>}
                     <span className="costitem">⏱ {clock(selected.seconds)}</span>
                   </div>
+                  {selected.benefit && <div className="bld-benefit">✨ {selected.benefit}</div>}
                   {selected.type === "FARM" && <small className="muted">Raises your city population limit. Needs no population.</small>}
                   <button className="btn" disabled={!afford(selected.cost) || popShort || buildQueueFull || maxed}
                     onClick={() => onBuild(selected.type)}>
@@ -545,6 +554,12 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
                       <h3><UnitTooltip type={u.type}>{titleCase(u.type)}</UnitTooltip></h3>
                       <div className="muted">{ATTACK_GLYPH[u.attackType]} {u.attackType.charAt(0) + u.attackType.slice(1).toLowerCase()} · ⚔ {u.atk}</div>
                       <div className="muted">🔨 {u.defBlunt} · 🗡 {u.defSharp} · 🏹 {u.defDistance} · 🐢 {u.speed}{u.carry ? ` · 🎒${u.carry}` : ""}</div>
+                      <div className="muted unit-move">
+                        <span className={"move-badge mv-" + u.movementClass.toLowerCase()} title={MOVE_LABEL[u.movementClass]}>
+                          {MOVE_BADGE[u.movementClass]} {titleCase(u.movementClass)}</span>
+                        <span title="Population cost">👥 {u.pop} pop</span>
+                        {u.transportCapacity > 0 && <span title="Carries land troops across water">🛳 carries {u.transportCapacity} pop</span>}
+                      </div>
                       <div className="cost">🪵 {u.cost[0]} · 🪨 {u.cost[1]} · 🪙 {u.cost[2]} · ⏱ {clock(u.seconds)}/ea</div>
                       {u.unlocked ? (
                         <div style={{ display: "flex", gap: 6 }}>
@@ -582,25 +597,12 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onResearch,
               </div>
             )}
 
-            {selected.type === "ACADEMY" && selected.level > 0 && (
+            {selected.type === "LIBRARY" && selected.level > 0 && (
               <div className="bld-section">
                 <h3>📚 Research tree</h3>
                 <p className="muted">Spend research points across War · Wards · Lore & Dominion. The tree out-costs your
                   points, so specialize this city.</p>
                 <button className="btn" onClick={() => setShowLibrary(true)}>Open the Library</button>
-                {/* legacy unit-unlock research (kept for unit gating) */}
-                <div className="grid" style={{ marginTop: 10 }}>
-                  {active.research.map(rs => (
-                    <div className="card" key={rs.type}>
-                      <h3>{titleCase(rs.type)}</h3>
-                      <div className="muted">Library Lv {rs.req}+</div>
-                      <div className="cost">🪵 {rs.cost[0]} · 🪨 {rs.cost[1]} · 🪙 {rs.cost[2]}</div>
-                      <button className="btn" disabled={rs.done || !afford(rs.cost)} onClick={() => onResearch(rs.type)}>
-                        {rs.done ? "✓ Researched" : "Research"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
           </div>
@@ -668,7 +670,7 @@ function Queue({ title, jobs, now, onCancel, suffix }: {
 }
 
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
-const phaseLabel = (p: string) => p === "COLONY" ? "🚢 Colony ship" : p === "OUT" ? "⚔ Raid" : "↩ Returning";
+const phaseLabel = (p: string) => p === "COLONY" ? "🚢 Colony ship" : p === "OUT" ? "⚔ Attack" : "↩ Returning";
 function etaLabel(arriveAt: string, now: number) {
   const s = Math.max(0, Math.round((new Date(arriveAt).getTime() - now) / 1000));
   return clock(s);
@@ -683,9 +685,10 @@ function RaidAgainModal({ originCityId, originName, myUnits, heroes, target, onC
 }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [heroId, setHeroId] = useState<number | null>(null);
+  const [transportOk, setTransportOk] = useState(true);
   const send = () => {
     const units = Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0));
-    if (Object.keys(units).length === 0) return;
+    if (Object.keys(units).length === 0 || !transportOk) return;
     onSend(units, heroId);
   };
   return (
@@ -710,8 +713,9 @@ function RaidAgainModal({ originCityId, originName, myUnits, heroes, target, onC
                   </div>
                 ))}
                 <HeroPicker heroes={heroes} value={heroId} onChange={setHeroId} />
-                <TravelPreview originCityId={originCityId} targetCityId={target.id} units={counts} />
-                <button className="btn" onClick={send}>⚔ Send raid</button>
+                <TravelPreview originCityId={originCityId} targetCityId={target.id} units={counts} heroId={heroId} onState={setTransportOk} />
+                <button className="btn" disabled={!transportOk} onClick={send}>
+                  {transportOk ? "⚔ Send attack" : "🚢 Need more transport"}</button>
               </>
             )}
           </div>

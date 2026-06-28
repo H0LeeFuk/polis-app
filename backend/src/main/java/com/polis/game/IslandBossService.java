@@ -26,25 +26,41 @@ public class IslandBossService {
   private final HeroService heroService;
   private final HeroItemRepo heroItems;
   private final ItemFactory itemFactory;
+  private final BattleReportService reports;
   private final Random rnd = new Random();
 
   @Value("${polis.boss-respawn-hours:12}") private long respawnHours;
 
   public IslandBossService(IslandBossRepo bosses, CityRepo cities, UnitRepo units, CityService cityService,
                            CombatEngine combat, UnitCatalog catalog, HeroService heroService,
-                           HeroItemRepo heroItems, ItemFactory itemFactory){
+                           HeroItemRepo heroItems, ItemFactory itemFactory, BattleReportService reports){
     this.bosses=bosses; this.cities=cities; this.units=units; this.cityService=cityService;
     this.combat=combat; this.catalog=catalog; this.heroService=heroService;
-    this.heroItems=heroItems; this.itemFactory=itemFactory;
+    this.heroItems=heroItems; this.itemFactory=itemFactory; this.reports=reports;
+  }
+
+  /** Resources granted per boss level on a win. */
+  private static final long RESOURCE_PER_LEVEL = 1200L;
+
+  /**
+   * Boss relic drop table (rare overall): ~2% a COMMON relic, ~0.5% RARE, ~0.2% EPIC — anything
+   * else is no drop. Bosses are the only relic source. Returns null when nothing drops.
+   */
+  private static HeroItem.Rarity rollBossDropRarity(Random rnd){
+    double r = rnd.nextDouble();
+    if (r < 0.002) return HeroItem.Rarity.EPIC;     // 0.2%
+    if (r < 0.007) return HeroItem.Rarity.RARE;     // 0.5%
+    if (r < 0.027) return HeroItem.Rarity.COMMON;   // 2%
+    return null;                                     // ~97.3% no relic
   }
 
   /** Race-themed defenders scaled by level (uses the always-present Human base roster). */
   public static Map<String,Integer> defendersFor(int level){
     Map<String,Integer> d = new LinkedHashMap<>();
-    d.put("HOPLITE", 18 * level);
-    d.put("SPEARMAN", 10 * level);
-    d.put("ARCHER", 8 * level);
-    d.put("HORSEMAN", 2 * level);
+    d.put("HOPLITE", 40 * level);
+    d.put("SPEARMAN", 24 * level);
+    d.put("ARCHER", 20 * level);
+    d.put("HORSEMAN", 8 * level);
     return d;
   }
 
@@ -78,7 +94,7 @@ public class IslandBossService {
     m.put("level", b.getLevel());
     m.put("status", defeated ? "DEFEATED" : "ACTIVE");
     m.put("respawnAt", b.getRespawnAt() == null ? null : b.getRespawnAt().toString());
-    if (!defeated) m.put("defenderTroops", b.getDefenderTroops());
+    if (!defeated) m.put("defenderTroops", defendersFor(b.getLevel()));
     return m;
   }
 
@@ -115,21 +131,32 @@ public class IslandBossService {
       atkMult *= heroService.offenseMods(hero).attackMult();
     }
     CombatEngine.Mods mods = new CombatEngine.Mods(atkMult, 1, 1, 1);
-    CombatEngine.Result r = combat.resolve(sent, b.getDefenderTroops(), mods);
+    CombatEngine.CombatFx fx = hero != null ? heroService.combatFx(hero) : CombatEngine.CombatFx.none();
+    // defenders computed live from the boss level so difficulty tuning applies to all bosses
+    Map<String,Integer> defendersSnapshot = defendersFor(b.getLevel());
+    CombatEngine.Result r = combat.resolve(sent, defendersSnapshot, mods, fx);
     boolean win = r.outcome() == BattleOutcome.VICTORY;
 
     deductLosses(cityId, r.attackerLost());
+
+    // resources the city gains on a win — also shown on the battle report
+    Map<String,Long> resourcesStolen = new LinkedHashMap<>();
+    resourcesStolen.put("WOOD", 0L); resourcesStolen.put("STONE", 0L); resourcesStolen.put("SILVER", 0L);
+    if (win){ long amt = RESOURCE_PER_LEVEL * b.getLevel(); resourcesStolen.replaceAll((k,v) -> amt); }
 
     Map<String,Object> out = new LinkedHashMap<>();
     out.put("outcome", win ? "WIN" : "LOSS");
     out.put("troopsLost", r.attackerLost());
     if (win){
       Map<String,Object> reward = grantReward(city, b.getLevel());
-      // guaranteed rare relic — bosses are the only rare source
-      HeroItem relic = itemFactory.rollRare(playerId, rnd);
-      heroItems.save(relic);
-      reward.put("relic", Map.of("name", relic.getName(), "rarity", relic.getRarity().name(),
-          "slot", relic.getSlot().name(), "buffs", relic.getBuffs()));
+      // relics are a rare drop — most kills yield none; epics are very rare
+      HeroItem.Rarity dropRarity = rollBossDropRarity(rnd);
+      if (dropRarity != null){
+        HeroItem relic = itemFactory.ofRarity(playerId, dropRarity, rnd);
+        heroItems.save(relic);
+        reward.put("relic", Map.of("name", relic.getName(), "rarity", relic.getRarity().name(),
+            "slot", relic.getSlot().name(), "buffs", relic.getBuffs()));
+      }
       out.put("reward", reward);
       if (hero != null){ heroService.grantXp(playerId, hero.getId(), 30L * b.getLevel()); out.put("heroXp", 30 * b.getLevel()); }
       b.setDefeatedAt(Instant.now());
@@ -138,6 +165,18 @@ public class IslandBossService {
     }
     out.put("status", b.getRespawnAt() != null ? "DEFEATED" : "ACTIVE");
     out.put("respawnAt", b.getRespawnAt() == null ? null : b.getRespawnAt().toString());
+
+    // every battle is recorded — write the boss Battle Report (no marching movement)
+    HeroParticipation hp = hero == null ? null : new HeroParticipation(
+        hero.getName(), hero.getLevel(),
+        heroService.attackBonusPct(hero), heroService.lossReductionPct(hero),
+        null, win ? 30 * b.getLevel() : 0, null, false);
+    BattleResult res = new BattleResult(r.outcome(), sent, r.attackerLost(), r.attackerSurvived(),
+        defendersSnapshot, r.defenderLost(), r.defenderSurvived(), resourcesStolen,
+        r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage());
+    reports.createPveReport(city.getWorldId(), playerId, cityId,
+        "👹 " + b.getName() + " · Lv " + b.getLevel(), res, hp);
+
     return out;
   }
 
@@ -152,7 +191,7 @@ public class IslandBossService {
 
   private Map<String,Object> grantReward(City city, int level){
     long cap = cityService.capacity(city.getId());
-    long amt = 400L * level;
+    long amt = RESOURCE_PER_LEVEL * level;
     city.setWood(Math.min(cap, city.getWood() + amt));
     city.setStone(Math.min(cap, city.getStone() + amt));
     city.setSilver(Math.min(cap, city.getSilver() + amt));

@@ -1,53 +1,58 @@
 package com.polis.game;
 
 import com.polis.domain.HeroItem;
+import com.polis.domain.HeroItem.Rarity;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
-/** Rolls a random hero equipment item. Small v1 pool with clear, rarity-scaled effects. */
+/** Rolls hero equipment from the seeded {@link HeroItemCatalog}. Drops are rarity-weighted. */
 @Service
 public class ItemFactory {
-  private static final int[] VALUE = { 3, 6, 10 };   // COMMON, RARE, EPIC
 
-  private record Template(HeroItem.Slot slot, String buff, String[] names){}
-  private static final List<Template> TEMPLATES = List.of(
-      new Template(HeroItem.Slot.WEAPON, "ATTACK_PCT",          new String[]{"Spear of the Phalanx","Blade of Ares","Bronze Xiphos"}),
-      new Template(HeroItem.Slot.ARMOR,  "DEFENSE_SHARP_PCT",   new String[]{"Hoplon of Sparta","Aegis Shield"}),
-      new Template(HeroItem.Slot.ARMOR,  "DEFENSE_BLUNT_PCT",   new String[]{"Bronze Cuirass","Linothorax"}),
-      new Template(HeroItem.Slot.ARMOR,  "DEFENSE_DISTANCE_PCT",new String[]{"Tower Shield","Pavise of Crete"}),
-      new Template(HeroItem.Slot.AMULET, "LOOT_PCT",            new String[]{"Hermes' Charm","Merchant's Talisman"}),
-      new Template(HeroItem.Slot.AMULET, "TRAVEL_TIME_PCT",     new String[]{"Winged Sandals","Pendant of Swiftness"}),
-      new Template(HeroItem.Slot.AMULET, "DROP_CHANCE_PCT",     new String[]{"Eye of Fortune","Relic Hunter's Idol"})
-  );
+  /** Drop rarity weights for generic (node) drops — legendaries are rare. */
+  private static final Map<Rarity,Integer> WEIGHT = Map.of(
+      Rarity.COMMON, 60, Rarity.RARE, 28, Rarity.EPIC, 10, Rarity.LEGENDARY, 2);
 
-  public HeroItem roll(Long ownerPlayerId, Random rnd){
-    return build(ownerPlayerId, rollRarity(rnd), rnd);
-  }
-
-  /** Boss loot — guaranteed RARE, with a chance of EPIC. (Resource nodes never drop these.) */
-  public HeroItem rollRare(Long ownerPlayerId, Random rnd){
-    return build(ownerPlayerId, rnd.nextDouble() < 0.25 ? HeroItem.Rarity.EPIC : HeroItem.Rarity.RARE, rnd);
-  }
-
-  private HeroItem build(Long ownerPlayerId, HeroItem.Rarity rarity, Random rnd){
-    int value = VALUE[rarity.ordinal()];
-    Template t = TEMPLATES.get(rnd.nextInt(TEMPLATES.size()));
+  /** Copy a catalog entry into a fresh, owned inventory item. */
+  private HeroItem build(Long ownerPlayerId, HeroItemCatalog.Entry e){
     HeroItem it = new HeroItem();
     it.setOwnerPlayerId(ownerPlayerId);
-    it.setSlot(t.slot());
-    it.setRarity(rarity);
-    it.setName(t.names()[rnd.nextInt(t.names().length)]);
-    Map<String,Integer> buffs = new LinkedHashMap<>();
-    buffs.put(t.buff(), value);
-    it.setBuffs(buffs);
+    it.setName(e.name());
+    it.setSlot(e.slot());
+    it.setRarity(e.rarity());
+    it.setBuffs(new LinkedHashMap<>(e.buffs()));
+    // deep-ish copy of the special-effect list so inventory rows don't share catalog maps
+    List<Map<String,Object>> fx = new ArrayList<>();
+    for (Map<String,Object> m : e.specialEffects()) fx.add(new LinkedHashMap<>(m));
+    it.setSpecialEffects(fx);
     return it;
   }
 
-  private HeroItem.Rarity rollRarity(Random rnd){
-    double r = rnd.nextDouble();
-    if (r < 0.05) return HeroItem.Rarity.EPIC;
-    if (r < 0.30) return HeroItem.Rarity.RARE;
-    return HeroItem.Rarity.COMMON;
+  /** A generic drop: rarity by weight, then a random catalog item of that rarity. */
+  public HeroItem roll(Long ownerPlayerId, Random rnd){
+    return ofRarity(ownerPlayerId, rollRarity(rnd), rnd);
+  }
+
+  /** Boss loot — guaranteed RARE, with a chance of EPIC. */
+  public HeroItem rollRare(Long ownerPlayerId, Random rnd){
+    return ofRarity(ownerPlayerId, rnd.nextDouble() < 0.25 ? Rarity.EPIC : Rarity.RARE, rnd);
+  }
+
+  /** Build a random catalog item of a specific rarity (used by boss drops with their own table). */
+  public HeroItem ofRarity(Long ownerPlayerId, Rarity rarity, Random rnd){
+    List<HeroItemCatalog.Entry> pool = HeroItemCatalog.ofRarity(rarity);
+    if (pool.isEmpty()) pool = HeroItemCatalog.ALL;
+    return build(ownerPlayerId, pool.get(rnd.nextInt(pool.size())));
+  }
+
+  private Rarity rollRarity(Random rnd){
+    int total = WEIGHT.values().stream().mapToInt(Integer::intValue).sum();
+    int r = rnd.nextInt(total);
+    for (Rarity rarity : Rarity.values()){
+      r -= WEIGHT.getOrDefault(rarity, 0);
+      if (r < 0) return rarity;
+    }
+    return Rarity.COMMON;
   }
 }

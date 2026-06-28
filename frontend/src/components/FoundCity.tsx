@@ -6,20 +6,20 @@ import { fmtArrival, fmtEta } from "../movements";
 /** Client mirror of the seeded races — drives the race cards (name, icon, traits, roster). */
 export const RACES: { id: RaceId; name: string; icon: string; blurb: string; traits: string[]; roster: string }[] = [
   { id: "HUMANS", name: "Humans", icon: "🏛",
-    blurb: "Balanced and adaptable — no weakness, steady bonuses everywhere and faster research.",
-    traits: ["+5% production", "+5% attack & defence", "−15% research cost"],
+    blurb: "Balanced and adaptable settlers of the Aegean.",
+    traits: [],
     roster: "Hoplite · Swordsman · Archer · Horseman · Trireme" },
   { id: "GIANTS", name: "Giants", icon: "🗿",
-    blurb: "Brute force — devastating attack and heavy armour, but slow and population-hungry.",
-    traits: ["+30% attack", "+25% defence", "−10% march speed", "−10% production"],
+    blurb: "Towering brutes who raise cities of stone.",
+    traits: [],
     roster: "Boulder Thrower · Troll · Stone Giant · Colossus · War Barge" },
   { id: "FAIRIES", name: "Fairies", icon: "🧚",
-    blurb: "Swift and rich — fast marches, big economy and fat loot, but fragile in defence.",
-    traits: ["+25% production", "+30% march speed", "+40% loot", "−20% defence"],
+    blurb: "Swift and graceful folk of the glades.",
+    traits: [],
     roster: "Sprite · Pixie Archer · Glimmer Guard · Moth Rider · Dragonfly Skiff" },
   { id: "NEWTS", name: "Newts", icon: "🦎",
-    blurb: "Amphibious raiders — fearsome navies and quick sea crossings, dependable on land.",
-    traits: ["Dominant navy", "+5% crossing speed", "+5% loot"],
+    blurb: "Amphibious raiders at home on the open sea.",
+    traits: [],
     roster: "Mudling · Newt Spear · Snapper · Tide Raider · Leviathan" },
 ];
 
@@ -30,30 +30,19 @@ const fmtDuration = (s: number) => {
   return `${sec}s`;
 };
 
-// ---- compact race chip + bonuses (city header / "active bonuses" panel) ----
-
-const BONUS_LABEL: Record<string, string> = {
-  production: "Production", attack: "Attack", defense: "Defence",
-  travel: "March speed", loot: "Loot", researchSpeed: "Research speed",
-};
-const signed = (n: number) => (n > 0 ? `+${n}%` : `${n}%`);
+// ---- compact race chip (city header) ----
 
 export function RaceBadge({ race }: { race: RaceInfo }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="race-badge" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button className="race-chip" onClick={() => setOpen(o => !o)} title={`${race.name} — active bonuses`}>
+      <button className="race-chip" onClick={() => setOpen(o => !o)} title={race.name}>
         <span className="race-ico">{race.icon}</span> {race.name}
       </button>
       {open && (
         <div className="race-pop">
           <div className="race-pop-head">{race.icon} {race.name}</div>
           <p className="muted">{race.description}</p>
-          <div className="race-bonuses">
-            {Object.entries(race.bonuses).filter(([, v]) => v !== 0).map(([k, v]) => (
-              <span key={k} className={"race-bonus" + (v < 0 ? " neg" : "")}>{BONUS_LABEL[k] ?? k} {signed(v)}</span>
-            ))}
-          </div>
         </div>
       )}
     </div>
@@ -104,7 +93,6 @@ export function FoundCityModal({ islandId, islandName, slotIndex, heroes, fromCi
   // race step state
   const [race, setRace] = useState<RaceId | null>(null);
   const [name, setName] = useState("");
-  const [returnHero, setReturnHero] = useState(false);  // false = stay in the new city
 
   const heroReady = eligible.length > 0 && sendHero != null;
   const origin = startAtRace ? fromCityId : (sendHero?.stationedCityId ?? null);
@@ -126,8 +114,9 @@ export function FoundCityModal({ islandId, islandName, slotIndex, heroes, fromCi
     if (!race) { setErr("Pick a race for your new city"); return; }
     setErr(""); setBusy(true);
     try {
-      await foundCity(islandId, slotIndex, race, name.trim(), returnHero ? origin : null);
-      onChanged(); onClose();
+      const res = await foundCity(islandId, slotIndex, race, name.trim(), null);   // hero stays in the new city
+      if (res.ok === false) setErr(res.message ?? "That slot was taken — your hero is returning home");
+      onChanged(); onClose();   // refresh either way: clears the founding banner, shows the hero marching home
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
 
@@ -150,7 +139,7 @@ export function FoundCityModal({ islandId, islandName, slotIndex, heroes, fromCi
               <p className="muted">Founding a city sends a <b>Hero</b> to this empty plot. The hero is
                 unavailable for the whole trip and until you pick a race on arrival.</p>
               {!heroReady ? (
-                <p className="found-warn">No idle hero is stationed and available. Station Leo or Celine
+                <p className="found-warn">No idle hero is stationed and available. Station Leo or Titania
                   in a city first (Heroes panel), or wait for a marching hero to return.</p>
               ) : (
                 <>
@@ -160,7 +149,7 @@ export function FoundCityModal({ islandId, islandName, slotIndex, heroes, fromCi
                       {eligible.map(h => (
                         <button type="button" key={h.id} className={"hp-chip" + (heroId === h.id ? " sel" : "")}
                           onClick={() => setHeroId(h.id)}>
-                          {h.heroKey === "CELINE" ? "🧚" : "🛡"} {h.name} <small>Lv{h.level}</small>
+                          {h.heroKey === "TITANIA" ? "🧚" : "🛡"} {h.name} <small>Lv{h.level}</small>
                         </button>
                       ))}
                     </div>
@@ -196,14 +185,6 @@ export function FoundCityModal({ islandId, islandName, slotIndex, heroes, fromCi
                 <span>City name</span>
                 <input value={name} maxLength={40} placeholder="New colony name" onChange={e => setName(e.target.value)} />
               </label>
-              <div className="found-heroafter">
-                <span className="muted">After founding, your hero will:</span>
-                <label><input type="radio" checked={!returnHero} onChange={() => setReturnHero(false)} /> Stay in the new city</label>
-                <label className={origin == null ? "muted" : ""}>
-                  <input type="radio" checked={returnHero} disabled={origin == null} onChange={() => setReturnHero(true)} />
-                  Return to {originName}
-                </label>
-              </div>
               <button className="btn" disabled={busy || !race} onClick={found}>🏛 Found city</button>
             </div>
           )}

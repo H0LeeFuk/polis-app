@@ -9,8 +9,8 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * The Library: a per-city research tree. Library level (the ACADEMY building, labelled "Library"
- * in the UI) grants research points (4/level → 80 at level 20). The full tree costs ~130, so
+ * The Library: a per-city research tree. Library level (the LIBRARY building) grants research
+ * points (4/level → 80 at level 20). The full tree costs ~130, so
  * cities must specialize. Research takes time (one at a time per city); re-spec refunds all.
  *
  * Effects stack on top of race bonuses. Documented order everywhere: race → Library → hero → items.
@@ -35,7 +35,7 @@ public class LibraryService {
 
   public int libraryLevel(Long cityId){
     return buildings.findByCityId(cityId).stream()
-        .filter(b -> b.getType()==BuildingType.ACADEMY).map(CityBuilding::getLevel).findFirst().orElse(0);
+        .filter(b -> b.getType()==BuildingType.LIBRARY).map(CityBuilding::getLevel).findFirst().orElse(0);
   }
 
   // --- lazy settle of in-progress research -----------------------------------
@@ -101,9 +101,13 @@ public class LibraryService {
     return def.minLibraryLevel();
   }
   private int effectiveDuration(City c, LibraryTree.Research def){
-    double m = c.getRace()==Race.HUMANS ? 0.90 : 1.0;   // Humans research faster
-    return (int)Math.max(5, def.durationSeconds()*m);
+    double race = c.getRace()==Race.HUMANS ? 0.90 : 1.0;          // Humans research faster
+    double lib = 1 - librarySpeedBonus(libraryLevel(c.getId()));  // higher Library level → faster research
+    return (int)Math.max(5, def.durationSeconds()*race*lib);
   }
+
+  /** Research-time reduction from the Library building level: 3% per level, capped at 60%. */
+  public static double librarySpeedBonus(int libraryLevel){ return Math.min(0.60, Math.max(0, libraryLevel) * 0.03); }
 
   private int spentPoints(City c){
     int s=0;

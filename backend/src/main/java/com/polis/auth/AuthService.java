@@ -37,7 +37,7 @@ public class AuthService {
 
     long[] slot = firstFreeSlot(world.getId());
     cityFactory.createPlayerCity(world.getId(), p.getId(), slot[0], (int)slot[1], username + "’s Polis", true);
-    // provision Leo (unlocked) + Celine (locked) and seed the starter mission chain
+    // provision Leo (unlocked) + Titania (locked) and seed the starter mission chain
     accountSetup.setup(p.getId());
     return jwt.issue(p.getId(), p.getUsername());
   }

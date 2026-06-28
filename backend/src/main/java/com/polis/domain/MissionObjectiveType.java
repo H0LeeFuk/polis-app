@@ -13,7 +13,7 @@ public enum MissionObjectiveType {
   FOUND_CITY(true),
   OCCUPY_NODE(true),
   RESEARCH_COMPLETE(true),
-  REACH_ACADEMY_LEVEL(false),
+  REACH_LIBRARY_LEVEL(false),
   JOIN_ALLIANCE(true),
   CHAIN_COMPLETE(true);
 

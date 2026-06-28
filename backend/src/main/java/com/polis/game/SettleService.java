@@ -85,12 +85,26 @@ public class SettleService {
 
   // --- arrival (called from the tick) ---------------------------------------
 
-  /** The hero reaches the slot: park the movement and put the hero into the SETTLING wait. */
+  /**
+   * The hero reaches the slot. If the slot was taken while marching, abort: resolve the movement
+   * and send the hero straight home. Otherwise park the movement and put the hero into the
+   * SETTLING wait until the player picks a race.
+   */
   @Transactional
   public void onArrive(Movement m, Instant now){
     if (m.getArrivedAt() != null) return;
+    Hero h = heroRepo.findByActiveMovementId(m.getId()).orElse(null);
+
+    boolean slotTaken = m.getTargetSlot() != null
+        && cities.findByIslandIdAndSlot(m.getTargetIslandId(), m.getTargetSlot()).isPresent();
+    if (slotTaken){
+      m.setArrivedAt(now); m.setResolved(true); movements.save(m);
+      if (h != null) marchHeroHome(h, m.getSourceCityId(), m.getTargetIslandId());  // turn around, march home
+      return;
+    }
+
     m.setArrivedAt(now); movements.save(m);
-    heroRepo.findByActiveMovementId(m.getId()).ifPresent(h -> { h.setState(HeroState.SETTLING); heroRepo.save(h); });
+    if (h != null){ h.setState(HeroState.SETTLING); heroRepo.save(h); }
   }
 
   /** Foundings the player never completed: send the hero home and release the slot. */
@@ -120,15 +134,17 @@ public class SettleService {
     catch (Exception e){ throw new IllegalArgumentException("Pick a race: HUMANS, GIANTS, FAIRIES or NEWTS"); }
 
     Player p = players.findById(playerId).orElseThrow();
-    // the hero that actually settled this slot (could be Leo or Celine)
+    // the hero that actually settled this slot (could be Leo or Titania)
     Hero h = heroRepo.findByActiveMovementId(m.getId())
         .orElseThrow(() -> new IllegalStateException("Settling hero not found"));
 
-    // race for the slot while the hero dithered? abort and send the hero home
+    // race for the slot while the hero dithered? abort and send the hero home.
+    // Return null (do NOT throw) so these writes commit — a thrown exception would roll the
+    // hero's homeward march and the movement-resolve back, leaving the hero stuck at the slot.
     if (cities.findByIslandIdAndSlot(islandId, slotIndex).isPresent()){
       m.setResolved(true); movements.save(m);
       marchHeroHome(h, m.getSourceCityId(), islandId);
-      throw new IllegalStateException("That slot was taken while you decided — your hero is returning home");
+      return null;
     }
 
     String name = (cityName==null || cityName.isBlank())

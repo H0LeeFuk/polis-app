@@ -14,18 +14,11 @@ import java.util.Map;
  * travel in march dispatch, loot when plundering, and research cost in {@code BuildService}.
  */
 public enum Race {
-  HUMANS("Humans",
-      "Balanced and adaptable — no weaknesses, steady bonuses across the board and cheaper Academy research.",
-      "🏛", 1.05, 1.05, 1.05, 1.00, 1.00, 0.85),
-  GIANTS("Giants",
-      "Brute force. Devastating attack and heavy armour, but ponderous on the march and hungry for population.",
-      "🗿", 0.90, 1.30, 1.25, 1.25, 0.90, 1.00),
-  FAIRIES("Fairies",
-      "Swift and prosperous — fast marches, rich production and fat loot, but fragile in defence.",
-      "🧚", 1.25, 0.95, 0.80, 0.70, 1.40, 1.00),
-  NEWTS("Newts",
-      "Amphibious raiders — fearsome navies and quick crossings, dependable but unexceptional on land.",
-      "🦎", 1.05, 1.05, 1.05, 0.95, 1.05, 1.00);
+  // Races are pure cosmetic identity now — no passive bonuses. All multipliers are neutral (1.0).
+  HUMANS("Humans",  "Balanced and adaptable settlers of the Aegean.",  "🏛", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+  GIANTS("Giants",  "Towering brutes who raise cities of stone.",       "🗿", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+  FAIRIES("Fairies","Swift and graceful folk of the glades.",           "🧚", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+  NEWTS("Newts",    "Amphibious raiders at home on the open sea.",      "🦎", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
 
   public final String displayName;
   public final String description;
@@ -40,7 +33,7 @@ public enum Race {
   public final double travelMult;
   /** Multiplier on plunder carried home. */
   public final double lootMult;
-  /** Multiplier on Academy research cost (<1 cheaper). */
+  /** Multiplier on Library research cost (<1 cheaper). */
   public final double researchCostMult;
 
   Race(String displayName, String description, String icon,
@@ -51,18 +44,8 @@ public enum Race {
     this.travelMult = travelMult; this.lootMult = lootMult; this.researchCostMult = researchCostMult;
   }
 
-  /** Passive modifiers as signed percentages, for the client "active bonuses" panel. */
-  public Map<String,Integer> bonusesPct(){
-    Map<String,Integer> m = new LinkedHashMap<>();
-    m.put("production", pct(prodMult));
-    m.put("attack", pct(attackMult));
-    m.put("defense", pct(defenseMult));
-    m.put("travel", pct(1.0 / travelMult));   // shown as speed: faster march = positive
-    m.put("loot", pct(lootMult));
-    if (researchCostMult != 1.0) m.put("researchSpeed", pct(1.0 / researchCostMult));
-    return m;
-  }
-  private static int pct(double mult){ return (int)Math.round((mult - 1.0) * 100); }
+  /** Races carry no passive bonuses — always empty. */
+  public Map<String,Integer> bonusesPct(){ return new LinkedHashMap<>(); }
 
   public Map<String,Object> dto(){
     Map<String,Object> m = new LinkedHashMap<>();

@@ -114,6 +114,44 @@ public class BattleReportService {
     reports.save(r);
   }
 
+  /**
+   * Report for an instant PvE battle launched directly from a city with no marching movement
+   * (island boss, and any other on-island instant fight). The "defender" is the PvE entity.
+   */
+  @Transactional
+  public void createPveReport(Long worldId, Long attackerPlayerId, Long attackerCityId,
+                              String defenderName, BattleResult res, HeroParticipation hero){
+    City atkCity = cities.findById(attackerCityId).orElse(null);
+    BattleReport r = new BattleReport();
+    r.setWorldId(worldId);
+    r.setOutcome(res.outcome());
+    r.setAttackerPlayerId(attackerPlayerId);
+    r.setAttackerCityId(attackerCityId);
+    r.setAttackerCityName(atkCity != null ? atkCity.getName() : "Unknown city");
+    r.setAttackerPlayerName(playerName(attackerPlayerId));
+    r.setDefenderPlayerId(null);
+    r.setDefenderCityId(null);
+    r.setDefenderCityName(defenderName);
+    r.setDefenderPlayerName(null);
+    r.setAttackerTroopsSent(new HashMap<>(res.attackerSent()));
+    r.setAttackerTroopsLost(new HashMap<>(res.attackerLost()));
+    r.setAttackerTroopsSurvived(new HashMap<>(res.attackerSurvived()));
+    r.setDefenderTroopsPresent(new HashMap<>(res.defenderPresent()));
+    r.setDefenderTroopsLost(new HashMap<>(res.defenderLost()));
+    r.setDefenderTroopsSurvived(new HashMap<>(res.defenderSurvived()));
+    r.setResourcesStolen(new HashMap<>(res.resourcesStolen()));
+    r.setAttackerTotalAttackPower(res.attackerAttackPower());
+    r.setDefenderTotalDefencePower(res.defenderDefencePower());
+    r.setSiegeDamage(res.siegeDamage());
+    if (hero != null){
+      r.setHeroName(hero.name()); r.setHeroLevel(hero.level());
+      r.setHeroAttackBonusPct(hero.attackBonusPct()); r.setHeroLossReductionPct(hero.lossReductionPct());
+      r.setHeroSkillUsed(hero.skillUsed()); r.setHeroXpGained(hero.xpGained());
+      r.setHeroLeveledTo(hero.leveledTo()); r.setHeroWounded(hero.wounded());
+    }
+    reports.save(r);
+  }
+
   private String playerName(Long id){
     if (id == null) return "Barbarians";
     return players.findById(id).map(Player::getUsername).orElse("Unknown");

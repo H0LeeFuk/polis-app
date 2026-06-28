@@ -17,7 +17,7 @@ public class BanditCampController {
 
   @GetMapping("/api/islands/{islandId}/bandit-camp")
   public Map<String,Object> camp(@PathVariable Long islandId){
-    return camps.dto(islandId);
+    return camps.dto(islandId, me());
   }
 
   @PostMapping("/api/islands/{islandId}/bandit-camp/attack")

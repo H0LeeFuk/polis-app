@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getWorld, getIslandSlots, doRaid, sendMessage } from "../api";
+import { getWorld, getIslandSlots, doAttack, sendMessage } from "../api";
 import type { WorldData, WorldIsland, WorldCity, UnitDto, Hero, IslandSlots } from "../types";
 import { TravelPreview, HeroPicker } from "../movements";
 import { ResourceIslandModal } from "./NodePanel";
@@ -66,7 +66,7 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
     if (!raidTarget) return;
     const units = Object.fromEntries(Object.entries(raidCounts).filter(([, n]) => n > 0));
     if (Object.keys(units).length === 0) { setErr("Select at least one unit"); return; }
-    act(() => doRaid(activeCityId, raidTarget.id, units, raidHeroId));
+    act(() => doAttack(activeCityId, raidTarget.id, units, raidHeroId));
     setRaidTarget(null); setSelCity(null);
   }
   // heroes that can join: unlocked + idle in the city we attack from
@@ -135,7 +135,7 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                     return <span key={"e" + slot} className="wslot-empty"
                       style={{ left: `calc(50% + ${Math.cos(a) * rad}px)`, top: `calc(50% + ${Math.sin(a) * rad}px)` }}
                       title={`Empty plot ${slot + 1} — found a city here`}
-                      onClick={(e) => { e.stopPropagation(); if (!wasDragged()) openIsland(isl); }}>🏛</span>;
+                      onClick={(e) => { e.stopPropagation(); if (!wasDragged()) setFoundSlot({ islandId: isl.id, islandName: isl.name, slotIndex: slot }); }}>🏛</span>;
                   })}
                   {isl.cities.map(c => {
                     const a = (c.slot / SLOTS_PER_ISLAND) * 2 * Math.PI - Math.PI / 2;
@@ -203,7 +203,7 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                           <td className="muted">{s.ownerName}{s.alliance ? ` · ${s.alliance}` : ""}</td>
                           <td title={s.race?.name}>{s.race ? `${s.race.icon} ${s.race.name}` : "—"}</td>
                           <td>{wc && s.faction !== "self" && s.faction !== "ally" &&
-                            <button className="btn" onClick={() => { setSel(null); openRaid(wc); setSelCity(wc); }}>Raid</button>}</td>
+                            <button className="btn" onClick={() => { setSel(null); openRaid(wc); setSelCity(wc); }}>Attack</button>}</td>
                         </tr>
                       );
                     })}
@@ -252,7 +252,7 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                           <td className="muted">{isl?.name || "—"}</td>
                           <td>{fmt(c.points)}</td>
                           <td>{c.faction !== "self" && c.faction !== "ally" &&
-                            <button className="btn" onClick={() => openRaid(c)}>⚔ Raid</button>}</td>
+                            <button className="btn" onClick={() => openRaid(c)}>⚔ Attack</button>}</td>
                         </tr>
                       );
                     })}
@@ -273,7 +273,7 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
         <div className="modal-backdrop" onClick={() => setRaidTarget(null)}>
           <div className="modal-window" onClick={e => e.stopPropagation()} style={{ width: "min(460px,100%)" }}>
             <div className="modal-header">
-              <h2>Raid {raidTarget.name}</h2>
+              <h2>Attack {raidTarget.name}</h2>
               <button className="modal-close" onClick={() => setRaidTarget(null)}>✕</button>
             </div>
             <div className="modal-body">
@@ -291,8 +291,8 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                       </div>
                     ))}
                     <HeroPicker heroes={heroesHere} value={raidHeroId} onChange={setRaidHeroId} />
-                    <TravelPreview originCityId={activeCityId} targetCityId={raidTarget.id} units={raidCounts} />
-                    <button className="btn" onClick={sendRaid}>⚔ Send raid</button>
+                    <TravelPreview originCityId={activeCityId} targetCityId={raidTarget.id} units={raidCounts} heroId={raidHeroId} />
+                    <button className="btn" onClick={sendRaid}>⚔ Send attack</button>
                   </>
                 )}
               </div>

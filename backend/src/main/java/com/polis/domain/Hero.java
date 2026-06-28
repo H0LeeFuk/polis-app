@@ -24,11 +24,11 @@ public class Hero {
   @Column(name="owner_player_id", nullable=false) private Long ownerPlayerId;
   @Column(nullable=false) private String name;
 
-  /** Which fixed hero this is (LEO / CELINE). */
+  /** Which fixed hero this is (LEO / TITANIA). */
   @Enumerated(EnumType.STRING) @Column(name="hero_key", nullable=false) private HeroKey heroKey = HeroKey.LEO;
-  /** Hero race flavour: LEO=HUMANS, CELINE=FAIRIES. Drives per-hero bonus scaling. */
+  /** Hero race flavour: LEO=HUMANS, TITANIA=FAIRIES. Drives per-hero bonus scaling. */
   @Enumerated(EnumType.STRING) @Column(nullable=false) private Race race = Race.HUMANS;
-  /** False until unlocked (CELINE starts locked until the starter mission chain is complete). */
+  /** False until unlocked (TITANIA starts locked until the starter mission chain is complete). */
   @Column(nullable=false) private boolean unlocked = true;
 
   private int level = 1;
@@ -52,10 +52,11 @@ public class Hero {
   /** Skill armed for the next action (consumed on resolve), or null. */
   @Column(name="armed_skill") private String armedSkill;
 
-  // equipment slots (PART 3) — reference HeroItem ids
+  // equipment slots (PART 3) — reference HeroItem ids. Four slots: Weapon/Armor/Relic/Pet.
   @Column(name="equipped_weapon_id") private Long equippedWeaponId;
   @Column(name="equipped_armor_id")  private Long equippedArmorId;
-  @Column(name="equipped_amulet_id") private Long equippedAmuletId;
+  @Column(name="equipped_relic_id")  private Long equippedRelicId;
+  @Column(name="equipped_pet_id")    private Long equippedPetId;
 
   private Instant createdAt = Instant.now();
 }

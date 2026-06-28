@@ -22,25 +22,37 @@ public class MovementService {
   private final PlayerRepo players;
   private final IslandRepo islands;
   private final TravelTimeService travel;
+  private final HeroRepo heroes;
 
   public MovementService(MovementRepo movements, CityRepo cities, PlayerRepo players,
-                         IslandRepo islands, TravelTimeService travel){
+                         IslandRepo islands, TravelTimeService travel, HeroRepo heroes){
     this.movements = movements; this.cities = cities; this.players = players;
-    this.islands = islands; this.travel = travel;
+    this.islands = islands; this.travel = travel; this.heroes = heroes;
   }
 
   /** Preview the travel time for an attack without creating a movement. */
   @Transactional(readOnly = true)
-  public Map<String,Object> preview(Long playerId, Long originCityId, Long targetCityId, Map<String,Integer> units){
+  public Map<String,Object> preview(Long playerId, Long originCityId, Long targetCityId, Map<String,Integer> units, Long heroId){
     City origin = cities.findById(originCityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
     if (!Objects.equals(origin.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
     City target = cities.findById(targetCityId).orElseThrow(() -> new IllegalArgumentException("Target not found"));
     Duration d = travel.travelTime(originCityId, targetCityId, units);
+    int heroLoad = heroId == null ? 0 : heroes.findById(heroId)
+        .filter(h -> Objects.equals(h.getOwnerPlayerId(), playerId))
+        .map(h -> travel.heroLandLoad(h.getRace())).orElse(0);
+    var tc = travel.checkTransport(units, travel.crossesWater(origin.getIslandId(), target.getIslandId()), heroLoad);
     Map<String,Object> out = new LinkedHashMap<>();
     out.put("travelSeconds", d.getSeconds());
     out.put("distance", Math.round(travel.distanceTiles(origin.getIslandId(), target.getIslandId()) * 10.0) / 10.0);
     out.put("slowestUnit", travel.slowestUnit(units));
     out.put("arriveAt", Instant.now().plus(d).toString());
+    // movement-class / transport summary for the dispatch UI
+    out.put("routeCrossesWater", tc.crossesWater());
+    out.put("requiredTransportCapacity", tc.requiredCapacity());
+    out.put("providedTransportCapacity", tc.providedCapacity());
+    out.put("transportSufficient", tc.sufficient());
+    out.put("transportShipsShort", tc.shipsShort());
+    if (tc.reason()!=null) out.put("transportWarning", tc.reason());
     return out;
   }
 
@@ -128,7 +140,16 @@ public class MovementService {
     }
 
     Long originId, targetId; String originName, targetName;
-    if (m.getPhase() == MovementPhase.RETURN){
+    if (m.getTargetCampId() != null){
+      // bandit-camp raid: outbound marches to the camp, the return brings the army home
+      if (m.getPhase() == MovementPhase.RETURN){
+        originId = null; originName = "🏴‍☠️ Bandit Camp";
+        targetId = m.getSourceCityId(); targetName = cityName(targetId, nameCache);
+      } else {
+        originId = m.getSourceCityId(); originName = cityName(originId, nameCache);
+        targetId = null; targetName = "🏴‍☠️ Bandit Camp";
+      }
+    } else if (m.getPhase() == MovementPhase.RETURN){
       // a returning army leaves the raided target and marches back to its home (source) city
       originId = m.getTargetCityId(); originName = cityName(originId, nameCache);
       targetId = m.getSourceCityId(); targetName = cityName(targetId, nameCache);

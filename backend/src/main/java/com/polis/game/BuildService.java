@@ -82,6 +82,9 @@ public class BuildService {
     City c = owned(playerId, cityId);
     if (count <= 0) throw new IllegalArgumentException("Count must be positive");
     UnitType type = catalog.get(unitName);
+    // own-race production only: a city may build only its own race's roster (mix armies at dispatch)
+    if (type.getRace() != null && c.getRace() != null && type.getRace() != c.getRace())
+      throw new IllegalStateException("This city's " + c.getRace().displayName + " barracks cannot train " + type.getName());
     if (type.getResearchRequired() != null && !hasResearch(cityId, ResearchType.valueOf(type.getResearchRequired())))
       throw new IllegalStateException("Requires research: " + type.getResearchRequired());
     // Library siege gate: siege engines need the Siegecraft research
@@ -109,8 +112,8 @@ public class BuildService {
   @Transactional
   public void research(Long playerId, Long cityId, ResearchType type){
     City c = owned(playerId, cityId);
-    if (cityService.level(cityId, BuildingType.ACADEMY) < type.req)
-      throw new IllegalStateException("Academy level too low (needs " + type.req + ")");
+    if (cityService.level(cityId, BuildingType.LIBRARY) < type.req)
+      throw new IllegalStateException("Library level too low (needs " + type.req + ")");
     if (hasResearch(cityId, type)) throw new IllegalStateException("Already researched");
     double rm = c.getRace()!=null ? c.getRace().researchCostMult : 1.0;   // HUMANS research discount
     long cw=Math.round(type.costWood*rm), cs=Math.round(type.costStone*rm), csv=Math.round(type.costSilver*rm);
@@ -172,16 +175,20 @@ public class BuildService {
   }
 
   @Transactional
-  public Movement raid(Long playerId, Long cityId, Long targetCityId, Map<String,Integer> army, Long heroId){
+  public Movement attack(Long playerId, Long cityId, Long targetCityId, Map<String,Integer> army, Long heroId){
     City src = owned(playerId, cityId);
     City tgt = cities.findById(targetCityId).orElseThrow(() -> new IllegalArgumentException("Target not found"));
-    if (Objects.equals(tgt.getPlayerId(), playerId)) throw new IllegalStateException("Cannot raid your own city");
+    if (Objects.equals(tgt.getPlayerId(), playerId)) throw new IllegalStateException("Cannot attack your own city");
     if (army.isEmpty()) throw new IllegalArgumentException("Select at least one unit");
+    // LAND troops — and a land (non-flying/swimming) hero — can't cross open water without transport ships
+    Hero hero = heroId != null ? heroes.requireOwned(playerId, heroId) : null;
+    int heroLoad = hero != null ? travel.heroLandLoad(hero.getRace()) : 0;
+    travel.requireTransport(army, src.getIslandId(), tgt.getIslandId(), heroLoad);
     deductGarrison(cityId, army);
     long secs = travel.travelTime(cityId, targetCityId, army).getSeconds();
     if (src.getRace()!=null) secs = (long)(secs * src.getRace().travelMult);          // race march pace
     secs = (long)(secs * library.effects(cityId).travelMult());                       // Library: Wayfinding etc.
-    if (heroId != null) secs = (long)(secs * heroes.travelMult(heroes.requireOwned(playerId, heroId))); // Cunning / Forced March
+    if (hero != null) secs = (long)(secs * heroes.travelMult(hero));                  // Cunning / Forced March
     Movement m = new Movement();
     m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
     m.setTargetCityId(targetCityId); m.setPhase(MovementPhase.OUT);

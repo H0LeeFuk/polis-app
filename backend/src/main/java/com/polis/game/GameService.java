@@ -78,6 +78,7 @@ public class GameService {
       b.put("cost",List.of(cost[0],cost[1],cost[2]));
       b.put("seconds",GameRules.buildSeconds(t,l,senate));
       b.put("atMax", l>=t.max);
+      if (l < t.max) b.put("benefit", buildingBenefit(t, l));   // what the next level gives
       bld.add(b);
     }
 
@@ -93,6 +94,9 @@ public class GameService {
       t.put("atk",u.getAttack());
       t.put("defBlunt",u.getDefenseBlunt()); t.put("defSharp",u.getDefenseSharp()); t.put("defDistance",u.getDefenseDistance());
       t.put("speed",u.getSpeedMinutesPerTile()); t.put("pop",u.getPopulationCost()); t.put("carry",u.getCarryCapacity());
+      t.put("movementClass",u.getMovementClass().name());
+      t.put("transportCapacity",u.getTransportCapacity());
+      t.put("requiresTransport",u.isRequiresTransport());
       t.put("cost",List.of(u.getCostWood(),u.getCostStone(),u.getCostSilver()));
       t.put("seconds",GameRules.unitSeconds(u, lv.get(from==QueueType.HARBOR?BuildingType.HARBOR:BuildingType.BARRACKS)));
       boolean unlocked = u.getResearchRequired()==null || done.contains(ResearchType.valueOf(u.getResearchRequired()));
@@ -151,4 +155,27 @@ public class GameService {
     m.put("trainable",trainable); m.put("research",rsr); m.put("movements",moves);
     return m;
   }
+
+  /** Human-readable benefit of upgrading {@code t} from level {@code l} to {@code l+1}. */
+  private String buildingBenefit(BuildingType t, int l){
+    int n = l + 1;
+    return switch (t){
+      case TIMBER    -> "Wood "   + (long)GameRules.prodPerHour(l) + "/h → " + (long)GameRules.prodPerHour(n) + "/h";
+      case QUARRY    -> "Stone "  + (long)GameRules.prodPerHour(l) + "/h → " + (long)GameRules.prodPerHour(n) + "/h";
+      case MINE      -> "Silver " + (long)GameRules.prodPerHour(l) + "/h → " + (long)GameRules.prodPerHour(n) + "/h";
+      case FARM      -> "Population cap " + GameRules.farmPop(l) + " → " + GameRules.farmPop(n);
+      case TEMPLE    -> "Favor " + (long)GameRules.favorPerHour(l) + "/h → " + (long)GameRules.favorPerHour(n)
+                        + "/h (cap " + GameRules.favorCap(l) + " → " + GameRules.favorCap(n) + ")";
+      case SENATE    -> "Build speed +" + senatePct(l) + "% → +" + senatePct(n) + "% faster construction";
+      case BARRACKS  -> "Training +" + trainPct(l) + "% → +" + trainPct(n) + "% faster";
+      case HARBOR    -> "Ship training +" + trainPct(l) + "% → +" + trainPct(n) + "% faster";
+      case WAREHOUSE -> "Raises resource storage capacity";
+      case LIBRARY   -> "Research speed +" + libPct(l) + "% → +" + libPct(n) + "% (unlocks research up to level " + n + ")";
+      case WALL      -> "Strengthens the city's defences";
+      case AGORA     -> "Expands trade and civic capacity";
+    };
+  }
+  private static int senatePct(int level){ return (int)Math.round(Math.min(0.6, level * 0.04) * 100); }
+  private static int trainPct(int level){ return (int)Math.round(Math.min(0.5, Math.max(0, level - 1) * 0.03) * 100); }
+  private static int libPct(int level){ return (int)Math.round(LibraryService.librarySpeedBonus(level) * 100); }
 }

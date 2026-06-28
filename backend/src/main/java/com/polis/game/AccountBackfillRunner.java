@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
  * One-shot migration helper: ensures every human player has the two heroes (existing single
  * hero already mapped to LEO by V10) plus seeded starter missions. Runs after world seeding.
  *
- * <p>Pre-existing players re-enter the starter chain (their old hero becomes Leo, Celine starts
+ * <p>Pre-existing players re-enter the starter chain (their old hero becomes Leo, Titania starts
  * locked) — acceptable for this dev/migration; document if grandfathering established players.
  */
 @Component

@@ -44,6 +44,8 @@ public class SettleController {
   public Map<String,Object> found(@PathVariable Long islandId, @PathVariable int slotIndex,
                                   @RequestBody FoundRequest r){
     City c = settle.foundCity(me(), islandId, slotIndex, r.race(), r.cityName(), r.heroReturnCityId());
+    if (c == null)
+      return Map.of("ok", false, "message", "That slot was taken while you decided — your hero is returning home");
     return Map.of("ok", true, "cityId", c.getId());
   }
 

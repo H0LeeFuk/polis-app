@@ -43,7 +43,7 @@ export const doResearch = (c: number, researchType: string) => post(c, "research
 export const doRename   = (c: number, name: string) => post(c, "rename", { name });
 export const doCancel   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/cancel/${jobId}`, { method: "POST" });
 export const doFinish   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/finish/${jobId}`, { method: "POST" });
-export const doRaid     = (c: number, targetCityId: number, units: Record<string, number>, heroId: number | null = null) => post(c, "raid", { targetCityId, units, heroId });
+export const doAttack   = (c: number, targetCityId: number, units: Record<string, number>, heroId: number | null = null) => post(c, "attack", { targetCityId, units, heroId });
 
 // --- city founding (hero settle + race choice) ---
 export const getIslandSlots = (islandId: number) => api<IslandSlots>(`/api/islands/${islandId}/slots`);
@@ -51,7 +51,7 @@ export const settleSlot = (islandId: number, slotIndex: number, fromCityId: numb
   api<{ ok: boolean; movementId: number; arriveAt: string | null }>(
     `/api/islands/${islandId}/slots/${slotIndex}/settle`, { method: "POST", body: JSON.stringify({ fromCityId, heroId }) });
 export const foundCity = (islandId: number, slotIndex: number, race: string, cityName: string, heroReturnCityId?: number | null) =>
-  api<{ ok: boolean; cityId: number }>(
+  api<{ ok: boolean; cityId?: number; message?: string }>(
     `/api/islands/${islandId}/slots/${slotIndex}/found-city`,
     { method: "POST", body: JSON.stringify({ race, cityName, heroReturnCityId: heroReturnCityId ?? null }) });
 export const getFoundingStatus = () => api<FoundingStatus>("/api/players/me/founding-status");
@@ -61,8 +61,8 @@ export const settlePreview = (islandId: number, fromCityId: number, heroId?: num
 // --- troop movements ---
 export const getCityMovements = (cityId: number) => api<Movement[]>(`/api/cities/${cityId}/movements`);
 export const getMyMovements = () => api<PlayerMovements>("/api/players/me/movements");
-export const previewAttack = (cityId: number, targetCityId: number, units: Record<string, number>) =>
-  api<AttackPreview>(`/api/cities/${cityId}/attack/preview?targetCityId=${targetCityId}&units=${encodeURIComponent(JSON.stringify(units))}`);
+export const previewAttack = (cityId: number, targetCityId: number, units: Record<string, number>, heroId?: number | null) =>
+  api<AttackPreview>(`/api/cities/${cityId}/attack/preview?targetCityId=${targetCityId}&units=${encodeURIComponent(JSON.stringify(units))}${heroId ? `&heroId=${heroId}` : ""}`);
 
 // --- battle reports ---
 export interface ReportFilters { page?: number; size?: number; outcome?: BattleOutcome; read?: boolean; cityId?: number; }
@@ -89,7 +89,7 @@ export const markAllReportsRead = () =>
 export const getUnreadReportCount = () =>
   api<{ count: number }>("/api/players/me/battle-reports/unread-count");
 
-// --- heroes (Leo + Celine) ---
+// --- heroes (Leo + Titania) ---
 export const getHeroes = () => api<Hero[]>("/api/players/me/heroes");
 export const setHeroAttributes = (heroId: number, leadership: number, cunning: number, valor: number) =>
   api<Hero>(`/api/players/me/heroes/${heroId}/attributes`, { method: "POST", body: JSON.stringify({ leadership, cunning, valor }) });
@@ -134,6 +134,10 @@ export const withdrawNode = (nodeId: number, troops?: Record<string, number>) =>
 export const getBanditCamp = (islandId: number) => api<BanditCamp>(`/api/islands/${islandId}/bandit-camp`);
 export const attackBanditCamp = (islandId: number, cityId: number, troops: Record<string, number>) =>
   api<BanditAttackResult>(`/api/islands/${islandId}/bandit-camp/attack`, { method: "POST", body: JSON.stringify({ cityId, troops }) });
+
+// --- alliances ---
+export const createAlliance = (tag: string, name: string) =>
+  api<{ id: number; tag: string; name: string }>("/api/alliances", { method: "POST", body: JSON.stringify({ tag, name }) });
 
 // --- island boss ---
 export const getIslandBoss = (islandId: number) => api<IslandBoss>(`/api/islands/${islandId}/boss`);

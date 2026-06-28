@@ -1,26 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { getHeroInventory } from "../api";
-import type { HeroItemDto } from "../types";
+import type { HeroItemDto, ItemSlot, ItemRarity } from "../types";
 
 const BUFF_LABEL: Record<string, string> = {
-  ATTACK_PCT: "Attack", DEFENSE_SHARP_PCT: "Sharp def", DEFENSE_BLUNT_PCT: "Blunt def",
-  DEFENSE_DISTANCE_PCT: "Distance def", TRAVEL_TIME_PCT: "Travel time", LOOT_PCT: "Loot", DROP_CHANCE_PCT: "Drop chance",
+  ATTACK_PCT: "Attack", DEFENSE_PCT: "Defense", DEFENSE_SHARP_PCT: "Sharp def", DEFENSE_BLUNT_PCT: "Blunt def",
+  DEFENSE_DISTANCE_PCT: "Distance def", TRAVEL_TIME_PCT: "Travel time", NAVAL_TRAVEL_TIME_PCT: "Naval speed",
+  LOOT_PCT: "Loot", DROP_CHANCE_PCT: "Drop chance", HERO_XP_PCT: "Hero XP", SKILL_COOLDOWN_PCT: "Skill cooldown",
+  WOUND_RECOVERY_PCT: "Wound recovery", LOSS_REDUCTION_PCT: "Losses",
 };
-const SLOT_GLYPH: Record<string, string> = { WEAPON: "⚔", ARMOR: "🛡", AMULET: "📿" };
-const RARITY_LABEL: Record<string, string> = { COMMON: "Common", RARE: "Rare", EPIC: "Epic" };
-const MIN_SLOTS = 24;   // always render a full grid of empty plinths
+const SLOT_GLYPH: Record<string, string> = { WEAPON: "⚔", ARMOR: "🛡", RELIC: "🏺", PET: "🐾" };
+const RARITY_LABEL: Record<string, string> = { COMMON: "Common", RARE: "Rare", EPIC: "Epic", LEGENDARY: "Legendary" };
+const SLOTS: ItemSlot[] = ["WEAPON", "ARMOR", "RELIC", "PET"];
+const RARITIES: ItemRarity[] = ["COMMON", "RARE", "EPIC", "LEGENDARY"];
+const MIN_SLOTS = 24;
 
 /** Relic bag shared by both heroes — Aegean armoury styling. Equip from the Heroes panel. */
 export default function InventoryModal({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<HeroItemDto[] | null>(null);
-  const [filter, setFilter] = useState<"ALL" | "WEAPON" | "ARMOR" | "AMULET">("ALL");
+  const [slot, setSlot] = useState<"ALL" | ItemSlot>("ALL");
+  const [rarity, setRarity] = useState<"ALL" | ItemRarity>("ALL");
   const [selId, setSelId] = useState<number | null>(null);
 
   useEffect(() => { getHeroInventory().then(setItems).catch(() => setItems([])); }, []);
 
   const shown = useMemo(
-    () => (items ?? []).filter(it => filter === "ALL" || it.slot === filter),
-    [items, filter]);
+    () => (items ?? []).filter(it => (slot === "ALL" || it.slot === slot) && (rarity === "ALL" || it.rarity === rarity)),
+    [items, slot, rarity]);
   const sel = useMemo(() => (items ?? []).find(it => it.id === selId) ?? null, [items, selId]);
 
   const slotCount = Math.max(MIN_SLOTS, Math.ceil((shown.length + 1) / 8) * 8);
@@ -37,13 +42,23 @@ export default function InventoryModal({ onClose }: { onClose: () => void }) {
 
           <div className="inv2-toolbar">
             <div className="inv2-tabs">
-              {(["ALL", "WEAPON", "ARMOR", "AMULET"] as const).map(f => (
-                <button key={f} className={"inv2-tab" + (filter === f ? " on" : "")} onClick={() => setFilter(f)}>
-                  {f === "ALL" ? "All" : <>{SLOT_GLYPH[f]} <span className="inv2-tab-lbl">{f.charAt(0) + f.slice(1).toLowerCase()}</span></>}
+              <button className={"inv2-tab" + (slot === "ALL" ? " on" : "")} onClick={() => setSlot("ALL")}>All</button>
+              {SLOTS.map(s => (
+                <button key={s} className={"inv2-tab" + (slot === s ? " on" : "")} onClick={() => setSlot(s)}>
+                  {SLOT_GLYPH[s]} <span className="inv2-tab-lbl">{s.charAt(0) + s.slice(1).toLowerCase()}</span>
                 </button>
               ))}
             </div>
             <span className="inv2-count">{items ? `${(items ?? []).length} relics` : ""}</span>
+          </div>
+
+          <div className="inv2-tabs" style={{ marginBottom: 8 }}>
+            <button className={"inv2-tab" + (rarity === "ALL" ? " on" : "")} onClick={() => setRarity("ALL")}>Any rarity</button>
+            {RARITIES.map(r => (
+              <button key={r} className={"inv2-tab rar-" + r.toLowerCase() + (rarity === r ? " on" : "")} onClick={() => setRarity(r)}>
+                {RARITY_LABEL[r]}
+              </button>
+            ))}
           </div>
 
           {!items ? <p className="muted inv2-msg">Unsealing the vault…</p> : (
@@ -69,23 +84,20 @@ export default function InventoryModal({ onClose }: { onClose: () => void }) {
                     <div className="inv2-detail-name">
                       {sel.name}
                       <span className="inv2-rar-tag">{RARITY_LABEL[sel.rarity] ?? sel.rarity}</span>
-                      {sel.equipped && <span className="inv2-eq-tag">★ Equipped</span>}
+                      {sel.equippedOn && <span className="inv2-eq-tag">★ Equipped on {sel.equippedOn}</span>}
                     </div>
-                    <div className="inv2-detail-slot">{sel.slot.charAt(0) + sel.slot.slice(1).toLowerCase()} relic</div>
+                    <div className="inv2-detail-slot">{sel.slot.charAt(0) + sel.slot.slice(1).toLowerCase()} · equip from the Heroes panel</div>
                     <div className="inv2-buffs">
                       {Object.entries(sel.buffs).map(([b, v]) => (
                         <span className="inv2-buff" key={b}>+{v}% {BUFF_LABEL[b] ?? b}</span>
                       ))}
                     </div>
+                    {sel.effectLabels?.map((lbl, i) => (
+                      <div className="inv2-special" key={i}>✦ {lbl}</div>
+                    ))}
                   </div>
                 </div>
-              ) : (
-                <p className="muted inv2-hint">
-                  {(items ?? []).length === 0
-                    ? "The vault is empty. Hold resource nodes and slay island bosses to claim relics."
-                    : "Select a relic to inspect it · equip relics from the Heroes panel."}
-                </p>
-              )}
+              ) : null}
             </>
           )}
         </div>

@@ -10,10 +10,10 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * Owns the account heroes (now TWO per player: LEO and CELINE). Each hero levels, equips,
+ * Owns the account heroes (now TWO per player: LEO and TITANIA). Each hero levels, equips,
  * arms skills, marches and wounds independently. All player actions are scoped to a heroId.
  *
- * <p>Race flavour: LEO (Humans) is a balanced generalist; CELINE (Fairies) scales harder on
+ * <p>Race flavour: LEO (Humans) is a balanced generalist; TITANIA (Fairies) scales harder on
  * Cunning (more loot, faster travel) but defends more fragilely — so the player picks a hero
  * to fit the job.
  */
@@ -26,10 +26,10 @@ public class HeroService {
   static final double VALOR_WOUND_STEP = 0.05;
   static final long WOUND_BASE_SECONDS = 8 * 3600;
   static final double WOUND_THRESHOLD = 0.70;
-  // Fairy (Celine) racial scaling
-  static final double FAIRY_LOOT_STEP = 0.045;
-  static final double FAIRY_TRAVEL_STEP = 0.022;
-  static final double FAIRY_DEFENSE_MULT = 0.90;
+  // Races carry no buffs — Fairy (Titania) scaling matches the generic hero (no racial difference).
+  static final double FAIRY_LOOT_STEP = CUNNING_LOOT_STEP;
+  static final double FAIRY_TRAVEL_STEP = CUNNING_TRAVEL_STEP;
+  static final double FAIRY_DEFENSE_MULT = 1.00;
 
   private final HeroRepo heroes;
   private final CityRepo cities;
@@ -44,7 +44,7 @@ public class HeroService {
   @Transactional(readOnly = true)
   public List<Hero> list(Long playerId){
     List<Hero> hs = heroes.findByOwnerPlayerId(playerId);
-    hs.sort(Comparator.comparing(Hero::getHeroKey));   // LEO before CELINE
+    hs.sort(Comparator.comparing(Hero::getHeroKey));   // LEO before TITANIA
     return hs;
   }
 
@@ -164,14 +164,14 @@ public class HeroService {
   public CombatEngine.Mods offenseMods(Hero h){
     double attackMult = 1 + LEADERSHIP_STEP * h.getAttrLeadership() + equipment.attackPct(h);
     if (HeroSkill.CHARGE.name().equals(h.getArmedSkill())) attackMult += 0.25;
-    double lossMult = Math.max(0.1, 1 - VALOR_LOSS_STEP * h.getAttrValor());
+    double lossMult = Math.max(0.1, (1 - VALOR_LOSS_STEP * h.getAttrValor()) * (1 - equipment.lossReductionPct(h)));
     if (HeroSkill.WAR_CRY.name().equals(h.getArmedSkill())) lossMult *= 0.5;
     return new CombatEngine.Mods(attackMult, 1, 1, lossMult);
   }
 
   public CombatEngine.Mods defenseMods(Hero h){
     double defMult = 1 + LEADERSHIP_STEP * h.getAttrLeadership() + equipment.defensePct(h);
-    if (h.getRace() == Race.FAIRIES) defMult *= FAIRY_DEFENSE_MULT;   // Celine defends fragilely
+    if (h.getRace() == Race.FAIRIES) defMult *= FAIRY_DEFENSE_MULT;   // Titania defends fragilely
     double sharpMult = HeroSkill.PHALANX.name().equals(h.getArmedSkill()) ? 1.30 : 1.0;
     sharpMult += equipment.defenseSharpPct(h);
     return new CombatEngine.Mods(1, defMult, sharpMult, 1);
@@ -191,10 +191,29 @@ public class HeroService {
   public int attackBonusPct(Hero h){ return (int)Math.round((offenseMods(h).attackMult() - 1) * 100); }
   public int lossReductionPct(Hero h){ return (int)Math.round((1 - offenseMods(h).attackerLossMult()) * 100); }
 
+  // --- equipment special effects exposed to the combat/movement engines -------
+  /** Discrete combat effects (armour pen, first strike, safe round) for a hero leading an army. */
+  public CombatEngine.CombatFx combatFx(Hero h){
+    return new CombatEngine.CombatFx(
+        equipment.armorPen(h, AttackType.BLUNT),
+        equipment.armorPen(h, AttackType.SHARP),
+        equipment.armorPen(h, AttackType.DISTANCE),
+        equipment.firstStrikePct(h),
+        equipment.extraSafeRound(h));
+  }
+  public double retaliationHealPct(Hero h){ return equipment.retaliationHealPct(h); }
+  public double luckyHaulChance(Hero h){ return equipment.luckyHaulChance(h); }
+  public double wallDamageBonusPct(Hero h){ return equipment.wallDamageBonusPct(h); }
+  public double cityDefenseBonusPct(Hero h){ return equipment.cityDefenseBonusPct(h); }
+  public boolean scoutReveal(Hero h){ return equipment.scoutReveal(h); }
+  public boolean landPenaltyImmunity(Hero h){ return equipment.landPenaltyImmunity(h); }
+  public List<String> activeEffectLabels(Hero h){ return equipment.activeEffectLabels(h); }
+
   // --- XP / leveling / wounds -------------------------------------------------
 
   public Integer grantXp(Hero h, long xp){
     if (xp <= 0) return null;
+    xp = Math.round(xp * (1 + equipment.heroXpPct(h)));   // HERO_XP_PCT items boost XP gain
     h.setCurrentXp(h.getCurrentXp() + xp);
     int startLevel = h.getLevel();
     while (h.getCurrentXp() >= h.getXpToNextLevel()){
@@ -224,13 +243,16 @@ public class HeroService {
     String armed = h.getArmedSkill();
     if (armed == null) return null;
     HeroSkill s = HeroSkill.valueOf(armed);
-    h.getSkillCooldowns().put(s.name(), now.plusSeconds(s.cooldownHours * 3600L).toString());
+    long cd = Math.round(s.cooldownHours * 3600L * Math.max(0.0, 1 - equipment.skillCooldownPct(h)));  // SKILL_COOLDOWN_PCT
+    h.getSkillCooldowns().put(s.name(), now.plusSeconds(cd).toString());
     h.setArmedSkill(null);
     return armed;
   }
 
   public void wound(Hero h, Instant now){
-    long secs = (long)(WOUND_BASE_SECONDS * Math.max(0.1, 1 - VALOR_WOUND_STEP * h.getAttrValor()));
+    long secs = (long)(WOUND_BASE_SECONDS
+        * Math.max(0.1, 1 - VALOR_WOUND_STEP * h.getAttrValor())
+        * Math.max(0.1, 1 - equipment.woundRecoveryPct(h)));   // WOUND_RECOVERY_PCT items heal faster
     h.setState(HeroState.WOUNDED);
     h.setWoundedUntil(now.plusSeconds(secs));
   }
@@ -287,10 +309,17 @@ public class HeroService {
     bonuses.put("defensePct", (int)Math.round((LEADERSHIP_STEP*h.getAttrLeadership() + equipment.defensePct(h))*100));
     bonuses.put("lootPct", (int)Math.round((lootStep*h.getAttrCunning() + equipment.lootPct(h))*100));
     bonuses.put("travelPct", (int)Math.round((travelStep*h.getAttrCunning() + equipment.travelPct(h))*100));
-    bonuses.put("lossReductionPct", (int)Math.round(VALOR_LOSS_STEP*h.getAttrValor()*100));
+    bonuses.put("lossReductionPct",
+        (int)Math.round((1 - (1 - VALOR_LOSS_STEP*h.getAttrValor())*(1 - equipment.lossReductionPct(h)))*100));
+    bonuses.put("heroXpPct", (int)Math.round(equipment.heroXpPct(h)*100));
+    bonuses.put("dropChancePct", (int)Math.round(equipment.dropChancePct(h)*100));
+    bonuses.put("skillCooldownPct", (int)Math.round(equipment.skillCooldownPct(h)*100));
+    bonuses.put("woundRecoveryPct", (int)Math.round(equipment.woundRecoveryPct(h)*100));
+    bonuses.put("navalTravelPct", (int)Math.round(equipment.navalTravelPct(h)*100));
     m.put("bonuses", bonuses);
 
     m.put("equipment", equipment.equippedDto(h));
+    m.put("specialEffects", equipment.activeEffectLabels(h));   // loadout summary / report clarity
     return m;
   }
 }

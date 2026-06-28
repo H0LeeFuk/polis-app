@@ -6,9 +6,12 @@ import {
 import type { Hero, HeroSkillDto, HeroItemDto, CitySummary } from "../types";
 
 const BUFF_LABEL: Record<string, string> = {
-  ATTACK_PCT: "Attack", DEFENSE_SHARP_PCT: "Sharp def", DEFENSE_BLUNT_PCT: "Blunt def",
-  DEFENSE_DISTANCE_PCT: "Distance def", TRAVEL_TIME_PCT: "Travel time", LOOT_PCT: "Loot", DROP_CHANCE_PCT: "Drop chance",
+  ATTACK_PCT: "Attack", DEFENSE_PCT: "Defense", DEFENSE_SHARP_PCT: "Sharp def", DEFENSE_BLUNT_PCT: "Blunt def",
+  DEFENSE_DISTANCE_PCT: "Distance def", TRAVEL_TIME_PCT: "Travel time", NAVAL_TRAVEL_TIME_PCT: "Naval speed",
+  LOOT_PCT: "Loot", DROP_CHANCE_PCT: "Drop chance", HERO_XP_PCT: "Hero XP", SKILL_COOLDOWN_PCT: "Skill cooldown",
+  WOUND_RECOVERY_PCT: "Wound recovery", LOSS_REDUCTION_PCT: "Losses",
 };
+const EQUIP_SLOTS = ["weapon", "armor", "relic", "pet"] as const;
 const ATTR_INFO: Record<string, { glyph: string; blurb: string; preview: (n: number) => string }> = {
   leadership: { glyph: "👑", blurb: "Your troops fight harder under your command.", preview: n => `+${n * 2}% attack/defense` },
   cunning:    { glyph: "🦊", blurb: "Plunder more and march faster.", preview: n => `+${n * 3}% loot · −${(n * 1.5).toFixed(1)}% travel` },
@@ -22,7 +25,7 @@ const SKILL_DESC: Record<string, string> = {
   FORCED_MARCH: "Your next movement ignores 40% of travel time.",
   WAR_CRY: "Your troops take no losses in the first round of the next fight.",
 };
-const HERO_PORTRAIT: Record<string, string> = { LEO: "🛡", CELINE: "🧚" };
+const HERO_PORTRAIT: Record<string, string> = { LEO: "🛡", TITANIA: "🧚" };
 
 function countdown(iso: string | null): string {
   if (!iso) return "";
@@ -171,21 +174,28 @@ function HeroDashboard({ hero, cities, onChanged }: {
           onArm={() => act(() => armHeroSkill(hero.id, s.id))} />)}
       </div>
 
+      {hero.specialEffects && hero.specialEffects.length > 0 && (
+        <div className="hero-loadout-fx">
+          {hero.specialEffects.map((e, i) => <span className="hero-fx-chip" key={i}>✦ {e}</span>)}
+        </div>
+      )}
+
       <div className="br-section-label">Equipment</div>
       <div className="hero-equip-slots">
-        {(["weapon", "armor", "amulet"] as const).map(slot => {
+        {EQUIP_SLOTS.map(slot => {
           const it = hero.equipment[slot];
           return <div className={"hero-slot" + (it ? " filled rar-" + it.rarity.toLowerCase() : "")} key={slot}
             title={it ? "Click to unequip" : ""}
             onClick={() => it && act(() => unequipHeroSlot(hero.id, slot.toUpperCase()))}>
             <span className="hero-slot-name">{slot}</span>
-            <span>{it ? it.name : "— empty —"}</span>
+            <span>{it ? it.name : `— no ${slot} —`}</span>
             {it && <small className="muted">{Object.entries(it.buffs).map(([b, v]) => `+${v}% ${BUFF_LABEL[b] ?? b}`).join(", ")}</small>}
+            {it?.effectLabels?.map((lbl, i) => <small className="hero-slot-fx" key={i}>✦ {lbl}</small>)}
           </div>;
         })}
       </div>
-      <HeroInventory onEquip={(id) => act(() => equipHeroItem(hero.id, id))} reloadKey={hero} />
-      <p className="muted" style={{ fontSize: 12 }}>Relics are shared between heroes; drop from holding resource nodes.</p>
+      <HeroInventory onEquip={(id) => act(() => equipHeroItem(hero.id, id))} reloadKey={hero} heroName={hero.name} />
+      <p className="muted" style={{ fontSize: 12 }}>Items are account-wide and can be on only one hero at a time; any hero equips any item.</p>
 
       <div className="br-section-label">Station</div>
       <div className="hero-station">
@@ -201,19 +211,23 @@ function HeroDashboard({ hero, cities, onChanged }: {
   );
 }
 
-function HeroInventory({ onEquip, reloadKey }: { onEquip: (id: number) => void; reloadKey: unknown }) {
+function HeroInventory({ onEquip, reloadKey, heroName }: { onEquip: (id: number) => void; reloadKey: unknown; heroName: string }) {
   const [items, setItems] = useState<HeroItemDto[]>([]);
   useEffect(() => { getHeroInventory().then(setItems).catch(() => setItems([])); }, [reloadKey]);
-  const free = items.filter(i => !i.equipped);
-  if (free.length === 0) return <p className="muted" style={{ fontSize: 12 }}>Inventory empty — hold a node to find relics.</p>;
+  // items not currently on THIS hero — free ones can be equipped, ones on the other hero are noted
+  const usable = items.filter(i => i.equippedOn !== heroName);
+  if (usable.length === 0) return <p className="muted" style={{ fontSize: 12 }}>No spare items — defeat island bosses to find more.</p>;
   return (
     <div className="hero-inventory">
-      {free.map(it => (
+      {usable.map(it => (
         <div className={"hero-item rar-" + it.rarity.toLowerCase() + (it.seen ? "" : " unseen")} key={it.id}>
           <div className="hero-item-head"><b>{it.name}</b>{!it.seen && <span className="hero-item-new">NEW</span>}</div>
           <small className="muted">{it.slot} · {it.rarity}</small>
           <small>{Object.entries(it.buffs).map(([b, v]) => `+${v}% ${BUFF_LABEL[b] ?? b}`).join(", ")}</small>
-          <button className="btn ghost" onClick={() => onEquip(it.id)}>Equip</button>
+          {it.effectLabels?.map((lbl, i) => <small className="hero-slot-fx" key={i}>✦ {lbl}</small>)}
+          {it.equippedOn
+            ? <span className="muted" style={{ fontSize: 11 }}>Equipped on {it.equippedOn}</span>
+            : <button className="btn ghost" onClick={() => onEquip(it.id)}>Equip</button>}
         </div>
       ))}
     </div>

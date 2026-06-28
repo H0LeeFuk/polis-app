@@ -1,6 +1,6 @@
 package com.polis.domain;
 
-/** Academy research. req = minimum Academy level required. */
+/** Library research. req = minimum Library level required. */
 public enum ResearchType {
   PHALANX (1, 600, 400, 500),
   SWIFT   (2, 500, 300, 700),

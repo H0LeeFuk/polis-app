@@ -6,4 +6,6 @@ import java.util.List;
 
 public interface AllianceRepo extends JpaRepository<Alliance, Long> {
   List<Alliance> findByWorldId(Long worldId);
+  boolean existsByWorldIdAndTagIgnoreCase(Long worldId, String tag);
+  boolean existsByWorldIdAndNameIgnoreCase(Long worldId, String name);
 }

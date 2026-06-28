@@ -87,6 +87,11 @@ public class CityService {
   /** Completes any active job whose finish time has passed, promoting the next in queue. */
   @Transactional
   public void finalizeJobs(City c, Instant now){
+    // Take a write lock on the city row so only one finalizer (rush / sync / tick) runs
+    // this critical section per city at a time. The job lists below are then re-queried
+    // inside the lock and reflect any prior finalizer's committed deletes/promotions —
+    // preventing the double-promote that left a phantom "extra" build job.
+    cities.findByIdForUpdate(c.getId());
     for (QueueType qt : QueueType.values()){
       List<BuildJob> q = jobs.findByCityIdAndQueueTypeOrderByPositionAsc(c.getId(), qt);
       boolean changed = true;
@@ -122,8 +127,8 @@ public class CityService {
       Long pid = c.getPlayerId();
       missions.record(pid, MissionObjectiveType.BUILD_BUILDING, 1);
       missions.record(pid, MissionObjectiveType.UPGRADE_BUILDING_LEVEL, j.getToLevel());
-      if (j.getBuildingType()==BuildingType.ACADEMY)
-        missions.record(pid, MissionObjectiveType.REACH_ACADEMY_LEVEL, j.getToLevel());
+      if (j.getBuildingType()==BuildingType.LIBRARY)
+        missions.record(pid, MissionObjectiveType.REACH_LIBRARY_LEVEL, j.getToLevel());
     } else {
       CityUnit u = units.findByCityId(c.getId()).stream()
         .filter(x->x.getType().equals(j.getUnitType())).findFirst()

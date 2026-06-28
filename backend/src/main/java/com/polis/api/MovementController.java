@@ -30,8 +30,9 @@ public class MovementController {
   @GetMapping("/api/cities/{originCityId}/attack/preview")
   public Map<String,Object> attackPreview(@PathVariable Long originCityId,
                                            @RequestParam Long targetCityId,
-                                           @RequestParam String units){
-    return movements.preview(me(), originCityId, targetCityId, parseUnits(units));
+                                           @RequestParam String units,
+                                           @RequestParam(required=false) Long heroId){
+    return movements.preview(me(), originCityId, targetCityId, parseUnits(units), heroId);
   }
 
   /** Every movement across all of the player's cities, grouped with a summary bar. */

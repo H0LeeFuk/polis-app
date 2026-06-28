@@ -14,7 +14,7 @@ public class MissionController {
   public MissionController(MissionService missions){ this.missions = missions; }
   private Long me(){ return SecurityConfig.currentPlayerId(); }
 
-  /** Chain-ordered missions with status + progress, plus starter-progress for the Celine teaser. */
+  /** Chain-ordered missions with status + progress, plus starter-progress for the Titania teaser. */
   @GetMapping
   public Map<String,Object> list(){
     Long me = me();

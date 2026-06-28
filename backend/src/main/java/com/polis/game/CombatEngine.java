@@ -27,6 +27,16 @@ public class CombatEngine {
     public static Mods none(){ return new Mods(1, 1, 1, 1); }
   }
 
+  /**
+   * Discrete hero special-effects that bend a single resolution: armour penetration per type
+   * (fractions, already capped by the caller), a one-time pre-combat first-strike bonus, and a
+   * loss-free opening round. Use {@link #none()} when no hero leads the army.
+   */
+  public record CombatFx(double armorPenBlunt, double armorPenSharp, double armorPenDistance,
+                         double firstStrikePct, boolean safeRound){
+    public static CombatFx none(){ return new CombatFx(0,0,0,0,false); }
+  }
+
   public record Result(
       BattleOutcome outcome,
       Map<String,Integer> attackerLost, Map<String,Integer> attackerSurvived,
@@ -38,6 +48,10 @@ public class CombatEngine {
   ){}
 
   public Result resolve(Map<String,Integer> attacker, Map<String,Integer> defender, Mods mods){
+    return resolve(attacker, defender, mods, CombatFx.none());
+  }
+
+  public Result resolve(Map<String,Integer> attacker, Map<String,Integer> defender, Mods mods, CombatFx fx){
     // attacker anti-troop attack per type (+ siege tallied apart)
     EnumMap<AttackType,Double> atk = new EnumMap<>(AttackType.class);
     for (AttackType t : AttackType.values()) atk.put(t, 0.0);
@@ -59,8 +73,15 @@ public class CombatEngine {
     }
     defB *= mods.defenseMult(); defD *= mods.defenseMult();
     defS *= mods.defenseMult() * mods.sharpDefenseMult();
+    // ARMOR_PEN: ignore a (capped) fraction of the defender's defence of each type
+    defB *= (1 - clamp(fx.armorPenBlunt(),0,0.25));
+    defS *= (1 - clamp(fx.armorPenSharp(),0,0.25));
+    defD *= (1 - clamp(fx.armorPenDistance(),0,0.25));
 
     double aB=atk.get(AttackType.BLUNT), aS=atk.get(AttackType.SHARP), aD=atk.get(AttackType.DISTANCE);
+    // FIRST_STRIKE: a one-time pre-combat volley boosts the army's anti-troop attack this fight
+    double fs = 1 + Math.max(0, fx.firstStrikePct());
+    aB*=fs; aS*=fs; aD*=fs;
     double totalAtk = aB+aS+aD;
 
     double globalRatio;
@@ -77,6 +98,7 @@ public class CombatEngine {
 
     if (win){
       double aFrac = clamp(1.0/globalRatio, 0.10, 0.90) * mods.attackerLossMult();
+      if (fx.safeRound()) aFrac *= 0.5;   // EXTRA_SAFE_ROUND: a loss-free opening round halves casualties
       split(attacker, clamp(aFrac,0,1), aLost, aSurv);
       split(defender, 1.0, dLost, dSurv);                 // defenders routed
     } else {

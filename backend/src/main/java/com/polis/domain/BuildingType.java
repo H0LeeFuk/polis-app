@@ -14,7 +14,7 @@ public enum BuildingType {
   TEMPLE    (180, 180, 130,   1.5,  24,   30,  3, null),
   WALL      (150, 220,  60,   1.5,  20,   25,  2, null),
   AGORA     (120, 120,  90,   1.5,  18,   20,  2, null),
-  ACADEMY   (220, 200, 200,   1.5,  28,   20,  3, null);
+  LIBRARY   (220, 200, 200,   1.5,  28,   20,  3, null);
 
   public final int baseWood, baseStone, baseSilver;
   public final double mul;

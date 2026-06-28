@@ -152,9 +152,14 @@ public class NodeService {
     City src = cities.findById(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
     if (!Objects.equals(src.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
     if (troops == null || troops.isEmpty()) throw new IllegalArgumentException("Select at least one unit");
+    // LAND troops — and a land (non-flying/swimming) hero — crossing open water need transport ships
+    Hero hero = heroId != null ? heroService.requireOwned(playerId, heroId) : null;
+    int heroLoad = hero != null ? travel.heroLandLoad(hero.getRace()) : 0;
+    travel.requireTransport(troops, src.getIslandId(), n.getIslandId(), heroLoad);
     build.deductGarrison(cityId, troops);
-    long secs = travel.seconds(src.getIslandId(), n.getIslandId(), travel.slowestMinutesPerTile(troops));
-    if (heroId != null) secs = (long)(secs * heroService.travelMult(heroService.requireOwned(playerId, heroId)));
+    boolean water = travel.crossesWater(src.getIslandId(), n.getIslandId());
+    long secs = travel.seconds(src.getIslandId(), n.getIslandId(), travel.effectiveMinutesPerTile(troops, water));
+    if (hero != null) secs = (long)(secs * heroService.travelMult(hero));
     Movement m = new Movement();
     m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
     m.setTargetNodeId(n.getId()); m.setPhase(phase);

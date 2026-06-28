@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getLibrary, startLibraryResearch, respecLibrary } from "../api";
 import type { LibraryData, LibraryNode } from "../types";
 
@@ -24,20 +24,43 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
 }) {
   const [data, setData] = useState<LibraryData | null>(null);
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
   const [, force] = useState(0);
   useEffect(() => { const t = setInterval(() => force(x => x + 1), 1000); return () => clearInterval(t); }, []);
 
-  const load = () => getLibrary(cityId).then(setData).catch(e => setErr(e.message));
+  const load = () => getLibrary(cityId).then(d => { setData(d); setErr(""); }).catch(e => setErr(e.message));
   useEffect(() => { load(); }, [cityId]);
 
+  // id → node, so we can render prerequisite chips with their live state
+  const byId = useMemo(() => {
+    const m: Record<string, LibraryNode> = {};
+    data?.tree.forEach(n => { m[n.id] = n; });
+    return m;
+  }, [data]);
+
   const research = async (n: LibraryNode) => {
-    setErr("");
-    try { await startLibraryResearch(cityId, n.id); await load(); onChanged?.(); } catch (e: any) { setErr(e.message); }
+    setErr(""); setBusy(true);
+    try { await startLibraryResearch(cityId, n.id); await load(); onChanged?.(); }
+    catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
   };
   const respec = async () => {
     if (!confirm("Reset ALL research for this city? Refunds every point. Costs resources.")) return;
-    setErr("");
-    try { await respecLibrary(cityId); await load(); onChanged?.(); } catch (e: any) { setErr(e.message); }
+    setErr(""); setBusy(true);
+    try { await respecLibrary(cityId); await load(); onChanged?.(); }
+    catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  // Why is a locked node not yet researchable? Spell it out so the tree is self-explanatory.
+  const lockReason = (n: LibraryNode): string => {
+    if (!data) return "";
+    if (data.level < n.minLibraryLevel) return `Needs Library level ${n.minLibraryLevel}`;
+    const missing = n.prereqs.map(p => byId[p]).filter(p => p && p.state !== "COMPLETED");
+    if (missing.length) return `Needs ${missing.map(p => p!.name).join(" + ")}`;
+    if (data.tree.some(x => x.state === "RESEARCHING")) return "Another research in progress";
+    if (data.availablePoints < n.pointCost) return `Needs ${n.pointCost - data.availablePoints} more point(s)`;
+    return "Locked";
   };
 
   return (
@@ -51,26 +74,43 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
           <div className="library-body">
             <div className="lib-summary">
               <span className="lib-points">Available <b>{data.availablePoints}</b> · Spent {data.spentPoints} · Total {data.totalPoints}</span>
-              <span className="muted">Full tree costs {data.fullTreeCost} — specialize.</span>
-              {data.raceAffinity && <span className="lib-affinity">{data.race} city · {data.raceAffinity}</span>}
+              <span className="muted">Full tree costs {data.fullTreeCost} pts — you can master ~2 branches, so specialize.</span>
+              {data.raceAffinity && <span className="lib-affinity">{data.race} · {data.raceAffinity}</span>}
             </div>
             {err && <div className="hero-inline-err">{err}</div>}
-            <div className="lib-branches">
+
+            <div className="lib-tree">
               {BRANCHES.map(b => (
                 <div className="lib-branch" key={b.key}>
-                  <h3>{b.icon} {b.title}</h3>
-                  {[1, 2, 3].map(tier => (
-                    <div className="lib-tier" key={tier}>
-                      {data.tree.filter(n => n.branch === b.key && n.tier === tier).map(n => (
-                        <LibNode key={n.id} n={n} onResearch={() => research(n)} />
-                      ))}
-                    </div>
-                  ))}
+                  <h3 className={"lib-branch-head br-" + b.key.toLowerCase()}>{b.icon} {b.title}</h3>
+                  {[1, 2, 3].map(tier => {
+                    const nodes = data.tree.filter(n => n.branch === b.key && n.tier === tier);
+                    if (!nodes.length) return null;
+                    return (
+                      <div className="lib-tier-wrap" key={tier}>
+                        {tier > 1 && <div className="lib-connector" aria-hidden>↓</div>}
+                        <div className="lib-tier-label">Tier {tier}</div>
+                        <div className="lib-tier">
+                          {nodes.map(n => (
+                            <LibNode key={n.id} n={n} byId={byId} busy={busy}
+                              reason={lockReason(n)} onResearch={() => research(n)} />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
+
             <div className="lib-foot">
-              <button className="btn ghost danger" onClick={respec}>↺ Reset research (re-spec)</button>
+              <span className="muted lib-legend">
+                <i className="lg done" /> researched
+                <i className="lg busy" /> in progress
+                <i className="lg avail" /> ready
+                <i className="lg locked" /> locked
+              </span>
+              <button className="btn ghost danger" onClick={respec} disabled={busy}>↺ Reset research (re-spec)</button>
             </div>
           </div>
         )}
@@ -79,16 +119,33 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
   );
 }
 
-function LibNode({ n, onResearch }: { n: LibraryNode; onResearch: () => void }) {
-  const cls = "lib-node st-" + n.state.toLowerCase() + (n.id === "dominion" ? " marquee" : "") + (n.available ? " avail" : "");
+function LibNode({ n, byId, reason, busy, onResearch }: {
+  n: LibraryNode; byId: Record<string, LibraryNode>; reason: string; busy: boolean; onResearch: () => void;
+}) {
+  const stateCls = n.state === "COMPLETED" ? "done"
+    : n.state === "RESEARCHING" ? "busy"
+      : n.available ? "avail" : "locked";
+  const cls = "lib-node st-" + stateCls + (n.id === "dominion" ? " marquee" : "");
   return (
     <div className={cls}>
       <div className="lib-node-head"><b>{n.name}</b><span className="lib-cost">{n.pointCost}◈</span></div>
       <div className="muted lib-effect">{n.effect}</div>
+
+      {/* prerequisite chips, ticked once satisfied — makes the branch dependencies explicit */}
+      {n.prereqs.length > 0 && (
+        <div className="lib-prereqs">
+          {n.prereqs.map(p => {
+            const pre = byId[p];
+            const ok = pre && pre.state === "COMPLETED";
+            return <span key={p} className={"lib-prereq " + (ok ? "ok" : "")}>{ok ? "✓" : "•"} {pre ? pre.name : p}</span>;
+          })}
+        </div>
+      )}
+
       {n.state === "COMPLETED" ? <div className="lib-done">✓ Researched</div>
         : n.state === "RESEARCHING" ? <div className="lib-researching">⏳ {countdown(n.completesAt)}</div>
-          : n.available ? <button className="btn" onClick={onResearch}>Research · {fmtDur(n.durationSeconds)}</button>
-            : <div className="muted lib-locked">🔒 {n.minLibraryLevel > 0 ? `Library ${n.minLibraryLevel}` : "prereq"} </div>}
+          : n.available ? <button className="btn" disabled={busy} onClick={onResearch}>Research · {fmtDur(n.durationSeconds)}</button>
+            : <div className="muted lib-locked">🔒 {reason}</div>}
     </div>
   );
 }

@@ -59,6 +59,9 @@ export default function BanditCampModal({ islandId, activeCityId, cityOnIsland, 
     finally { setBusy(false); }
   };
 
+  const etaSeconds = result ? Math.max(0, Math.round((new Date(result.arriveAt).getTime() - Date.now()) / 1000)) : 0;
+  const etaLabel = etaSeconds >= 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-window bandit-modal" onClick={e => e.stopPropagation()} style={{ width: "min(600px,100%)" }}>
@@ -115,20 +118,19 @@ export default function BanditCampModal({ islandId, activeCityId, cityOnIsland, 
                     </div>
                   ))}
                   <div className="bandit-power">Total attack power: <b>{totalAttack.toLocaleString()}</b></div>
-                  <button className="btn" disabled={!canAttack} onClick={attack}>{busy ? "Fighting…" : "⚔ Attack!"}</button>
+                  <button className="btn" disabled={!canAttack} onClick={attack}>{busy ? "Dispatching…" : "⚔ Send Attack!"}</button>
                 </>
               )}
             </>
           )}
 
-          {/* result */}
+          {/* dispatch confirmation — troops are marching; outcome lands as a battle report */}
           {result && (
-            <div className={"bandit-result " + (result.outcome === "WIN" ? "win" : "loss")}>
-              <h3>{result.outcome === "WIN" ? "🏆 Victory!" : "💀 Defeat"}</h3>
-              <div>Troops lost: {Object.entries(result.troopsLost).filter(([, n]) => n > 0).map(([t, n]) => `${glyph(t)}${n}`).join(" ") || "none"}</div>
-              {result.outcome === "WIN" && result.reward && (
-                <div className="bandit-reward-won">Reward: {Object.entries(result.reward).map(([k, v]) => `${rewardGlyph(k)} ${v}`).join(" · ")}</div>
-              )}
+            <div className="bandit-result win">
+              <h3>⚔ Troops marching!</h3>
+              <div>Your army is on its way to the camp.</div>
+              <div className="muted">Arrives in {etaLabel}{etaSeconds === 0 ? " — check your battle reports" : ""}.</div>
+              <div className="muted bandit-desc">On victory the survivors carry the loot back home.</div>
             </div>
           )}
         </div>

@@ -39,4 +39,13 @@ public class UnitType {
 
   /** Race that may train this unit. Null = shared/neutral roster trainable by any race. */
   @Enumerated(EnumType.STRING) private Race race;
+
+  /** How this unit crosses the map (land/flying/swimming). Drives water-crossing + travel pace. */
+  @Enumerated(EnumType.STRING) @Column(name="movement_class", nullable=false) private MovementClass movementClass = MovementClass.LAND;
+  /** For transports: how much LAND population this unit can ferry across water (0 = not a transport). */
+  @Column(name="transport_capacity") private int transportCapacity;
+
+  /** LAND units need a transport to cross open water; flyers and swimmers do not. */
+  @Transient public boolean isRequiresTransport(){ return movementClass == MovementClass.LAND; }
+  @Transient public boolean isTransport(){ return transportCapacity > 0; }
 }

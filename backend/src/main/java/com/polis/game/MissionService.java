@@ -11,7 +11,7 @@ import java.util.*;
 /**
  * Mission engine: seeds each player's STARTER chain, advances progress from gameplay events
  * (build/train/attack/found/research/node), and grants rewards on claim. The capstone mission
- * auto-completes when 1–7 are done and, when claimed, unlocks the CELINE hero.
+ * auto-completes when 1–7 are done and, when claimed, unlocks the TITANIA hero.
  *
  * <p>Progress hooks ({@link #record}) are invoked directly by the relevant services rather than
  * via an event bus. Completing a mission freezes its progress, so repeated events are harmless.
@@ -162,8 +162,8 @@ public class MissionService {
         .orElseGet(() -> { var l = cities.findByPlayerId(playerId); return l.isEmpty() ? null : l.get(0).getId(); });
     Hero h = heroes.findByOwnerPlayerIdAndHeroKey(playerId, key).orElse(null);
     if (h == null){
-      Race race = key == HeroKey.CELINE ? Race.FAIRIES : Race.HUMANS;
-      String name = key == HeroKey.CELINE ? "Celine" : "Leo";
+      Race race = key == HeroKey.TITANIA ? Race.FAIRIES : Race.HUMANS;
+      String name = key == HeroKey.TITANIA ? "Titania" : "Leo";
       return heroService.create(playerId, key, race, name, true, capitalId);
     }
     if (!h.isUnlocked()){
@@ -201,7 +201,7 @@ public class MissionService {
     return out;
   }
 
-  /** {done, total} among the non-capstone STARTER missions — for the Celine unlock teaser. */
+  /** {done, total} among the non-capstone STARTER missions — for the Titania unlock teaser. */
   @Transactional(readOnly = true)
   public int[] starterProgress(Long playerId){
     Map<Long,Mission> cfg = missionConfig();

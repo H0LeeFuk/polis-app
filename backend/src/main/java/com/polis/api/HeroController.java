@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
-/** Account heroes (Leo + Celine): list/read, attribute spend, stationing, skills, equipment. */
+/** Account heroes (Leo + Titania): list/read, attribute spend, stationing, skills, equipment. */
 @RestController
 @RequestMapping("/api/players/me")
 public class HeroController {

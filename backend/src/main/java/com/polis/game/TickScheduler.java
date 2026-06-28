@@ -29,17 +29,18 @@ public class TickScheduler {
   private final ResourceNodeRepo resourceNodes;
   private final SettleService settleService;
   private final LibraryService library;
+  private final BanditCampService banditCamps;
 
   public TickScheduler(CityService cityService, CityFactory cityFactory, CityRepo cities, UnitRepo units,
                        JobRepo jobs, MovementRepo movements, PlayerRepo players, BattleReportService reports,
                        CombatEngine combat, UnitCatalog catalog, HeroService heroService, HeroRepo heroRepo,
                        NodeService nodeService, ResourceNodeRepo resourceNodes, SettleService settleService,
-                       LibraryService library){
+                       LibraryService library, BanditCampService banditCamps){
     this.cityService=cityService; this.cityFactory=cityFactory; this.cities=cities; this.units=units;
     this.jobs=jobs; this.movements=movements; this.players=players; this.reports=reports;
     this.combat=combat; this.catalog=catalog; this.heroService=heroService; this.heroRepo=heroRepo;
     this.nodeService=nodeService; this.resourceNodes=resourceNodes; this.settleService=settleService;
-    this.library=library;
+    this.library=library; this.banditCamps=banditCamps;
   }
 
   @Scheduled(fixedDelayString = "${polis.tick.interval-ms}")
@@ -63,7 +64,11 @@ public class TickScheduler {
       if (m.getPhase() == MovementPhase.SETTLE){ settleService.onArrive(m, now); continue; }
       switch (m.getPhase()){
         case COLONY -> resolveColony(m);
-        case OUT     -> { if (m.getTargetNodeId()!=null) resolveNodeAttack(m, now); else resolveRaid(m, now); }
+        case OUT     -> {
+          if (m.getTargetCampId()!=null) banditCamps.onArrive(m, now);
+          else if (m.getTargetNodeId()!=null) resolveNodeAttack(m, now);
+          else resolveRaid(m, now);
+        }
         case RETURN  -> resolveReturn(m);
         case OCCUPY  -> nodeService.resolveOccupy(m, now);
         default      -> {}
@@ -110,13 +115,24 @@ public class TickScheduler {
         mods.defenseMult() * (tgt.getRace()!=null ? tgt.getRace().defenseMult : 1.0) * defLib.defenseMult(),
         mods.sharpDefenseMult() * defLib.sharpDefenseMult(), mods.attackerLossMult());
 
-    CombatEngine.Result r = combat.resolve(attackerSent, defenderPresent, mods);
+    CombatEngine.CombatFx fx = attackerHero != null ? heroService.combatFx(attackerHero) : CombatEngine.CombatFx.none();
+    CombatEngine.Result r = combat.resolve(attackerSent, defenderPresent, mods, fx);
     BattleOutcome outcome = r.outcome();
 
     // apply defender casualties back to the garrison
     for (CityUnit cu : garrison){
       int lost = r.defenderLost().getOrDefault(cu.getType().toUpperCase(), 0);
       if (lost > 0){ cu.setCount(Math.max(0, cu.getCount()-lost)); units.save(cu); }
+    }
+
+    // RETALIATION_HEAL: a defending hero recovers a fraction of the garrison's losses on a successful hold
+    if (outcome == BattleOutcome.DEFEAT && defenderHero != null){
+      double heal = heroService.retaliationHealPct(defenderHero);
+      if (heal > 0) for (CityUnit cu : garrison){
+        int lost = r.defenderLost().getOrDefault(cu.getType().toUpperCase(), 0);
+        int back = (int)Math.round(lost * heal);
+        if (back > 0){ cu.setCount(cu.getCount()+back); units.save(cu); }
+      }
     }
 
     // plunder: victory only — surviving attackers carry off resources up to their carry capacity
@@ -176,7 +192,8 @@ public class TickScheduler {
 
     Hero attackerHero = heroRepo.findByActiveMovementId(m.getId()).orElse(null);
     CombatEngine.Mods mods = attackerHero != null ? heroService.offenseMods(attackerHero) : CombatEngine.Mods.none();
-    CombatEngine.Result r = combat.resolve(attackerSent, defenderPresent, mods);
+    CombatEngine.CombatFx fx = attackerHero != null ? heroService.combatFx(attackerHero) : CombatEngine.CombatFx.none();
+    CombatEngine.Result r = combat.resolve(attackerSent, defenderPresent, mods, fx);
 
     Long formerController = node.getControllingPlayerId();
     if (r.outcome() == BattleOutcome.VICTORY){

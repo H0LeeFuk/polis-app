@@ -5,14 +5,16 @@ export interface PlayerDto {
 }
 export interface CitySummary { id: number; name: string; points: number; capital: boolean; island: string; }
 export interface Resources { wood: number; stone: number; silver: number; capacity: number; favor: number; woodProd: number; stoneProd: number; silverProd: number; favorProd: number; }
-export interface BuildingDto { type: string; level: number; max: number; pop: number; cost: number[]; seconds: number; atMax: boolean; }
+export interface BuildingDto { type: string; level: number; max: number; pop: number; cost: number[]; seconds: number; atMax: boolean; benefit?: string; }
 export interface QueueJob { id: number; position: number; totalSeconds: number; finishAt: string | null; label: string; toLevel?: number; batch?: number; }
 export interface UnitDto { type: string; count: number; }
 export type AttackType = "BLUNT" | "SHARP" | "DISTANCE" | "SIEGE";
+export type MovementClass = "LAND" | "FLYING" | "SWIMMING";
 export interface Trainable {
   type: string; from: string; kind: string; attackType: AttackType;
   atk: number; defBlunt: number; defSharp: number; defDistance: number;
   speed: number; pop: number; carry: number; cost: number[]; seconds: number; unlocked: boolean;
+  movementClass: MovementClass; transportCapacity: number; requiresTransport: boolean;
 }
 export interface ResearchDto { type: string; req: number; done: boolean; cost: number[]; }
 export interface MovementDto { id: number; phase: string; arriveAt: string; target: string; }
@@ -68,6 +70,13 @@ export interface AttackPreview {
   distance: number;
   slowestUnit: string | null;
   arriveAt: string;
+  // movement-class / transport summary (present on city attack previews)
+  routeCrossesWater?: boolean;
+  requiredTransportCapacity?: number;
+  providedTransportCapacity?: number;
+  transportSufficient?: boolean;
+  transportShipsShort?: number;
+  transportWarning?: string;
 }
 export interface MovementsSummary { attacksOut: number; incomingThreats: number; returning: number; idleCities: number; }
 export interface PlayerMovements { summary: MovementsSummary; movements: Movement[]; }
@@ -158,12 +167,17 @@ export interface HeroSkillDto {
   id: string; unlockLevel: number; cooldownHours: number;
   unlocked: boolean; armed: boolean; availableAt: string | null;
 }
+export type ItemSlot = "WEAPON" | "ARMOR" | "RELIC" | "PET";
+export type ItemRarity = "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
 export interface HeroItemDto {
-  id: number; name: string; slot: "WEAPON" | "ARMOR" | "AMULET";
-  rarity: "COMMON" | "RARE" | "EPIC"; buffs: Record<string, number>;
+  id: number; name: string; slot: ItemSlot;
+  rarity: ItemRarity; buffs: Record<string, number>;
+  specialEffects?: { effectType: string; params: Record<string, unknown> }[];
+  effectLabels?: string[];
   equipped: boolean; seen?: boolean;
+  equippedOn?: string | null;   // hero name if equipped, else null
 }
-export type HeroKey = "LEO" | "CELINE";
+export type HeroKey = "LEO" | "TITANIA";
 export interface Hero {
   id: number; heroKey: HeroKey; name: string; race: RaceId; unlocked: boolean; level: number;
   currentXp: number; xpToNextLevel: number; unspentAttributePoints: number;
@@ -172,8 +186,12 @@ export interface Hero {
   stationedCityId: number | null; stationedCityName: string | null;
   activeMovementId: number | null; woundedUntil: string | null; armedSkill: string | null;
   skills: HeroSkillDto[];
-  bonuses: { attackPct: number; defensePct: number; lootPct: number; travelPct: number; lossReductionPct: number };
-  equipment: { weapon: HeroItemDto | null; armor: HeroItemDto | null; amulet: HeroItemDto | null };
+  bonuses: {
+    attackPct: number; defensePct: number; lootPct: number; travelPct: number; lossReductionPct: number;
+    heroXpPct?: number; dropChancePct?: number; skillCooldownPct?: number; woundRecoveryPct?: number; navalTravelPct?: number;
+  };
+  equipment: { weapon: HeroItemDto | null; armor: HeroItemDto | null; relic: HeroItemDto | null; pet: HeroItemDto | null };
+  specialEffects?: string[];   // active special-effect labels across the loadout
 }
 
 // --- library / research tree ---
@@ -218,12 +236,13 @@ export interface BanditCamp {
   rewardPayload?: Record<string, number>;
   description?: string;
 }
+/** Bandit raids are dispatched as a troop movement; the outcome arrives later as a Battle Report. */
 export interface BanditAttackResult {
-  outcome: "WIN" | "LOSS";
-  troopsLost: Record<string, number>;
-  reward?: Record<string, number>;
-  newCampLevel: number;
-  nextRespawnAt: string | null;
+  ok: boolean;
+  status: "DISPATCHED";
+  movementId: number;
+  travelSeconds: number;
+  arriveAt: string;
 }
 
 // --- island boss (resource islands) ---

@@ -40,7 +40,7 @@ export default function MissionsPanel({ onClose, onChanged }: { onClose: () => v
           )}
           {!data ? <p className="muted">Loading…</p> : (
             <>
-              <p className="muted">Starter chain — {data.starterDone} / {data.starterTotal} complete. Finish them all to recruit Celine.</p>
+              <p className="muted">Starter chain — {data.starterDone} / {data.starterTotal} complete. Finish them all to recruit Titania.</p>
               <div className="mission-list">
                 {data.missions.map(m => <MissionCard key={m.missionId} m={m} onClaim={() => claim(m)} />)}
               </div>
@@ -60,7 +60,7 @@ function MissionCard({ m, onClaim }: { m: Mission; onClaim: () => void }) {
     <div className={cls}>
       <div className="mission-head">
         <span className="mission-order">{m.status === "COMPLETED" || m.status === "CLAIMED" ? "✓" : m.order}</span>
-        <h3>{m.title}{capstone && <span className="mission-marquee"> · Recruit Celine the Fairy 🧚</span>}</h3>
+        <h3>{m.title}{capstone && <span className="mission-marquee"> · Recruit Titania the Fairy 🧚</span>}</h3>
         <span className={"mission-badge st-" + m.status.toLowerCase()}>{m.status}</span>
       </div>
       <p className="muted">{m.description}</p>

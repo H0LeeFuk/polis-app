@@ -32,7 +32,7 @@ function tower(s: number) {
 const ART: Record<string, (s: number) => string> = {
   SENATE: (s) => temple(s + 2),
   TEMPLE: (s) => temple(s + 1),
-  ACADEMY: (s) => `${house(C.ivory, s)}<circle cx="60" cy="50" r="6" fill="${C.gold}" stroke="${C.slip}"/>`,
+  LIBRARY: (s) => `${house(C.ivory, s)}<circle cx="60" cy="50" r="6" fill="${C.gold}" stroke="${C.slip}"/>`,
   BARRACKS: (s) => `${house(C.terracotta, s)}<rect x="44" y="64" width="32" height="4" fill="${C.slip}"/>`,
   HARBOR: (s) => `<rect x="30" y="78" width="60" height="12" fill="${C.teal}" stroke="${C.slip}"/>${house(C.stone, s)}
     <rect x="74" y="40" width="4" height="40" fill="${C.dark}"/><polygon points="78,42 78,64 60,52" fill="${C.ivory}" stroke="${C.slip}"/>`,

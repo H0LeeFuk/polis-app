@@ -32,9 +32,9 @@ export const UNIT_DEX: Record<string, UnitDex> = {
 export const ATTACK_GLYPH: Record<string, string> = { BLUNT: "🔨", SHARP: "🗡", DISTANCE: "🏹", SIEGE: "💥" };
 const titleCaseU = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
-export const HERO_GLYPH = (h: { heroKey?: string }) => h.heroKey === "CELINE" ? "🧚" : "🛡";
+export const HERO_GLYPH = (h: { heroKey?: string }) => h.heroKey === "TITANIA" ? "🧚" : "🛡";
 
-/** Pick which (if any) idle hero leads this action: None / Leo / Celine. */
+/** Pick which (if any) idle hero leads this action: None / Leo / Titania. */
 export function HeroPicker({ heroes, value, onChange }: {
   heroes: Hero[]; value: number | null; onChange: (id: number | null) => void;
 }) {
@@ -46,9 +46,10 @@ export function HeroPicker({ heroes, value, onChange }: {
         <button type="button" className={"hp-chip" + (value === null ? " sel" : "")} onClick={() => onChange(null)}>None</button>
         {heroes.map(h => {
           const armed = h.armedSkill ? h.armedSkill.replace("_", " ") : null;
+          const fx = h.specialEffects && h.specialEffects.length ? ` · ${h.specialEffects.join(" · ")}` : "";
           return (
             <button type="button" key={h.id} className={"hp-chip" + (value === h.id ? " sel" : "")} onClick={() => onChange(h.id)}
-              title={`+${h.bonuses.attackPct}% atk · +${h.bonuses.lootPct}% loot · −${h.bonuses.travelPct}% travel${armed ? ` · ${armed} armed` : ""}`}>
+              title={`+${h.bonuses.attackPct}% atk · +${h.bonuses.lootPct}% loot · −${h.bonuses.travelPct}% travel${armed ? ` · ${armed} armed` : ""}${fx}`}>
               {HERO_GLYPH(h)} {h.name} <small>Lv{h.level}</small>
             </button>
           );
@@ -139,26 +140,33 @@ export const kindMeta = (m: Movement) => KIND_META[moveKind(m)];
 // AREA 1 — Travel-time preview card (inside the attack modal)
 // ============================================================================
 
-export function TravelPreview({ originCityId, targetCityId, units }: {
+export function TravelPreview({ originCityId, targetCityId, units, heroId, onState }: {
   originCityId: number; targetCityId: number; units: Record<string, number>;
+  heroId?: number | null;
+  /** Reports whether the current army can make the trip (false = transport insufficient). */
+  onState?: (sufficient: boolean) => void;
 }) {
   const [data, setData] = useState<AttackPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const total = Object.values(units).reduce((a, b) => a + (b > 0 ? b : 0), 0);
 
   useEffect(() => {
-    if (total <= 0) { setData(null); return; }
+    if (total <= 0 && heroId == null) { setData(null); onState?.(true); return; }
     setLoading(true);
     const sel = Object.fromEntries(Object.entries(units).filter(([, n]) => n > 0));
     const h = window.setTimeout(() => {
-      previewAttack(originCityId, targetCityId, sel)
-        .then(d => setData(d)).catch(() => setData(null)).finally(() => setLoading(false));
+      previewAttack(originCityId, targetCityId, sel, heroId)
+        .then(d => { setData(d); onState?.(d.transportSufficient !== false); })
+        .catch(() => { setData(null); onState?.(true); }).finally(() => setLoading(false));
     }, 300); // debounce while the player tweaks quantities
     return () => window.clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originCityId, targetCityId, JSON.stringify(units)]);
+  }, [originCityId, targetCityId, JSON.stringify(units), heroId]);
 
-  if (total <= 0) return null;
+  if (total <= 0 && heroId == null) return null;
+  const water = data?.routeCrossesWater;
+  const insufficient = data && water && data.transportSufficient === false;
+  const freeCrossing = data && water && (data.requiredTransportCapacity ?? 0) === 0;
   return (
     <div className="travel-card">
       {!data ? (
@@ -169,6 +177,24 @@ export function TravelPreview({ originCityId, targetCityId, units }: {
           <div className="travel-row"><span>📏 Distance</span><b>{data.distance} tiles</b></div>
           <div className="travel-row"><span>⏱ Travel time</span><b>{fmtDuration(data.travelSeconds)}</b></div>
           <div className="travel-row"><span>🕐 Arrives</span><b>{fmtArrival(data.arriveAt)}</b></div>
+          {water && (
+            <div className={"transport-panel" + (insufficient ? " bad" : " ok")}>
+              {freeCrossing ? (
+                <div className="tp-line">🌊 Crosses water freely — no transport needed.</div>
+              ) : (
+                <>
+                  <div className="tp-line">
+                    🚢 Transport: <b>{data.providedTransportCapacity ?? 0}</b> / {data.requiredTransportCapacity ?? 0} land-pop capacity
+                  </div>
+                  {insufficient && (
+                    <div className="tp-warn">⚠ {data.transportWarning
+                      ?? "Not enough transport to cross water."}{(data.transportShipsShort ?? 0) > 0
+                        ? ` Add ~${data.transportShipsShort} more transport ship(s).` : ""}</div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>

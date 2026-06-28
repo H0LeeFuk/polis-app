@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Provisions a player's heroes (Leo unlocked, Celine locked) and seeds the starter mission chain.
+ * Provisions a player's heroes (Leo unlocked, Titania locked) and seeds the starter mission chain.
  * Called at registration and by {@link com.polis.game.AccountBackfillRunner} for pre-existing players.
  * Idempotent: only creates what is missing.
  */
@@ -17,9 +17,12 @@ public class AccountSetupService {
   private final HeroRepo heroRepo;
   private final MissionService missions;
   private final CityRepo cities;
+  private final BanditCampService banditCamps;
 
-  public AccountSetupService(HeroService heroes, HeroRepo heroRepo, MissionService missions, CityRepo cities){
+  public AccountSetupService(HeroService heroes, HeroRepo heroRepo, MissionService missions, CityRepo cities,
+                            BanditCampService banditCamps){
     this.heroes = heroes; this.heroRepo = heroRepo; this.missions = missions; this.cities = cities;
+    this.banditCamps = banditCamps;
   }
 
   @Transactional
@@ -29,9 +32,12 @@ public class AccountSetupService {
 
     if (heroRepo.findByOwnerPlayerIdAndHeroKey(playerId, HeroKey.LEO).isEmpty())
       heroes.create(playerId, HeroKey.LEO, Race.HUMANS, "Leo", true, capitalId);
-    if (heroRepo.findByOwnerPlayerIdAndHeroKey(playerId, HeroKey.CELINE).isEmpty())
-      heroes.create(playerId, HeroKey.CELINE, Race.FAIRIES, "Celine", false, null);
+    if (heroRepo.findByOwnerPlayerIdAndHeroKey(playerId, HeroKey.TITANIA).isEmpty())
+      heroes.create(playerId, HeroKey.TITANIA, Race.FAIRIES, "Titania", false, null);
 
     missions.seedForPlayer(playerId);
+
+    // one bandit camp per player, at their first city — created on entering the server
+    banditCamps.ensureForPlayer(playerId);
   }
 }

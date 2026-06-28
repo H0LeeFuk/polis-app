@@ -11,7 +11,7 @@ import java.util.Map;
 /**
  * Seeded mission config (table {@code missions}, not runtime-editable). Missions form ordered
  * chains; a mission unlocks once its {@code prerequisiteMissionId} is complete. The final
- * starter mission sets {@code unlocksHeroKey = CELINE}.
+ * starter mission sets {@code unlocksHeroKey = TITANIA}.
  */
 @Entity @Table(name="missions")
 @Getter @Setter @NoArgsConstructor
