@@ -17,6 +17,7 @@ public class Movement {
   @Column(name="target_city_id") private Long targetCityId;
   @Column(name="target_island_id") private Long targetIslandId;
   @Column(name="target_slot") private Integer targetSlot;
+  @Column(name="target_node_id") private Long targetNodeId;   // resource-node moves (OCCUPY / node attack)
   @Enumerated(EnumType.STRING) private MovementPhase phase;
 
   @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition="json")
@@ -26,5 +27,8 @@ public class Movement {
 
   @Column(name="depart_at") private Instant departAt = Instant.now();
   @Column(name="arrive_at") private Instant arriveAt;
+  /** For SETTLE: the moment the hero reached the slot. While set and unresolved the founding
+   *  is pending the race choice. Null for every other phase and for in-transit settles. */
+  @Column(name="arrived_at") private Instant arrivedAt;
   private boolean resolved = false;
 }

@@ -15,7 +15,6 @@ public class BuildService {
 
   private static final int BUILD_QUEUE_MAX = 5;
   private static final int UNIT_QUEUE_MAX  = 8;
-  private static final long[] COLONY_COST  = {2000, 2000, 1500};
 
   private final CityService cityService;
   private final CityRepo cities;
@@ -26,13 +25,18 @@ public class BuildService {
   private final MovementRepo movements;
   private final PlayerRepo players;
   private final TravelTimeService travel;
+  private final UnitCatalog catalog;
+  private final HeroService heroes;
+  private final MissionService missions;
+  private final LibraryService library;
 
   public BuildService(CityService cityService, CityRepo cities, BuildingRepo buildings, UnitRepo units,
                       ResearchRepo research, JobRepo jobs, MovementRepo movements, PlayerRepo players,
-                      TravelTimeService travel){
+                      TravelTimeService travel, UnitCatalog catalog, HeroService heroes, MissionService missions,
+                      LibraryService library){
     this.cityService=cityService; this.cities=cities; this.buildings=buildings; this.units=units;
     this.research=research; this.jobs=jobs; this.movements=movements; this.players=players;
-    this.travel=travel;
+    this.travel=travel; this.catalog=catalog; this.heroes=heroes; this.missions=missions; this.library=library;
   }
 
   private City owned(Long playerId, Long cityId){
@@ -74,27 +78,32 @@ public class BuildService {
   }
 
   @Transactional
-  public void train(Long playerId, Long cityId, UnitType type, int count){
+  public void train(Long playerId, Long cityId, String unitName, int count){
     City c = owned(playerId, cityId);
     if (count <= 0) throw new IllegalArgumentException("Count must be positive");
-    if (type.research != null && !hasResearch(cityId, type.research))
-      throw new IllegalStateException("Requires research: " + type.research);
-    int fromLevel = cityService.level(cityId, type.from==QueueType.HARBOR ? BuildingType.HARBOR : BuildingType.BARRACKS);
-    if (fromLevel <= 0) throw new IllegalStateException("Build the " + type.from + " first");
-    if (jobs.countByCityIdAndQueueType(cityId, type.from) >= UNIT_QUEUE_MAX)
+    UnitType type = catalog.get(unitName);
+    if (type.getResearchRequired() != null && !hasResearch(cityId, ResearchType.valueOf(type.getResearchRequired())))
+      throw new IllegalStateException("Requires research: " + type.getResearchRequired());
+    // Library siege gate: siege engines need the Siegecraft research
+    if (type.getAttackType()==AttackType.SIEGE && !library.effects(cityId).has("siege"))
+      throw new IllegalStateException("Requires the Library research: Siegecraft");
+    QueueType from = type.getFromQueue();
+    int fromLevel = cityService.level(cityId, from==QueueType.HARBOR ? BuildingType.HARBOR : BuildingType.BARRACKS);
+    if (fromLevel <= 0) throw new IllegalStateException("Build the " + from + " first");
+    if (jobs.countByCityIdAndQueueType(cityId, from) >= UNIT_QUEUE_MAX)
       throw new IllegalStateException("Training queue is full");
     int freePop = cityService.maxPop(cityId, hasResearch(cityId, ResearchType.BOUNTY)) - cityService.popUsed(cityId);
-    count = Math.min(count, freePop / Math.max(1,type.pop));
+    count = Math.min(count, freePop / Math.max(1,type.getPopulationCost()));
     int byRes = (int) Math.min(Math.min(
-        type.costWood >0 ? (long)(c.getWood()/type.costWood)   : Long.MAX_VALUE,
-        type.costStone>0 ? (long)(c.getStone()/type.costStone) : Long.MAX_VALUE),
-        type.costSilver>0? (long)(c.getSilver()/type.costSilver): Long.MAX_VALUE);
+        type.getCostWood() >0 ? (long)(c.getWood()/type.getCostWood())   : Long.MAX_VALUE,
+        type.getCostStone()>0 ? (long)(c.getStone()/type.getCostStone()) : Long.MAX_VALUE),
+        type.getCostSilver()>0? (long)(c.getSilver()/type.getCostSilver()): Long.MAX_VALUE);
     count = Math.min(count, byRes);
     if (count <= 0) throw new IllegalStateException("Not enough population or resources");
-    pay(c, (long)type.costWood*count, (long)type.costStone*count, (long)type.costSilver*count); cities.save(c);
-    int total = GameRules.unitSeconds(type, fromLevel) * count;
-    BuildJob job = new BuildJob(); job.setUnitType(type); job.setBatch(count);
-    enqueue(c, job, type.from, total);
+    pay(c, (long)type.getCostWood()*count, (long)type.getCostStone()*count, (long)type.getCostSilver()*count); cities.save(c);
+    int total = (int)(GameRules.unitSeconds(type, fromLevel) * count * library.effects(cityId).trainTimeMult());
+    BuildJob job = new BuildJob(); job.setUnitType(type.getName()); job.setBatch(count);
+    enqueue(c, job, from, total);
   }
 
   @Transactional
@@ -103,9 +112,12 @@ public class BuildService {
     if (cityService.level(cityId, BuildingType.ACADEMY) < type.req)
       throw new IllegalStateException("Academy level too low (needs " + type.req + ")");
     if (hasResearch(cityId, type)) throw new IllegalStateException("Already researched");
-    if (!afford(c, type.costWood, type.costStone, type.costSilver)) throw new IllegalStateException("Not enough resources");
-    pay(c, type.costWood, type.costStone, type.costSilver); cities.save(c);
+    double rm = c.getRace()!=null ? c.getRace().researchCostMult : 1.0;   // HUMANS research discount
+    long cw=Math.round(type.costWood*rm), cs=Math.round(type.costStone*rm), csv=Math.round(type.costSilver*rm);
+    if (!afford(c, cw, cs, csv)) throw new IllegalStateException("Not enough resources");
+    pay(c, cw, cs, csv); cities.save(c);
     research.save(new CityResearch(cityId, type));
+    missions.record(playerId, MissionObjectiveType.RESEARCH_COMPLETE, 1);
   }
 
   @Transactional
@@ -118,10 +130,10 @@ public class BuildService {
       long[] r = GameRules.buildCost(j.getBuildingType(), j.getToLevel()-1);
       c.setWood(c.getWood()+r[0]); c.setStone(c.getStone()+r[1]); c.setSilver(c.getSilver()+r[2]);
     } else {
-      UnitType u=j.getUnitType();
-      c.setWood(c.getWood()+(long)u.costWood*j.getBatch());
-      c.setStone(c.getStone()+(long)u.costStone*j.getBatch());
-      c.setSilver(c.getSilver()+(long)u.costSilver*j.getBatch());
+      UnitType u=catalog.get(j.getUnitType());
+      c.setWood(c.getWood()+(long)u.getCostWood()*j.getBatch());
+      c.setStone(c.getStone()+(long)u.getCostStone()*j.getBatch());
+      c.setSilver(c.getSilver()+(long)u.getCostSilver()*j.getBatch());
     }
     cities.save(c);
     QueueType qt=j.getQueueType(); jobs.delete(j);
@@ -160,47 +172,39 @@ public class BuildService {
   }
 
   @Transactional
-  public Movement colonize(Long playerId, Long cityId, Long islandId, int slot){
-    City src = owned(playerId, cityId);
-    Player p = players.findById(playerId).orElseThrow();
-    long owned = cities.countByPlayerId(playerId);
-    if (owned >= GameRules.citySlots(p.getLevel()))
-      throw new IllegalStateException("No free colony slots — level up to settle more cities");
-    if (cities.findByIslandIdAndSlot(islandId, slot).isPresent())
-      throw new IllegalStateException("That plot is already occupied");
-    if (!afford(src, COLONY_COST[0], COLONY_COST[1], COLONY_COST[2]))
-      throw new IllegalStateException("Not enough resources to outfit a colony ship");
-    pay(src, COLONY_COST[0], COLONY_COST[1], COLONY_COST[2]); cities.save(src);
-
-    int secs = travel.seconds(src.getIslandId(), islandId, 11);
-    Movement m = new Movement();
-    m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
-    m.setTargetIslandId(islandId); m.setTargetSlot(slot); m.setPhase(MovementPhase.COLONY);
-    m.setArriveAt(Instant.now().plusSeconds(secs));
-    return movements.save(m);
-  }
-
-  @Transactional
-  public Movement raid(Long playerId, Long cityId, Long targetCityId, Map<String,Integer> army){
+  public Movement raid(Long playerId, Long cityId, Long targetCityId, Map<String,Integer> army, Long heroId){
     City src = owned(playerId, cityId);
     City tgt = cities.findById(targetCityId).orElseThrow(() -> new IllegalArgumentException("Target not found"));
     if (Objects.equals(tgt.getPlayerId(), playerId)) throw new IllegalStateException("Cannot raid your own city");
-    int minSpeed = 99;
-    for (var e : army.entrySet()){
-      UnitType u = UnitType.valueOf(e.getKey().toUpperCase());
-      CityUnit cu = units.findByCityId(cityId).stream().filter(x->x.getType()==u).findFirst()
-        .orElseThrow(() -> new IllegalStateException("No such troops"));
-      if (cu.getCount() < e.getValue()) throw new IllegalStateException("Not enough " + u);
-      cu.setCount(cu.getCount()-e.getValue()); units.save(cu);
-      minSpeed = Math.min(minSpeed, u.speed);
-    }
     if (army.isEmpty()) throw new IllegalArgumentException("Select at least one unit");
-    int secs = travel.seconds(src.getIslandId(), tgt.getIslandId(), minSpeed==99?15:minSpeed);
+    deductGarrison(cityId, army);
+    long secs = travel.travelTime(cityId, targetCityId, army).getSeconds();
+    if (src.getRace()!=null) secs = (long)(secs * src.getRace().travelMult);          // race march pace
+    secs = (long)(secs * library.effects(cityId).travelMult());                       // Library: Wayfinding etc.
+    if (heroId != null) secs = (long)(secs * heroes.travelMult(heroes.requireOwned(playerId, heroId))); // Cunning / Forced March
     Movement m = new Movement();
     m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
     m.setTargetCityId(targetCityId); m.setPhase(MovementPhase.OUT);
-    m.setUnits(new HashMap<>(army)); m.setArriveAt(Instant.now().plusSeconds(secs));
-    return movements.save(m);
+    m.setUnits(new HashMap<>(army)); m.setArriveAt(Instant.now().plusSeconds(Math.max(5, secs)));
+    Movement saved = movements.save(m);
+    if (heroId != null) heroes.sendHero(playerId, heroId, cityId, saved.getId());
+    // mission: launching an attack on a real distinct player
+    if (tgt.getPlayerId() != null && !Objects.equals(tgt.getPlayerId(), playerId))
+      missions.record(playerId, MissionObjectiveType.ATTACK_PLAYER, 1);
+    return saved;
+  }
+
+  /** Removes troops from a city garrison, validating each stack has enough. Shared by raids and node moves. */
+  @Transactional
+  public void deductGarrison(Long cityId, Map<String,Integer> army){
+    for (var e : army.entrySet()){
+      if (e.getValue() == null || e.getValue() <= 0) continue;
+      String name = catalog.get(e.getKey()).getName();
+      CityUnit cu = units.findByCityId(cityId).stream().filter(x->x.getType().equalsIgnoreCase(name)).findFirst()
+        .orElseThrow(() -> new IllegalStateException("No such troops: " + name));
+      if (cu.getCount() < e.getValue()) throw new IllegalStateException("Not enough " + name);
+      cu.setCount(cu.getCount()-e.getValue()); units.save(cu);
+    }
   }
 
   private boolean hasResearch(Long cityId, ResearchType t){

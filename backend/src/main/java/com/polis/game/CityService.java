@@ -20,9 +20,14 @@ public class CityService {
   private final BuildingRepo buildings;
   private final UnitRepo units;
   private final JobRepo jobs;
+  private final UnitCatalog catalog;
+  private final MissionService missions;
+  private final LibraryService library;
 
-  public CityService(CityRepo cities, BuildingRepo buildings, UnitRepo units, JobRepo jobs){
-    this.cities=cities; this.buildings=buildings; this.units=units; this.jobs=jobs;
+  public CityService(CityRepo cities, BuildingRepo buildings, UnitRepo units, JobRepo jobs,
+                     UnitCatalog catalog, MissionService missions, LibraryService library){
+    this.cities=cities; this.buildings=buildings; this.units=units; this.jobs=jobs; this.catalog=catalog;
+    this.missions=missions; this.library=library;
   }
 
   public Map<BuildingType,Integer> levels(Long cityId){
@@ -44,7 +49,7 @@ public class CityService {
   public int popUsed(Long cityId){
     int used = 0;
     for (CityBuilding b : buildings.findByCityId(cityId)) used += b.getLevel()*b.getType().pop;
-    for (CityUnit u : units.findByCityId(cityId)) used += u.getCount()*u.getType().pop;
+    for (CityUnit u : units.findByCityId(cityId)) used += u.getCount()*catalog.get(u.getType()).getPopulationCost();
     return used;
   }
 
@@ -58,11 +63,13 @@ public class CityService {
     if (elapsed > 0){
       Map<BuildingType,Integer> lv = levels(c.getId());
       long cap = GameRules.storeCap(lv.get(BuildingType.WAREHOUSE));
-      c.setWood(Math.min(cap,  c.getWood()  + GameRules.prodPerHour(lv.get(BuildingType.TIMBER))/3600.0*elapsed));
-      c.setStone(Math.min(cap, c.getStone() + GameRules.prodPerHour(lv.get(BuildingType.QUARRY))/3600.0*elapsed));
-      c.setSilver(Math.min(cap,c.getSilver()+ GameRules.prodPerHour(lv.get(BuildingType.MINE))/3600.0*elapsed));
+      // production: race bonus → Library "Abundance" research (documented stacking order)
+      double prod = (c.getRace()!=null ? c.getRace().prodMult : 1.0) * library.effects(c.getId()).prodMult();
+      c.setWood(Math.min(cap,  c.getWood()  + GameRules.prodPerHour(lv.get(BuildingType.TIMBER))*prod/3600.0*elapsed));
+      c.setStone(Math.min(cap, c.getStone() + GameRules.prodPerHour(lv.get(BuildingType.QUARRY))*prod/3600.0*elapsed));
+      c.setSilver(Math.min(cap,c.getSilver()+ GameRules.prodPerHour(lv.get(BuildingType.MINE))*prod/3600.0*elapsed));
       int temple = lv.get(BuildingType.TEMPLE);
-      if (c.getGod()!=null && temple>0)
+      if (temple>0)
         c.setFavor(Math.min(GameRules.favorCap(temple), c.getFavor()+GameRules.favorPerHour(temple)/3600.0*elapsed));
       c.setLastTickAt(now);
     }
@@ -111,12 +118,19 @@ public class CityService {
         .orElseGet(()->new CityBuilding(c.getId(), j.getBuildingType(), 0));
       b.setLevel(j.getToLevel());
       buildings.save(b);
+      // mission progress: a building was completed / upgraded
+      Long pid = c.getPlayerId();
+      missions.record(pid, MissionObjectiveType.BUILD_BUILDING, 1);
+      missions.record(pid, MissionObjectiveType.UPGRADE_BUILDING_LEVEL, j.getToLevel());
+      if (j.getBuildingType()==BuildingType.ACADEMY)
+        missions.record(pid, MissionObjectiveType.REACH_ACADEMY_LEVEL, j.getToLevel());
     } else {
       CityUnit u = units.findByCityId(c.getId()).stream()
-        .filter(x->x.getType()==j.getUnitType()).findFirst()
+        .filter(x->x.getType().equals(j.getUnitType())).findFirst()
         .orElseGet(()->new CityUnit(c.getId(), j.getUnitType(), 0));
       u.setCount(u.getCount()+j.getBatch());
       units.save(u);
+      missions.record(c.getPlayerId(), MissionObjectiveType.TRAIN_TROOPS, j.getBatch());
     }
   }
 }

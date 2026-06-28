@@ -121,7 +121,7 @@ function MiniMap({ world, moves, now }: { world: WorldData | null; moves: Moveme
       const size = 130 + isl.cities.length * 16;
       const rad = size * 0.33;
       for (const c of isl.cities) {
-        const a = (c.slot / 10) * 2 * Math.PI - Math.PI / 2;
+        const a = (c.slot / 12) * 2 * Math.PI - Math.PI / 2;
         map.set(c.id, { x: isl.px + Math.cos(a) * rad, y: isl.py + Math.sin(a) * rad });
       }
     }

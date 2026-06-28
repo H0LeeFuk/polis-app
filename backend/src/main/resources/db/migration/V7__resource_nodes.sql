@@ -1,0 +1,41 @@
+-- PART 3: contested resource nodes + hero equipment.
+
+alter table islands     add column is_resource boolean not null default false;
+alter table movements   add column target_node_id bigint;
+alter table alliances   add column treasury_wood   bigint not null default 0;
+alter table alliances   add column treasury_stone  bigint not null default 0;
+alter table alliances   add column treasury_silver bigint not null default 0;
+
+create table resource_nodes (
+  id                      bigserial primary key,
+  world_id                bigint not null,
+  island_id               bigint not null,
+  x                       int not null default 0,
+  y                       int not null default 0,
+  node_type               varchar(20) not null,
+  level                   int not null default 1,
+  status                  varchar(12) not null default 'UNCLAIMED',
+  controlling_player_id   bigint,
+  controlling_alliance_id bigint,
+  garrison                jsonb not null default '{}',
+  accumulated_resources   bigint not null default 0,
+  last_tick_at            timestamptz not null default now(),
+  claimed_at              timestamptz,
+  contested_until         timestamptz
+);
+create index idx_nodes_world on resource_nodes(world_id);
+create index idx_nodes_island on resource_nodes(island_id);
+create index idx_nodes_controller on resource_nodes(controlling_player_id);
+
+create table hero_items (
+  id              bigserial primary key,
+  owner_player_id bigint not null references players(id),
+  name            varchar(64) not null,
+  slot            varchar(12) not null,
+  rarity          varchar(12) not null,
+  buffs           jsonb not null default '{}',
+  equipped        boolean not null default false,
+  seen            boolean not null default false,
+  obtained_at     timestamptz not null default now()
+);
+create index idx_items_owner on hero_items(owner_player_id);

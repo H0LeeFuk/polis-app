@@ -22,9 +22,15 @@ public class CityFactory {
 
   @Transactional
   public City createPlayerCity(Long worldId, Long playerId, Long islandId, int slot, String name, boolean capital){
+    return createPlayerCity(worldId, playerId, islandId, slot, name, capital, Race.HUMANS);
+  }
+
+  @Transactional
+  public City createPlayerCity(Long worldId, Long playerId, Long islandId, int slot, String name,
+                               boolean capital, Race race){
     City c = new City();
     c.setWorldId(worldId); c.setPlayerId(playerId); c.setIslandId(islandId); c.setSlot(slot);
-    c.setName(name); c.setCapital(capital);
+    c.setName(name); c.setCapital(capital); c.setRace(race);
     c.setWood(500); c.setStone(500); c.setSilver(250);
     c = cities.save(c);
     for (BuildingType t : BuildingType.values())

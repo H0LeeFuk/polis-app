@@ -52,7 +52,7 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .chip .v small{display:block;font-size:10px;color:var(--ivory-dim);margin-top:2px}
 .chip.full .v{color:var(--bad)}
 
-.panel-actions{position:absolute;left:18px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;z-index:12}
+.panel-actions{position:absolute;left:18px;top:58%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;z-index:12}
 .panel-action-btn{background:rgba(26,19,14,0.92);border:1px solid var(--gold-deep);color:var(--ivory);padding:12px 18px;border-radius:14px;font-family:'Cinzel';font-size:14px;font-weight:600;cursor:pointer;min-width:152px;white-space:nowrap}
 .panel-action-btn:hover{background:rgba(42,30,22,0.98);color:var(--gold)}
 .chip{display:flex;align-items:center;gap:7px;background:#0f0a07cc;border:1px solid #4a3625;padding:6px 11px;border-radius:9px;min-width:96px}
@@ -123,7 +123,7 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .bld-section{margin-top:16px;border-top:1px solid #3a2a1d;padding-top:14px}
 .bld-section h3{margin:0 0 10px;font-family:'Cinzel';color:var(--ivory)}
 
-.panel-actions{position:absolute;left:18px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;z-index:12}
+.panel-actions{position:absolute;left:18px;top:58%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;z-index:12}
 .panel-action-btn{background:rgba(26,19,14,0.92);border:1px solid var(--gold-deep);color:var(--ivory);padding:12px 18px;border-radius:14px;font-family:'Cinzel';font-size:14px;font-weight:600;cursor:pointer;min-width:140px;white-space:nowrap}
 .panel-action-btn:hover{background:rgba(42,30,22,0.98);color:var(--gold)}
 
@@ -170,7 +170,7 @@ button{font-family:'Spectral',serif;cursor:pointer}
 /* world */
 .world{position:relative;width:100%;height:100%;border:none;border-radius:0;overflow:auto;background:
   radial-gradient(circle at 40% 30%,#1f7fc4 0,#1567a6 45%,#0d4f86 100%)}
-.wspace{position:relative;width:1500px;height:1100px;background-image:radial-gradient(rgba(255,255,255,0.04) 1px,transparent 1px);background-size:34px 34px}
+.wspace{position:relative;width:2540px;height:1820px;background-image:radial-gradient(rgba(255,255,255,0.04) 1px,transparent 1px);background-size:34px 34px}
 .world{cursor:grab;user-select:none;scrollbar-width:none;-ms-overflow-style:none}
 .world::-webkit-scrollbar{display:none;width:0;height:0}
 .world:active{cursor:grabbing}
@@ -318,3 +318,433 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
   .city-moves{width:200px;right:10px;bottom:10px}
   .mvov-map{height:150px}
 }
+
+/* ============================================================ */
+/* Battle Reports                                               */
+/* ============================================================ */
+.br-panel{width:min(1080px,100%)}
+.br-body{display:flex;gap:0;flex:1;min-height:0;overflow:hidden}
+.br-list{width:46%;min-width:300px;overflow:auto;padding:10px 16px 18px;display:flex;flex-direction:column;gap:10px;border-right:1px solid rgba(255,255,255,0.07)}
+.br-loading{padding:24px;text-align:center}
+.br-more{align-self:center;margin-top:4px}
+.br-markall{margin-left:8px}
+
+/* report card */
+.br-card{background:rgba(255,255,255,0.03);border:1px solid #2a1f15;border-left:4px solid var(--gold-deep);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;transition:background .12s}
+.br-card:hover{background:rgba(255,255,255,0.06)}
+.br-card.active{background:rgba(216,173,83,0.12);border-color:var(--gold)}
+.br-card.tone-good{border-left-color:#5b9a3a}
+.br-card.tone-bad{border-left-color:var(--bad)}
+.br-card.tone-draw{border-left-color:#9a8a5a}
+.br-card.unread{background:rgba(216,173,83,0.09)}
+.br-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.br-verdict{font-family:'Cinzel';font-weight:700;font-size:13px;color:var(--ivory)}
+.br-card.tone-good .br-verdict{color:#8fd06a}
+.br-card.tone-bad .br-verdict{color:#f0a088}
+.br-route{font-size:12px;color:var(--ivory-dim);text-align:right}
+.br-route b{color:var(--ivory)}
+.br-card-sub{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;gap:8px}
+.br-when{color:var(--ivory-dim);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.br-new{background:var(--gold);color:var(--slip);font-family:'Cinzel';font-weight:700;font-size:9px;padding:1px 5px;border-radius:999px;letter-spacing:.04em}
+.br-card-stats{display:flex;gap:12px;font-size:12px;flex-wrap:wrap}
+.br-card-stats .loss{color:#f0a088}
+.br-card-stats .kill{color:#cdbf9e}
+.br-card-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.br-plunder{display:flex;gap:10px;font-weight:600;color:#e6c98f}
+.br-view{background:none;border:none;color:var(--gold);font-family:'Cinzel';font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap}
+
+/* detail pane */
+.br-detail-pane{flex:1;overflow:auto;padding:0}
+.br-detail-placeholder{display:flex;align-items:center;justify-content:center;height:100%;padding:30px;text-align:center}
+.br-detail{padding:18px 22px 22px;background:linear-gradient(#1a140e,#15110c)}
+.br-detail-head{position:relative;text-align:center;border-bottom:1px solid rgba(218,160,83,0.25);padding-bottom:10px;margin-bottom:14px}
+.br-detail-head h2{font-family:'Cinzel';color:var(--gold);margin:0 0 2px;font-size:19px}
+.br-detail-close{position:absolute;right:0;top:0;background:none;border:none;color:var(--ivory-dim);font-size:18px;cursor:pointer}
+.br-sides{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
+.br-side{flex:1;display:flex;flex-direction:column;gap:2px;padding:10px;border:1px solid #2a1f15;border-radius:10px;text-align:center}
+.br-side.you{border-color:var(--gold);background:rgba(216,173,83,0.08)}
+.br-side-role{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ivory-dim)}
+.br-side b{color:var(--ivory);font-size:14px}
+.br-vs{font-family:'Cinzel';color:var(--ivory-dim);font-size:13px}
+.br-outcome{text-align:center;font-family:'Cinzel';font-weight:700;font-size:18px;padding:10px;border-radius:10px;margin-bottom:6px;display:flex;flex-direction:column;gap:2px}
+.br-outcome small{font-family:'Spectral',serif;font-weight:400;font-size:12px;color:var(--ivory-dim)}
+.br-outcome.tone-good{background:rgba(91,154,58,0.16);color:#8fd06a}
+.br-outcome.tone-bad{background:rgba(210,96,58,0.16);color:#f0a088}
+.br-outcome.tone-draw{background:rgba(154,138,90,0.16);color:#d8c79c}
+.br-section-label{text-align:center;font-family:'Cinzel';font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin:16px 0 8px;position:relative}
+.br-section-label::before,.br-section-label::after{content:"";position:absolute;top:50%;width:24%;height:1px;background:rgba(218,160,83,0.3)}
+.br-section-label::before{left:8%}.br-section-label::after{right:8%}
+.br-armies{display:flex;gap:12px}
+.br-army{flex:1}
+.br-army h4{margin:0 0 6px;font-family:'Cinzel';font-size:12px;color:var(--ivory)}
+.br-trow{display:grid;grid-template-columns:1.6fr .8fr .8fr .8fr;gap:4px;font-size:12px;padding:3px 2px;align-items:center}
+.br-thead{color:var(--ivory-dim);font-size:10px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #2a1f15}
+.br-trow .loss{color:#f0a088}
+.br-trow .surv{color:#8fd06a}
+.br-powers{display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--ivory-dim)}
+.br-powers b{color:var(--ivory)}
+.br-plunder-box{display:flex;flex-direction:column;gap:4px;max-width:280px;margin:0 auto}
+.br-plunder-row{display:flex;justify-content:space-between;font-size:13px;padding:2px 4px}
+.br-plunder-row b{color:#e6c98f}
+.br-plunder-total{text-align:center;font-size:11px;margin-top:4px}
+.br-detail-actions{display:flex;justify-content:space-between;gap:10px;margin-top:18px;border-top:1px solid rgba(218,160,83,0.2);padding-top:14px}
+.btn.ghost.danger{border-color:var(--bad);color:#f0a088}
+
+/* empty state */
+.br-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 20px;text-align:center}
+.br-empty.small{padding:22px 10px}
+
+/* city tab reports list + mobile bottom sheet */
+.cm-reports{display:flex;flex-direction:column;gap:8px}
+.br-sheet-backdrop{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:18px}
+.br-sheet{width:min(560px,100%);max-height:88vh;overflow:auto;background:#15110c;border:1px solid rgba(218,160,83,0.3);border-radius:16px;box-shadow:var(--shadow)}
+
+@media (max-width:720px){
+  .br-body{flex-direction:column}
+  .br-list{width:100%;border-right:none}
+  /* detail opens as a full-screen overlay on mobile */
+  .br-detail-pane{position:fixed;inset:0;z-index:90;background:#15110c;display:none}
+  .br-detail-pane.open{display:block}
+  .br-armies{flex-direction:column}
+  .br-sheet{max-height:94vh;border-radius:14px}
+}
+
+/* ============================================================ */
+/* Troop tooltips + hero                                        */
+/* ============================================================ */
+.unit-tip{position:relative;cursor:help;border-bottom:1px dotted var(--gold-deep)}
+.unit-tip-card{display:none;position:absolute;left:0;bottom:120%;z-index:70;width:180px;flex-direction:column;gap:3px;background:#15110c;border:1px solid var(--gold-deep);border-radius:10px;padding:8px 10px;box-shadow:var(--shadow);font-size:11.5px}
+.unit-tip:hover .unit-tip-card{display:flex}
+.utc-head{font-family:'Cinzel';color:var(--gold);font-weight:700;margin-bottom:2px}
+.utc-row{display:flex;justify-content:space-between}
+.utc-def{display:flex;justify-content:space-between;color:var(--ivory-dim)}
+
+.hero-send{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid var(--gold-deep);border-radius:10px;cursor:pointer;margin:4px 0}
+.hero-send.on{border-color:var(--gold);background:rgba(216,173,83,0.1)}
+.hero-send input{margin-top:3px}
+.hero-send b{display:block;font-size:13px}
+.hero-send small{display:block}
+.hero-armed-badge{display:inline-block;margin-top:3px;background:var(--gold);color:var(--slip);font-family:'Cinzel';font-weight:700;font-size:9px;padding:1px 6px;border-radius:999px}
+
+.hero-panel{width:min(720px,100%)}
+.hero-body{overflow:auto;padding:16px 20px 22px}
+.hero-portrait{width:64px;height:64px;border-radius:50%;background:radial-gradient(#e8d8b0,#c8a24e);display:flex;align-items:center;justify-content:center;font-size:34px;border:2px solid var(--gold-deep)}
+.hero-portrait.big{width:96px;height:96px;font-size:52px;margin:10px auto}
+.hero-dash-head{display:flex;gap:16px;align-items:center;margin-bottom:12px}
+.hero-dash-id{flex:1}
+.hero-dash-id h2{margin:0;font-family:'Cinzel';color:var(--gold)}
+.hero-xpbar{position:relative;height:16px;background:#2a1f15;border-radius:8px;overflow:hidden;margin:6px 0}
+.hero-xpbar > i{display:block;height:100%;background:linear-gradient(90deg,#d8ad53,#f2c94c)}
+.hero-xpbar > span{position:absolute;inset:0;text-align:center;font-size:10px;line-height:16px;color:#fff}
+.hero-state{font-size:11px;font-family:'Cinzel';padding:2px 8px;border-radius:999px}
+.hero-state.st-idle{background:rgba(91,154,58,0.2);color:#8fd06a}
+.hero-state.st-marching{background:rgba(47,109,181,0.2);color:#7fb0e8}
+.hero-state.st-wounded{background:rgba(210,96,58,0.2);color:#f0a088}
+.hero-bonuses{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;margin-bottom:6px}
+.hero-bonuses span{background:rgba(255,255,255,0.04);border:1px solid #2a1f15;border-radius:8px;padding:3px 8px}
+.hero-attr-current{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;margin-bottom:8px}
+.hero-alloc{display:flex;flex-direction:column;gap:8px;margin:6px 0}
+.hero-alloc-left{font-size:13px}
+.hero-attr-row{border:1px solid #2a1f15;border-radius:10px;padding:8px 10px}
+.hero-attr-head{display:flex;justify-content:space-between;align-items:center;font-family:'Cinzel';font-size:13px}
+.hero-attr-ctl{display:flex;align-items:center;gap:8px}
+.hero-attr-ctl button{width:24px;height:24px;border-radius:6px;border:1px solid var(--gold-deep);background:#1c130e;color:var(--gold);font-weight:700;cursor:pointer}
+.hero-attr-ctl button:disabled{opacity:.4;cursor:default}
+.hero-attr-blurb{font-size:11.5px;margin-top:3px}
+.hero-attr-prev{color:#8fd06a;font-size:11.5px;margin-top:2px}
+.hero-skills{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.hero-skill-card{border:1px solid #2a1f15;border-radius:10px;padding:8px 10px}
+.hero-skill-card.locked{opacity:.5}
+.hero-skill-card.armed{border-color:var(--gold);background:rgba(216,173,83,0.1)}
+.hero-skill-card h4{margin:0 0 4px;font-family:'Cinzel';font-size:12px;color:var(--ivory)}
+.hero-skill-card p{font-size:11px;margin:0 0 6px}
+.hero-armed{color:var(--gold);font-family:'Cinzel';font-weight:700;font-size:12px}
+.hero-equip-slots{display:flex;gap:8px}
+.hero-slot{flex:1;border:1px dashed var(--gold-deep);border-radius:10px;padding:10px;text-align:center;font-size:12px;display:flex;flex-direction:column;gap:4px}
+.hero-slot.filled{border-style:solid}
+.hero-slot.rar-rare{border-color:#5b8fd0}.hero-slot.rar-epic{border-color:#b07fd0}
+.hero-slot-name{font-size:10px;text-transform:uppercase;color:var(--ivory-dim)}
+.hero-station select{width:100%;background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory);border-radius:8px;padding:7px 10px}
+.hero-inline-err{color:#f0a088;font-size:12px;margin:6px 0}
+.hero-steps{display:flex;justify-content:center;gap:10px;margin-bottom:14px}
+.hero-step{width:28px;height:28px;border-radius:50%;border:1px solid var(--gold-deep);display:flex;align-items:center;justify-content:center;font-family:'Cinzel';color:var(--ivory-dim)}
+.hero-step.active{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+.hero-step.done{background:rgba(216,173,83,0.3);color:var(--gold)}
+.hero-create-step{text-align:center;max-width:420px;margin:0 auto}
+.hero-create-step h3{font-family:'Cinzel';color:var(--gold)}
+.hero-name-input{width:100%;background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory);border-radius:10px;padding:10px 12px;font-family:'Spectral',serif;font-size:16px;text-align:center;margin:8px 0}
+.hero-create-nav{display:flex;justify-content:space-between;gap:10px;margin-top:14px}
+.hero-summary-card{border:1px solid var(--gold-deep);border-radius:14px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.hero-summary-attrs{display:flex;gap:14px;font-size:14px}
+.br-hero-box{border:1px solid var(--gold-deep);border-radius:10px;padding:10px 12px;background:rgba(216,173,83,0.06)}
+.br-hero-led{font-family:'Cinzel';color:var(--gold);font-size:13px}
+.br-hero-xp{color:#8fd06a;font-size:12px;margin-top:4px}
+.br-hero-wounded{color:#f0a088;font-size:12px;margin-top:4px}
+
+/* resource islands + nodes */
+.resource-island .island-land.sanctuary{background:radial-gradient(#d9c9a0,#b89a5e);display:flex;align-items:center;justify-content:center;border:2px dashed #7a5a22}
+.sanctuary-ico{font-size:38px}
+.node-list{display:flex;flex-direction:column;gap:8px}
+.node-row{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid #2a1f15;border-left:4px solid var(--gold-deep);border-radius:10px;cursor:pointer}
+.node-row:hover{background:rgba(255,255,255,0.05)}
+.node-row.tone-unclaimed{border-left-color:#8a8a8a}
+.node-row.tone-mine{border-left-color:#5b9a3a}
+.node-row.tone-enemy{border-left-color:var(--bad)}
+.node-row.tone-contested{border-left-color:var(--gold);animation:navpulse 1.4s ease-in-out infinite}
+.node-ico{font-size:22px}
+.node-row-main{flex:1;display:flex;flex-direction:column}
+.node-row-res{font-weight:600;color:#e6c98f}
+.node-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.node-detail-grid > div{display:flex;flex-direction:column}
+.node-detail-grid strong{font-size:11px;color:var(--ivory-dim);text-transform:uppercase}
+.node-badge{align-self:flex-start;font-family:'Cinzel';font-size:11px;padding:2px 8px;border-radius:999px;background:#2a1f15}
+.node-badge.tone-mine{color:#8fd06a}.node-badge.tone-enemy{color:#f0a088}.node-badge.tone-contested{color:var(--gold)}
+.node-accum{margin:6px 0;font-size:13px}
+.node-garrison{display:flex;gap:10px;flex-wrap:wrap;font-weight:600;margin:6px 0}
+.node-actions{display:flex;gap:8px}
+
+/* hero inventory */
+.hero-inventory{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:8px}
+.hero-item{border:1px solid #2a1f15;border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:3px}
+.hero-item small{font-size:11px}
+.hero-item.rar-common{border-color:#8a8a8a}.hero-item.rar-rare{border-color:#5b8fd0}.hero-item.rar-epic{border-color:#b07fd0}
+.hero-item.unseen{box-shadow:0 0 0 1px var(--gold)}
+.hero-item-head{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.hero-item-new{background:var(--gold);color:var(--slip);font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px}
+.hero-slot{cursor:pointer}
+.hero-slot small{font-size:10px}
+
+/* bandit camp */
+.bandit-camp-ico{position:absolute;right:6px;bottom:6px;z-index:4;background:rgba(20,14,10,0.85);border:1px solid var(--gold-deep);border-radius:8px;font-size:18px;line-height:1;padding:4px 6px;cursor:pointer;animation:navpulse 1.8s ease-in-out infinite}
+.bandit-camp-ico:hover{background:rgba(42,30,22,0.98);transform:scale(1.12)}
+.bandit-dots{display:flex;gap:5px;justify-content:center;margin-bottom:10px;flex-wrap:wrap}
+.bandit-dot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:'Cinzel';border:1px solid var(--gold-deep);color:var(--ivory-dim)}
+.bandit-dot.done{background:rgba(91,154,58,0.3);color:#8fd06a;border-color:#5b9a3a}
+.bandit-dot.current{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+.bandit-status{text-align:center;font-family:'Cinzel';font-size:13px;padding:4px;border-radius:8px;margin-bottom:6px}
+.bandit-status.active{color:#f0a088}
+.bandit-status.defeated{color:var(--ivory-dim);background:rgba(255,255,255,0.04)}
+.bandit-desc{text-align:center;font-style:italic}
+.bandit-forces{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px}
+.bandit-force{display:flex;justify-content:space-between;border:1px solid #2a1f15;border-radius:8px;padding:5px 9px;font-size:13px}
+.bandit-rewards{display:flex;flex-wrap:wrap;gap:8px;background:rgba(216,173,83,0.1);border:1px solid var(--gold-deep);border-radius:10px;padding:10px}
+.bandit-reward{font-weight:600;color:#e6c98f}
+.bandit-power{margin:8px 0;font-size:13px}
+.bandit-result{margin-top:12px;border-radius:10px;padding:12px;text-align:center}
+.bandit-result.win{background:rgba(91,154,58,0.15)}
+.bandit-result.loss{background:rgba(210,96,58,0.15)}
+.bandit-result h3{margin:0 0 6px;font-family:'Cinzel'}
+.bandit-reward-won{color:#e6c98f;margin-top:6px}
+
+/* ===== Founding Cities & Race Selection ===== */
+/* race chip in the city header + bonuses popover */
+.race-badge{position:relative;display:inline-block}
+.race-chip{display:inline-flex;align-items:center;gap:4px;background:#2a1c10;color:var(--gold);
+  border:1px solid var(--gold-deep);border-radius:14px;padding:2px 10px;font-size:13px;cursor:pointer;
+  font-family:'Cinzel',serif}
+.race-chip:hover{background:#3a2814}
+.race-ico{font-size:14px}
+.race-pop{position:absolute;top:110%;left:0;z-index:40;width:260px;background:#1c1410;
+  border:1px solid var(--gold-deep);border-radius:10px;padding:12px;box-shadow:var(--shadow)}
+.race-pop-head{font-family:'Cinzel',serif;color:var(--gold);font-size:15px;margin-bottom:4px}
+.race-bonuses{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.race-bonus{background:rgba(122,90,34,0.25);color:#e6c98f;border:1px solid var(--gold-deep);
+  border-radius:8px;padding:2px 7px;font-size:12px}
+.race-bonus.neg{color:#e7977a;border-color:#7a3322;background:rgba(210,96,58,0.18)}
+
+/* founding status banner */
+.founding-banner{display:flex;align-items:center;gap:10px;margin:6px 12px;padding:8px 14px;
+  background:rgba(122,90,34,0.18);border:1px solid var(--gold-deep);border-radius:10px;color:var(--ivory)}
+.founding-banner.ready{background:rgba(196,88,47,0.2);border-color:var(--terracotta)}
+.founding-banner .fb-ico{font-size:20px}
+.founding-banner .btn{margin-left:auto;padding:4px 12px}
+
+/* found-city stepper */
+.found-steps{display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:12px}
+.found-step{font-family:'Cinzel',serif;font-size:13px;color:var(--ivory-dim);border:1px solid var(--gold-deep);
+  border-radius:14px;padding:3px 12px}
+.found-step.active{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+.found-step.done{color:var(--gold)}
+.found-step-sep{color:var(--ivory-dim)}
+.found-warn{color:#e7977a;background:rgba(210,96,58,0.15);border:1px solid #7a3322;border-radius:8px;padding:8px 10px}
+
+/* race cards */
+.race-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:10px 0}
+.race-card{text-align:left;background:#241a10;border:1px solid var(--gold-deep);border-radius:10px;
+  padding:12px;cursor:pointer;color:var(--ivory);transition:border-color .15s,transform .1s}
+.race-card:hover{border-color:var(--gold)}
+.race-card.sel{border-color:var(--gold);background:#33240f;box-shadow:0 0 0 1px var(--gold) inset}
+.race-card-head{font-family:'Cinzel',serif;color:var(--gold);font-size:16px;display:flex;align-items:center;gap:6px}
+.race-card-ico{font-size:20px}
+.race-card-blurb{font-size:12px;color:var(--ivory-dim);margin:6px 0}
+.race-card-traits{margin:6px 0;padding-left:16px;font-size:12px}
+.race-card-traits li{margin:1px 0}
+.race-card-roster{margin-top:6px;font-size:11px}
+.found-field{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.found-field input{padding:7px 9px}
+.found-heroafter{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.found-heroafter label{display:flex;align-items:center;gap:6px;font-size:13px}
+.slot-open{color:var(--gold)!important}
+.hero-state.st-settling{background:rgba(122,90,34,0.3);color:var(--gold)}
+@media(max-width:640px){.race-cards{grid-template-columns:1fr}}
+
+/* ===== Two heroes + Missions ===== */
+.hero-tabs{display:flex;gap:6px;padding:8px 12px 0}
+.hero-tab{background:#241a10;color:var(--ivory-dim);border:1px solid var(--gold-deep);border-bottom:none;
+  border-radius:8px 8px 0 0;padding:6px 14px;cursor:pointer;font-family:'Cinzel',serif}
+.hero-tab.active{background:#33240f;color:var(--gold)}
+.hero-tab.locked{opacity:0.7}
+.hero-locked{padding:24px;text-align:center}
+.hero-portrait.locked{filter:grayscale(0.7) brightness(0.8)}
+
+.hero-picker{margin:8px 0}
+.hp-label{display:block;font-size:12px;color:var(--ivory-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.hp-opts{display:flex;flex-wrap:wrap;gap:6px}
+.hp-chip{background:#241a10;color:var(--ivory);border:1px solid var(--gold-deep);border-radius:14px;
+  padding:4px 10px;cursor:pointer;font-size:13px}
+.hp-chip.sel{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+.hp-chip small{opacity:.7}
+.found-hero-select{margin:8px 0}
+
+.mission-nudge{display:flex;align-items:center;gap:10px;margin:6px 12px;padding:7px 12px;
+  background:rgba(122,90,34,0.15);border:1px dashed var(--gold-deep);border-radius:10px;color:var(--ivory);font-size:14px}
+.mission-nudge .btn{margin-left:auto;padding:3px 10px}
+.mission-nudge-x{background:none;border:none;color:var(--ivory-dim);cursor:pointer;font-size:15px}
+
+.missions-panel{max-width:640px}
+.missions-body{padding:14px 16px;overflow:auto}
+.mission-list{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.mission-card{background:#241a10;border:1px solid var(--gold-deep);border-radius:10px;padding:12px}
+.mission-card.st-locked{opacity:0.6}
+.mission-card.st-completed{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+.mission-card.capstone{border-color:#b06fd0;background:linear-gradient(180deg,#2a1733,#241a10)}
+.mission-head{display:flex;align-items:center;gap:8px}
+.mission-head h3{margin:0;font-size:15px;font-family:'Cinzel',serif;flex:1}
+.mission-order{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--gold-deep);color:var(--ivory);border-radius:50%;font-size:13px}
+.mission-marquee{color:#d8a6ef;font-size:13px}
+.mission-badge{font-size:11px;padding:1px 8px;border-radius:8px;background:#1c1410;border:1px solid var(--gold-deep);color:var(--ivory-dim)}
+.mission-badge.st-completed{color:var(--gold);border-color:var(--gold)}
+.mission-badge.st-active{color:#6cc0ee}
+.mission-progress{display:flex;align-items:center;gap:8px;margin:6px 0}
+.mission-progress .bar{flex:1;height:8px;background:#1c1410;border-radius:4px;overflow:hidden}
+.mission-progress .bar i{display:block;height:100%;background:var(--gold)}
+.mission-reward{font-size:13px;color:#e6c98f;margin:6px 0}
+.mission-locked{font-size:13px;margin-top:6px}
+.mission-celebrate{background:rgba(176,111,208,0.18);border:1px solid #b06fd0;border-radius:10px;
+  padding:10px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.mission-celebrate .btn{margin-left:auto}
+
+/* map: one marker per empty city plot */
+.wslot-empty{position:absolute;width:18px;height:18px;border-radius:50%;transform:translate(-50%,-50%);
+  display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;
+  background:rgba(28,20,14,0.78);border:1px dashed var(--gold);cursor:pointer;
+  box-shadow:0 0 6px rgba(216,173,83,0.45);opacity:.82;transition:transform .1s,opacity .1s}
+.wslot-empty:hover{opacity:1;transform:translate(-50%,-50%) scale(1.25);background:rgba(216,173,83,0.35)}
+
+/* inventory modal (legacy) */
+.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;padding:14px}
+.inv-card{background:#241a10;border:1px solid var(--gold-deep);border-radius:10px;padding:10px}
+.inv-card.rar-rare{border-color:#4aa3df}
+.inv-card.rar-epic{border-color:#b06fd0}
+.inv-empty{padding:24px;text-align:center}
+
+/* ===== Relic Vault (Aegean armoury) ===== */
+.inv2{width:min(720px,96vw);max-height:88vh;display:flex}
+.inv2-frame{position:relative;flex:1;display:flex;flex-direction:column;overflow:hidden;
+  background:linear-gradient(180deg,#211710 0%,#19110a 100%);
+  border:2px solid var(--gold-deep);border-radius:16px;
+  box-shadow:0 18px 60px rgba(0,0,0,0.6),inset 0 0 0 1px rgba(216,173,83,0.18)}
+/* gold Greek-key (meander) band framing the whole vault */
+.inv2-frame::before{content:"";position:absolute;inset:6px;border-radius:11px;pointer-events:none;
+  border:2px solid transparent;
+  background:
+    repeating-linear-gradient(90deg,var(--gold) 0 8px,transparent 8px 16px) top/100% 2px no-repeat,
+    repeating-linear-gradient(90deg,var(--gold) 0 8px,transparent 8px 16px) bottom/100% 2px no-repeat;
+  opacity:.35}
+.inv2-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px 10px}
+.inv2-title{font-family:'Cinzel';font-weight:900;font-size:20px;color:var(--gold);letter-spacing:.08em;
+  text-shadow:0 1px 2px #000}
+.inv2-close{background:none;border:1px solid var(--gold-deep);color:var(--ivory-dim);border-radius:8px;
+  width:30px;height:30px;cursor:pointer;font-size:14px}
+.inv2-close:hover{color:var(--gold);border-color:var(--gold)}
+.inv2-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 18px 12px;flex-wrap:wrap}
+.inv2-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.inv2-tab{display:inline-flex;align-items:center;gap:5px;background:#1c130e;border:1px solid var(--gold-deep);
+  color:var(--ivory-dim);padding:6px 12px;border-radius:9px;font-family:'Cinzel';font-size:12px;font-weight:600;cursor:pointer}
+.inv2-tab:hover{color:var(--gold)}
+.inv2-tab.on{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+.inv2-tab-lbl{font-size:12px}
+.inv2-count{font-family:'Cinzel';font-size:12px;color:var(--ivory-dim)}
+.inv2-msg{padding:30px;text-align:center;color:var(--ivory-dim)}
+.inv2-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:9px;padding:4px 18px 14px;overflow-y:auto}
+@media(max-width:560px){.inv2-grid{grid-template-columns:repeat(5,1fr)}}
+/* slot plinth — carved marble look */
+.inv2-slot{position:relative;aspect-ratio:1;border-radius:10px;border:1px solid var(--gold-deep);
+  background:linear-gradient(145deg,#2a1d12,#191009);display:flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 2px 4px rgba(0,0,0,0.5)}
+.inv2-slot.empty .inv2-meander{width:62%;height:62%;border-radius:6px;opacity:.22;
+  border:2px solid var(--gold);
+  background:repeating-linear-gradient(90deg,var(--gold) 0 3px,transparent 3px 6px) center/100% 3px no-repeat}
+.inv2-slot.filled{cursor:pointer;transition:transform .1s,box-shadow .1s}
+.inv2-slot.filled:hover{transform:translateY(-2px)}
+.inv2-ico{font-size:24px;filter:drop-shadow(0 1px 2px #000)}
+.inv2-eq{position:absolute;top:3px;right:4px;font-size:10px;color:var(--gold)}
+.inv2-slot.sel{outline:2px solid var(--gold);outline-offset:1px}
+/* rarity frames + glow */
+.inv2-slot.rar-common{border-color:#8a8a8a;box-shadow:inset 0 2px 4px rgba(0,0,0,0.5)}
+.inv2-slot.rar-rare{border-color:#4aa3df;box-shadow:0 0 10px rgba(74,163,223,0.45),inset 0 2px 4px rgba(0,0,0,0.5)}
+.inv2-slot.rar-epic{border-color:#b06fd0;box-shadow:0 0 12px rgba(176,111,208,0.55),inset 0 2px 4px rgba(0,0,0,0.5)}
+/* detail / hint footer */
+.inv2-hint{padding:14px 20px 18px;text-align:center;color:var(--ivory-dim);font-size:13px}
+.inv2-detail{display:flex;gap:14px;align-items:center;margin:0 18px 16px;padding:12px 14px;border-radius:12px;
+  background:linear-gradient(180deg,#241a10,#1a120b);border:1px solid var(--gold-deep)}
+.inv2-detail.rar-rare{border-color:#4aa3df}
+.inv2-detail.rar-epic{border-color:#b06fd0}
+.inv2-detail-ico{font-size:34px;width:58px;height:58px;flex:none;display:flex;align-items:center;justify-content:center;
+  border-radius:10px;background:#140d07;border:1px solid var(--gold-deep)}
+.inv2-detail-body{flex:1;min-width:0}
+.inv2-detail-name{font-family:'Cinzel';font-weight:700;font-size:16px;color:var(--ivory);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.inv2-rar-tag{font-family:'Cinzel';font-size:11px;color:var(--gold);border:1px solid var(--gold-deep);border-radius:999px;padding:1px 8px}
+.inv2-eq-tag{font-size:11px;color:#6fd08a}
+.inv2-detail-slot{font-size:12px;color:var(--ivory-dim);margin:2px 0 8px}
+.inv2-buffs{display:flex;flex-wrap:wrap;gap:6px}
+.inv2-buff{font-size:12px;color:var(--ivory);background:#140d07;border:1px solid var(--gold-deep);border-radius:8px;padding:3px 9px}
+
+/* island boss */
+.boss-card{background:linear-gradient(180deg,#3a1f1f,#241a10);border:1px solid #b0503a;border-radius:10px;padding:12px;margin-bottom:12px}
+.boss-card.defeated{opacity:0.6;border-color:var(--gold-deep)}
+.boss-head{display:flex;gap:10px;align-items:center}
+.boss-ico{font-size:26px}
+.boss-troops{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;font-size:13px}
+.boss-card .btn{margin-top:4px}
+.boss-result{text-align:center}
+.boss-result h3{font-family:'Cinzel',serif;margin:4px 0}
+.boss-result.win h3{color:var(--gold)}
+.boss-result.loss h3{color:var(--bad)}
+
+/* library / research tree */
+.library-panel{max-width:900px}
+.library-body{padding:14px 16px;overflow:auto}
+.lib-summary{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:10px}
+.lib-points{font-size:15px}.lib-points b{color:var(--gold)}
+.lib-affinity{margin-left:auto;color:#d8a6ef;font-size:13px}
+.lib-branches{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.lib-branch h3{font-family:'Cinzel',serif;color:var(--gold);text-align:center;margin:0 0 6px}
+.lib-tier{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+.lib-node{background:#241a10;border:1px solid var(--gold-deep);border-radius:8px;padding:8px}
+.lib-node.st-completed{border-color:var(--gold);background:#2c2410}
+.lib-node.avail{box-shadow:0 0 0 1px var(--gold) inset}
+.lib-node.st-locked{opacity:0.6}
+.lib-node.marquee{border-color:#b06fd0;background:linear-gradient(180deg,#2a1733,#241a10)}
+.lib-node.marquee.avail{box-shadow:0 0 8px #b06fd0}
+.lib-node-head{display:flex;justify-content:space-between;align-items:center;font-size:14px}
+.lib-cost{color:var(--gold);font-weight:700}
+.lib-effect{font-size:12px;margin:3px 0 6px}
+.lib-node .btn{padding:4px 8px;font-size:12px;width:100%}
+.lib-done{color:var(--gold);font-size:13px}
+.lib-researching{color:#6cc0ee;font-size:13px}
+.lib-locked{font-size:12px}
+.lib-foot{margin-top:12px;text-align:right}
+.btn.ghost.danger{border-color:var(--bad);color:var(--bad)}
+@media(max-width:760px){.lib-branches{grid-template-columns:1fr}}

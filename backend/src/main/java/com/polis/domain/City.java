@@ -13,7 +13,8 @@ public class City {
   private int slot;
   private String name;
   @Column(name="is_capital") private boolean capital = false;
-  @Enumerated(EnumType.STRING) private GodType god;
+  /** The city's race — chosen permanently when founded. Drives passive {@link Race} bonuses. */
+  @Enumerated(EnumType.STRING) private Race race;
   private double wood, stone, silver, favor, power;
   private int points;
   @Column(name="last_tick_at") private Instant lastTickAt = Instant.now();

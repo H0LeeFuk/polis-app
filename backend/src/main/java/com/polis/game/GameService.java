@@ -14,12 +14,14 @@ public class GameService {
   private final PlayerRepo players; private final CityRepo cities; private final IslandRepo islands;
   private final BuildingRepo buildings; private final UnitRepo units; private final ResearchRepo research;
   private final JobRepo jobs; private final AllianceRepo alliances; private final MovementRepo movements;
+  private final UnitCatalog catalog;
 
   public GameService(CityService cityService, RankingService ranking, PlayerRepo players, CityRepo cities,
                      IslandRepo islands, BuildingRepo buildings, UnitRepo units, ResearchRepo research,
-                     JobRepo jobs, AllianceRepo alliances, MovementRepo movements){
+                     JobRepo jobs, AllianceRepo alliances, MovementRepo movements, UnitCatalog catalog){
     this.cityService=cityService; this.ranking=ranking; this.players=players; this.cities=cities; this.islands=islands;
     this.buildings=buildings; this.units=units; this.research=research; this.jobs=jobs; this.alliances=alliances; this.movements=movements;
+    this.catalog=catalog;
   }
 
   @Transactional
@@ -79,14 +81,22 @@ public class GameService {
       bld.add(b);
     }
 
+    Race cityRace = c.getRace()==null ? Race.HUMANS : c.getRace();
     List<Map<String,Object>> trainable = new ArrayList<>();
-    for (UnitType u : UnitType.values()){
+    for (UnitType u : catalog.all()){
+      // each race trains its own roster (+ any shared/neutral units with no race tag)
+      if (u.getRace()!=null && u.getRace()!=cityRace) continue;
+      QueueType from = u.getFromQueue();
       Map<String,Object> t=new LinkedHashMap<>();
-      t.put("type",u.name()); t.put("from",u.from.name()); t.put("kind",u.kind.name());
-      t.put("atk",u.atk); t.put("def",u.def); t.put("speed",u.speed); t.put("pop",u.pop); t.put("carry",u.carry);
-      t.put("cost",List.of(u.costWood,u.costStone,u.costSilver));
-      t.put("seconds",GameRules.unitSeconds(u, lv.get(u.from==QueueType.HARBOR?BuildingType.HARBOR:BuildingType.BARRACKS)));
-      t.put("unlocked", u.research==null || done.contains(u.research));
+      t.put("type",u.getName()); t.put("from",from.name()); t.put("kind",u.getKind().name());
+      t.put("attackType",u.getAttackType().name());
+      t.put("atk",u.getAttack());
+      t.put("defBlunt",u.getDefenseBlunt()); t.put("defSharp",u.getDefenseSharp()); t.put("defDistance",u.getDefenseDistance());
+      t.put("speed",u.getSpeedMinutesPerTile()); t.put("pop",u.getPopulationCost()); t.put("carry",u.getCarryCapacity());
+      t.put("cost",List.of(u.getCostWood(),u.getCostStone(),u.getCostSilver()));
+      t.put("seconds",GameRules.unitSeconds(u, lv.get(from==QueueType.HARBOR?BuildingType.HARBOR:BuildingType.BARRACKS)));
+      boolean unlocked = u.getResearchRequired()==null || done.contains(ResearchType.valueOf(u.getResearchRequired()));
+      t.put("unlocked", unlocked);
       trainable.add(t);
     }
 
@@ -99,7 +109,7 @@ public class GameService {
     }
 
     List<Map<String,Object>> us = units.findByCityId(id).stream().filter(u->u.getCount()>0)
-      .map(u->{ Map<String,Object> m=new LinkedHashMap<>(); m.put("type",u.getType().name()); m.put("count",u.getCount()); return m; }).toList();
+      .map(u->{ Map<String,Object> m=new LinkedHashMap<>(); m.put("type",u.getType()); m.put("count",u.getCount()); return m; }).toList();
 
     Map<String,List<Map<String,Object>>> queues = new LinkedHashMap<>();
     for (QueueType qt : QueueType.values()){
@@ -109,7 +119,7 @@ public class GameService {
         m.put("id",j.getId()); m.put("position",j.getPosition()); m.put("totalSeconds",j.getTotalSeconds());
         m.put("finishAt", j.getFinishAt()==null?null:j.getFinishAt().toString());
         if (qt==QueueType.BUILDING){ m.put("label", j.getBuildingType().name()); m.put("toLevel", j.getToLevel()); }
-        else { m.put("label", j.getUnitType().name()); m.put("batch", j.getBatch()); }
+        else { m.put("label", j.getUnitType()); m.put("batch", j.getBatch()); }
         list.add(m);
       }
       queues.put(qt.name(), list);
@@ -126,7 +136,7 @@ public class GameService {
     Map<String,Object> m=new LinkedHashMap<>();
     m.put("id",id); m.put("name",c.getName()); m.put("capital",c.isCapital());
     m.put("island",islName.get(String.valueOf(c.getIslandId()))); m.put("points",c.getPoints());
-    m.put("god", c.getGod()==null?null:c.getGod().name());
+    m.put("race", c.getRace()==null ? null : c.getRace().dto());
     long cap=GameRules.storeCap(lv.get(BuildingType.WAREHOUSE));
     Map<String,Object> res=new LinkedHashMap<>();
     res.put("wood",(long)c.getWood()); res.put("stone",(long)c.getStone()); res.put("silver",(long)c.getSilver());

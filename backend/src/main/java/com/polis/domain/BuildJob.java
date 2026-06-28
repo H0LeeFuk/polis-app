@@ -11,7 +11,7 @@ public class BuildJob {
   @Enumerated(EnumType.STRING) @Column(name="queue_type") private QueueType queueType;
   @Enumerated(EnumType.STRING) @Column(name="building_type") private BuildingType buildingType;
   @Column(name="to_level") private Integer toLevel;
-  @Enumerated(EnumType.STRING) @Column(name="unit_type") private UnitType unitType;
+  @Column(name="unit_type") private String unitType;   // unit name, e.g. "HOPLITE"
   private Integer batch;
   private int position;
   @Column(name="started_at") private Instant startedAt;

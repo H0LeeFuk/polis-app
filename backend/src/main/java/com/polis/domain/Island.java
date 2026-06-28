@@ -13,4 +13,5 @@ public class Island {
   private int px;
   private int py;
   private long seed;
+  @Column(name="is_resource") private boolean resource = false;
 }

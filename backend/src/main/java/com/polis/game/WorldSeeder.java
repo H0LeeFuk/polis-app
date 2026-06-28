@@ -4,6 +4,7 @@ import com.polis.domain.*;
 import com.polis.repo.*;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ApplicationArguments;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +12,7 @@ import java.util.*;
 
 /** Seeds a single world with islands, barbarian cities, and NPC rulers + alliances on first boot. */
 @Component
+@Order(10)
 public class WorldSeeder implements ApplicationRunner {
   private final WorldRepo worlds; private final IslandRepo islands; private final CityRepo cities;
   private final PlayerRepo players; private final AllianceRepo alliances;
@@ -19,8 +21,10 @@ public class WorldSeeder implements ApplicationRunner {
     this.worlds=worlds; this.islands=islands; this.cities=cities; this.players=players; this.alliances=alliances;
   }
 
-  private static final String[] ISLAND_NAMES = {"Thalassia","Keros","Andros","Mytilos","Skarpa","Helike"};
-  private static final int[][] COORDS = {{420,440},{900,250},{1250,470},{660,800},{1140,800},{230,800}};
+  private static final String[] ISLAND_NAMES = {"Thalassia","Keros","Andros","Mytilos","Skarpa","Helike",
+      "Pyrgos","Lemnos","Aigai","Doria"};
+  private static final int[][] COORDS = {{420,440},{900,250},{1250,470},{660,800},{1140,800},{230,800},
+      {640,120},{1400,720},{460,1040},{980,1060}};
 
   @Override @Transactional
   public void run(ApplicationArguments args){
@@ -82,11 +86,13 @@ public class WorldSeeder implements ApplicationRunner {
   private City npcCity(Long wid, Long owner, Long islandId, int slot, String name, int points, int power){
     City c=new City(); c.setWorldId(wid); c.setPlayerId(owner); c.setIslandId(islandId); c.setSlot(slot);
     c.setName(name); c.setPoints(points); c.setPower(power);
+    // NPCs and barbarians get a race too, for variety on the map (drives their defence flavour).
+    Race[] r = Race.values(); c.setRace(r[Math.floorMod(name.hashCode()+slot, r.length)]);
     c.setWood(power*3); c.setStone(power*3); c.setSilver(power*2);
     return c;
   }
   private int[] freeSlot(List<Island> isls, Set<String> taken, Random rnd){
-    while(true){ int i=rnd.nextInt(isls.size()); int s=rnd.nextInt(10); String k=i+":"+s;
+    while(true){ int i=rnd.nextInt(isls.size()); int s=rnd.nextInt(GameRules.SLOTS_PER_ISLAND); String k=i+":"+s;
       if (taken.add(k)) return new int[]{i,s}; }
   }
 }

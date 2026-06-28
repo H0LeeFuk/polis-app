@@ -2,6 +2,7 @@ package com.polis.auth;
 
 import com.polis.domain.*;
 import com.polis.game.CityFactory;
+import com.polis.game.AccountSetupService;
 import com.polis.repo.*;
 import com.polis.security.JwtService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -14,12 +15,13 @@ import java.util.List;
 public class AuthService {
   private final PlayerRepo players; private final WorldRepo worlds; private final IslandRepo islands;
   private final CityRepo cities; private final CityFactory cityFactory;
+  private final AccountSetupService accountSetup;
   private final PasswordEncoder encoder; private final JwtService jwt;
 
   public AuthService(PlayerRepo players, WorldRepo worlds, IslandRepo islands, CityRepo cities,
-                     CityFactory cityFactory, PasswordEncoder encoder, JwtService jwt){
+                     CityFactory cityFactory, AccountSetupService accountSetup, PasswordEncoder encoder, JwtService jwt){
     this.players=players; this.worlds=worlds; this.islands=islands; this.cities=cities;
-    this.cityFactory=cityFactory; this.encoder=encoder; this.jwt=jwt;
+    this.cityFactory=cityFactory; this.accountSetup=accountSetup; this.encoder=encoder; this.jwt=jwt;
   }
 
   @Transactional
@@ -35,8 +37,8 @@ public class AuthService {
 
     long[] slot = firstFreeSlot(world.getId());
     cityFactory.createPlayerCity(world.getId(), p.getId(), slot[0], (int)slot[1], username + "’s Polis", true);
-    long[] slot2 = firstFreeSlot(world.getId());
-    cityFactory.createPlayerCity(world.getId(), p.getId(), slot2[0], (int)slot2[1], username + "’s Colony", false);
+    // provision Leo (unlocked) + Celine (locked) and seed the starter mission chain
+    accountSetup.setup(p.getId());
     return jwt.issue(p.getId(), p.getUsername());
   }
 
@@ -51,7 +53,7 @@ public class AuthService {
   private long[] firstFreeSlot(Long worldId){
     List<Island> isls = islands.findByWorldId(worldId);
     for (Island i : isls)
-      for (int s=0; s<10; s++)
+      for (int s=0; s<com.polis.game.GameRules.SLOTS_PER_ISLAND; s++)
         if (cities.findByIslandIdAndSlot(i.getId(), s).isEmpty()) return new long[]{i.getId(), s};
     throw new IllegalStateException("No free city plots remain in this world");
   }

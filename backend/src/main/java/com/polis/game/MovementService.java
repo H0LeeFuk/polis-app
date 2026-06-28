@@ -123,6 +123,7 @@ public class MovementService {
     switch (m.getPhase()){
       case RETURN -> { type = "RETURN"; status = "RETURNING"; }
       case COLONY -> { type = "COLONY"; status = "TRAVELLING"; }
+      case SETTLE -> { type = "SETTLE"; status = m.getArrivedAt()!=null ? "SETTLING" : "TRAVELLING"; }
       default     -> { type = "ATTACK"; status = "TRAVELLING"; }
     }
 
@@ -131,7 +132,7 @@ public class MovementService {
       // a returning army leaves the raided target and marches back to its home (source) city
       originId = m.getTargetCityId(); originName = cityName(originId, nameCache);
       targetId = m.getSourceCityId(); targetName = cityName(targetId, nameCache);
-    } else if (m.getPhase() == MovementPhase.COLONY){
+    } else if (m.getPhase() == MovementPhase.COLONY || m.getPhase() == MovementPhase.SETTLE){
       originId = m.getSourceCityId(); originName = cityName(originId, nameCache);
       targetId = null;
       targetName = islandName(m.getTargetIslandId(), islNameCache)

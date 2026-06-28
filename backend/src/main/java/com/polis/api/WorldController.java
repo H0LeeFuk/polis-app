@@ -32,11 +32,13 @@ public class WorldController {
     for (Island i : islands.findByWorldId(worldId)){
       Map<String,Object> mi = new LinkedHashMap<>();
       mi.put("id",i.getId()); mi.put("name",i.getName()); mi.put("px",i.getPx()); mi.put("py",i.getPy());
+      mi.put("resource", i.isResource());
       List<Map<String,Object>> slots = new ArrayList<>();
       for (City c : cities.findByIslandId(i.getId())){
         Map<String,Object> mc = new LinkedHashMap<>();
         mc.put("id",c.getId()); mc.put("slot",c.getSlot()); mc.put("name",c.getName()); mc.put("points",c.getPoints());
         mc.put("power",(long)c.getPower());
+        mc.put("race", c.getRace()==null ? null : c.getRace().name());
         Long pid = c.getPlayerId();
         mc.put("playerId", pid);
         mc.put("owner", pid==null ? "Barbarians" : playerById.containsKey(pid) ? playerById.get(pid).getUsername() : "Unknown");

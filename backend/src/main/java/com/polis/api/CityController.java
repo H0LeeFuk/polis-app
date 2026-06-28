@@ -19,8 +19,7 @@ public class CityController {
   public record TrainRequest(String unitType, int count){}
   public record ResearchRequest(String researchType){}
   public record RenameRequest(String name){}
-  public record ColonizeRequest(Long islandId, int slot){}
-  public record RaidRequest(Long targetCityId, Map<String,Integer> units){}
+  public record RaidRequest(Long targetCityId, Map<String,Integer> units, Long heroId){}
 
   @PostMapping("/build")
   public Map<String,Object> build(@PathVariable Long cityId, @RequestBody BuildRequest r){
@@ -28,7 +27,7 @@ public class CityController {
   }
   @PostMapping("/train")
   public Map<String,Object> train(@PathVariable Long cityId, @RequestBody TrainRequest r){
-    build.train(me(), cityId, UnitType.valueOf(r.unitType()), r.count()); return ok();
+    build.train(me(), cityId, r.unitType(), r.count()); return ok();
   }
   @PostMapping("/research")
   public Map<String,Object> research(@PathVariable Long cityId, @RequestBody ResearchRequest r){
@@ -46,16 +45,12 @@ public class CityController {
   public Map<String,Object> finish(@PathVariable Long cityId, @PathVariable Long jobId){
     build.finishWithGold(me(), cityId, jobId); return ok();
   }
-  @PostMapping("/colonize")
-  public Map<String,Object> colonize(@PathVariable Long cityId, @RequestBody ColonizeRequest r){
-    build.colonize(me(), cityId, r.islandId(), r.slot()); return ok();
-  }
   // /attack is the spec name; /raid stays as an alias for existing callers. Both return the
   // created movement (incl. arriveAt) so the UI can show the ETA right after dispatching.
   @PostMapping({"/attack", "/raid"})
   public MovementDTO attack(@PathVariable Long cityId, @RequestBody RaidRequest r){
     Long me = me();
-    Movement m = build.raid(me, cityId, r.targetCityId(), r.units());
+    Movement m = build.raid(me, cityId, r.targetCityId(), r.units(), r.heroId());
     return movements.dto(m, me);
   }
   private Map<String,Object> ok(){ return Map.of("ok", true); }

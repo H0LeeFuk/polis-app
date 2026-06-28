@@ -1,0 +1,395 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  getMyReports, getCityReports, getReport, deleteReport, markAllReportsRead,
+} from "../api";
+import type {
+  BattleReport, BattleReportSummary, BattleOutcome, CitySummary,
+} from "../types";
+import { UNIT_GLYPH } from "../movements";
+
+const RES_GLYPH: Record<string, string> = { WOOD: "🪵", STONE: "🪨", SILVER: "🪙" };
+const RES_ORDER = ["WOOD", "STONE", "SILVER"];
+const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
+const glyph = (t: string) => UNIT_GLYPH[t] ?? "⚔";
+const sumVals = (m: Record<string, number> | null | undefined) =>
+  m ? Object.values(m).reduce((a, b) => a + b, 0) : 0;
+
+/** "Today 16:32" / "Yesterday 09:14" / "16 Jun 14:05". */
+function fmtWhen(iso: string): string {
+  const d = new Date(iso);
+  const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const dayDiff = Math.floor((startOfDay(now) - startOfDay(d)) / 86400000);
+  if (dayDiff === 0) return `Today ${hm}`;
+  if (dayDiff === 1) return `Yesterday ${hm}`;
+  return `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${hm}`;
+}
+function fmtWhenFull(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" })} — ` +
+    d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+// outcome interpreted from the viewer's side: tone + label/icon
+function viewerLens(r: { outcome: BattleOutcome; role: string }) {
+  const attacker = r.role === "ATTACKER";
+  if (r.outcome === "DRAW") return { tone: "draw", icon: "⚖", label: "DRAW" };
+  if (attacker)
+    return r.outcome === "VICTORY"
+      ? { tone: "good", icon: "⚔", label: "VICTORY" }
+      : { tone: "bad", icon: "💀", label: "DEFEAT" };
+  // defender perspective
+  return r.outcome === "VICTORY"      // attacker won → city was plundered
+    ? { tone: "bad", icon: "🏴", label: "PLUNDERED" }
+    : { tone: "good", icon: "🛡", label: "DEFENDED" };
+}
+
+// ============================================================================
+// Report card (used in both the global list and the city tab)
+// ============================================================================
+
+export function ReportCard({ r, active, onOpen }: {
+  r: BattleReportSummary; active: boolean; onOpen: () => void;
+}) {
+  const lens = viewerLens(r);
+  const attacker = r.role === "ATTACKER";
+  const plundered = r.outcome === "VICTORY";
+  const stolenTotal = sumVals(r.resourcesStolen);
+  const foe = attacker ? (r.defenderPlayerName ?? "Barbarians") : r.attackerPlayerName;
+
+  return (
+    <div className={`br-card tone-${lens.tone}` + (r.unread ? " unread" : "") + (active ? " active" : "")}
+      onClick={onOpen}>
+      <div className="br-card-top">
+        <span className="br-verdict">{lens.icon} {lens.label}</span>
+        <span className="br-route"><b>{r.attackerCityName}</b> → <b>{r.defenderCityName}</b></span>
+      </div>
+      <div className="br-card-sub">
+        <span className="muted">{attacker ? "vs" : "by"} {foe}</span>
+        <span className="br-when">🕐 {fmtWhen(r.foughtAt)}{r.unread && <span className="br-new">NEW</span>}</span>
+      </div>
+      <div className="br-card-stats">
+        {attacker ? (
+          <>
+            <span>⚔ Sent: {r.attackerSent}</span>
+            <span className="loss">Lost: {r.attackerLost}</span>
+            <span className="kill">💀 Killed: {r.defenderLost}</span>
+          </>
+        ) : (
+          <>
+            <span className="kill">💀 Their losses: {r.attackerLost}</span>
+            <span className="loss">Your losses: {r.defenderLost}</span>
+          </>
+        )}
+      </div>
+      <div className="br-card-foot">
+        {plundered && stolenTotal > 0 ? (
+          <span className="br-plunder">
+            {RES_ORDER.filter(k => (r.resourcesStolen[k] ?? 0) > 0).map(k =>
+              <span key={k}>{RES_GLYPH[k]} {attacker ? "+" : "−"}{r.resourcesStolen[k]}</span>)}
+          </span>
+        ) : <span className="muted">Resources stolen: none</span>}
+        <button className="br-view">View Report →</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Report detail (full breakdown) — reused by global panel and city tab
+// ============================================================================
+
+function TroopTable({ title, present, lost, survived, presentLabel }: {
+  title: string; present: Record<string, number>; lost: Record<string, number>;
+  survived: Record<string, number>; presentLabel: string;
+}) {
+  const types = Object.keys(UNIT_GLYPH).filter(t =>
+    (present[t] ?? 0) > 0 || (lost[t] ?? 0) > 0 || (survived[t] ?? 0) > 0);
+  return (
+    <div className="br-army">
+      <h4>{title}</h4>
+      <div className="br-trow br-thead"><span></span><span>{presentLabel}</span><span>Lost</span><span>Left</span></div>
+      {types.length === 0
+        ? <div className="br-trow empty muted"><span></span><span>—</span><span>—</span><span>—</span></div>
+        : types.map(t => (
+          <div className="br-trow" key={t}>
+            <span title={titleCase(t)}>{glyph(t)} {titleCase(t)}</span>
+            <span>{present[t] ?? 0}</span>
+            <span className="loss">{lost[t] ?? 0}</span>
+            <span className="surv">{survived[t] ?? 0}</span>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+export function ReportDetail({ report, onClose, onDeleted, onAttackAgain }: {
+  report: BattleReport;
+  onClose: () => void;
+  onDeleted: (id: number) => void;
+  onAttackAgain?: (targetCityId: number, targetCityName: string) => void;
+}) {
+  const lens = viewerLens(report);
+  const attacker = report.role === "ATTACKER";
+  const stolenTotal = sumVals(report.resourcesStolen);
+  const defFoe = report.defenderPlayerName ?? "Barbarians";
+  const del = async () => {
+    try { await deleteReport(report.id); onDeleted(report.id); } catch { /* surfaced by caller refresh */ }
+  };
+
+  return (
+    <div className="br-detail">
+      <div className="br-detail-head">
+        <h2>⚔ Battle Report ⚔</h2>
+        <span className="muted">{fmtWhenFull(report.foughtAt)}</span>
+        {onClose && <button className="br-detail-close" onClick={onClose}>✕</button>}
+      </div>
+
+      <div className="br-sides">
+        <div className={"br-side" + (attacker ? " you" : "")}>
+          <span className="br-side-role">Attacker</span>
+          <b>{report.attackerCityName}</b>
+          <span className="muted">{report.attackerPlayerName}{attacker ? " (you)" : ""}</span>
+        </div>
+        <span className="br-vs">vs</span>
+        <div className={"br-side" + (!attacker ? " you" : "")}>
+          <span className="br-side-role">Defender</span>
+          <b>{report.defenderCityName}</b>
+          <span className="muted">{defFoe}{!attacker ? " (you)" : ""}</span>
+        </div>
+      </div>
+
+      <div className={`br-outcome tone-${lens.tone}`}>
+        {lens.icon} {lens.label}
+        <small>{report.outcome === "VICTORY"
+          ? (attacker ? "— Resources plundered" : "— Your city was plundered")
+          : report.outcome === "DEFEAT"
+            ? (attacker ? "— Your army was routed" : "— You held your ground")
+            : "— Both sides withdrew"}</small>
+      </div>
+
+      <div className="br-section-label">Forces</div>
+      <div className="br-armies">
+        <TroopTable title={attacker ? "Your army" : "Enemy army"} presentLabel="Sent"
+          present={report.attackerTroopsSent} lost={report.attackerTroopsLost} survived={report.attackerTroopsSurvived} />
+        <TroopTable title={attacker ? "Defender garrison" : "Your garrison"} presentLabel="Present"
+          present={report.defenderTroopsPresent} lost={report.defenderTroopsLost} survived={report.defenderTroopsSurvived} />
+      </div>
+      <div className="br-powers">
+        <span>Attack Power: <b>{report.attackerTotalAttackPower.toLocaleString()}</b></span>
+        <span>Defence Power: <b>{report.defenderTotalDefencePower.toLocaleString()}</b></span>
+      </div>
+
+      <div className="br-section-label">Plunder</div>
+      {report.outcome === "VICTORY" && stolenTotal > 0 ? (
+        <div className="br-plunder-box">
+          {RES_ORDER.map(k => (
+            <div className="br-plunder-row" key={k}>
+              <span>{RES_GLYPH[k]} {titleCase(k)}</span><b>{report.resourcesStolen[k] ?? 0}</b>
+            </div>
+          ))}
+          <div className="br-plunder-total muted">Total: {stolenTotal.toLocaleString()} resources {attacker ? "looted" : "lost"}</div>
+        </div>
+      ) : <p className="muted">No resources stolen</p>}
+
+      {report.heroName && (
+        <>
+          <div className="br-section-label">Hero</div>
+          <div className="br-hero-box">
+            <div className="br-hero-led">⚔ {report.heroName} (Level {report.heroLevel}) led the attack</div>
+            <div className="muted">
+              Bonuses: +{report.heroAttackBonusPct}% power · −{report.heroLossReductionPct}% losses
+              {report.heroSkillUsed && <> · {report.heroSkillUsed.replace("_", " ")} used</>}
+            </div>
+            {report.heroXpGained > 0 && <div className="br-hero-xp">XP gained: +{report.heroXpGained}
+              {report.heroLeveledTo && <b> 🎉 Reached level {report.heroLeveledTo}!</b>}</div>}
+            <div className={report.heroWounded ? "br-hero-wounded" : "muted"}>
+              Status: {report.heroWounded ? "WOUNDED — recovering" : "returned safely"}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="br-detail-actions">
+        <button className="btn ghost danger" onClick={del}>🗑 Delete Report</button>
+        {attacker && onAttackAgain && (
+          <button className="btn" onClick={() => onAttackAgain(report.defenderCityId, report.defenderCityName)}>⚔ Attack Again</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Shared list logic (filters, paging, selection)
+// ============================================================================
+
+type Pill = "all" | "victory" | "defeat" | "draw" | "unread";
+const OUTCOME_OF: Record<Pill, BattleOutcome | undefined> = {
+  all: undefined, victory: "VICTORY", defeat: "DEFEAT", draw: "DRAW", unread: undefined,
+};
+
+function useReports(load: (page: number) => Promise<{ content: BattleReportSummary[]; hasMore: boolean }>) {
+  const [rows, setRows] = useState<BattleReportSummary[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try { const r = await loadRef.current(0); setRows(r.content); setHasMore(r.hasMore); setPage(0); }
+    catch { setRows([]); setHasMore(false); }
+    finally { setLoading(false); }
+  }, []);
+
+  const more = useCallback(async () => {
+    const next = page + 1;
+    try { const r = await loadRef.current(next); setRows(p => [...p, ...r.content]); setHasMore(r.hasMore); setPage(next); }
+    catch { /* keep current */ }
+  }, [page]);
+
+  return { rows, setRows, hasMore, loading, reload, more };
+}
+
+// ============================================================================
+// AREA 1 — Global Battle Reports panel (full-screen)
+// ============================================================================
+
+export default function BattleReports({ cities, unreadCount = 0, onClose, onUnreadChange, onAttackAgain }: {
+  cities: CitySummary[];
+  unreadCount?: number;
+  onClose: () => void;
+  onUnreadChange?: () => void;
+  onAttackAgain?: (targetCityId: number, targetCityName: string) => void;
+}) {
+  const [pill, setPill] = useState<Pill>("all");
+  const [cityId, setCityId] = useState<number | "">("");
+  const [selected, setSelected] = useState<BattleReport | null>(null);
+
+  const load = useCallback((page: number) => getMyReports({
+    page, size: 20,
+    outcome: OUTCOME_OF[pill],
+    read: pill === "unread" ? false : undefined,
+    cityId: cityId === "" ? undefined : cityId,
+  }), [pill, cityId]);
+
+  const { rows, setRows, hasMore, loading, reload, more } = useReports(load);
+  useEffect(() => { reload(); }, [reload]);
+
+  const open = async (id: number) => {
+    try {
+      const full = await getReport(id);
+      setSelected(full);
+      setRows(rs => rs.map(r => r.id === id ? { ...r, unread: false } : r));
+      onUnreadChange?.();
+    } catch { /* ignore */ }
+  };
+  const afterDelete = (id: number) => {
+    setRows(rs => rs.filter(r => r.id !== id));
+    setSelected(null);
+    onUnreadChange?.();
+  };
+  const markAll = async () => {
+    try { await markAllReportsRead(); setRows(rs => rs.map(r => ({ ...r, unread: false }))); onUnreadChange?.(); }
+    catch { /* ignore */ }
+  };
+
+  const pills: { id: Pill; label: string }[] = [
+    { id: "all", label: "All" }, { id: "victory", label: "Victories" },
+    { id: "defeat", label: "Defeats" }, { id: "draw", label: "Draws" }, { id: "unread", label: "Unread" },
+  ];
+  const showMarkAll = unreadCount > 0 || rows.some(r => r.unread);
+
+  return (
+    <div className="mvov-backdrop" onClick={onClose}>
+      <div className="mvov br-panel" onClick={e => e.stopPropagation()}>
+        <div className="mvov-head">
+          <h2>📜 Battle Reports</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="mvov-filters">
+          {pills.map(p => (
+            <button key={p.id} className={"mvov-fbtn" + (pill === p.id ? " active" : "")} onClick={() => setPill(p.id)}>{p.label}</button>
+          ))}
+          <select className="mvov-cityfilter" value={cityId} onChange={e => setCityId(e.target.value === "" ? "" : Number(e.target.value))}>
+            <option value="">All cities</option>
+            {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          {showMarkAll && <button className="mvov-fbtn br-markall" onClick={markAll}>✓ Mark all read</button>}
+        </div>
+
+        <div className="br-body">
+          <div className="br-list">
+            {loading ? <p className="muted br-loading">Unrolling the scrolls…</p>
+              : rows.length === 0 ? <ReportsEmpty />
+                : <>
+                  {rows.map(r => <ReportCard key={r.id} r={r} active={selected?.id === r.id} onOpen={() => open(r.id)} />)}
+                  {hasMore && <button className="btn ghost br-more" onClick={more}>Load more</button>}
+                </>}
+          </div>
+          <div className={"br-detail-pane" + (selected ? " open" : "")}>
+            {selected
+              ? <ReportDetail report={selected} onClose={() => setSelected(null)} onDeleted={afterDelete} onAttackAgain={onAttackAgain} />
+              : <div className="br-detail-placeholder muted">Select a report to read the full account.</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// AREA 2 — City-scoped report list (rendered inside the city Movements panel)
+// ============================================================================
+
+export function CityReportsList({ cityId, onAttackAgain }: {
+  cityId: number; onAttackAgain?: (targetCityId: number, targetCityName: string) => void;
+}) {
+  const [selected, setSelected] = useState<BattleReport | null>(null);
+  const load = useCallback((page: number) => getCityReports(cityId, { page, size: 20 }), [cityId]);
+  const { rows, setRows, hasMore, loading, reload, more } = useReports(load);
+  useEffect(() => { reload(); }, [reload]);
+
+  const open = async (id: number) => {
+    try { setSelected(await getReport(id)); setRows(rs => rs.map(r => r.id === id ? { ...r, unread: false } : r)); }
+    catch { /* ignore */ }
+  };
+
+  return (
+    <div className="cm-reports">
+      {loading ? <p className="muted">Loading…</p>
+        : rows.length === 0 ? <ReportsEmpty small />
+          : <>
+            {rows.map(r => <ReportCard key={r.id} r={r} active={false} onOpen={() => open(r.id)} />)}
+            {hasMore && <button className="btn ghost br-more" onClick={more}>Load more</button>}
+          </>}
+      {selected && (
+        <div className="br-sheet-backdrop" onClick={() => setSelected(null)}>
+          <div className="br-sheet" onClick={e => e.stopPropagation()}>
+            <ReportDetail report={selected} onClose={() => setSelected(null)}
+              onDeleted={(id) => { setRows(rs => rs.filter(r => r.id !== id)); setSelected(null); }}
+              onAttackAgain={onAttackAgain} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportsEmpty({ small }: { small?: boolean }) {
+  return (
+    <div className={"br-empty" + (small ? " small" : "")}>
+      <svg viewBox="0 0 64 48" width={small ? 48 : 72} height={small ? 36 : 54} aria-hidden>
+        <rect x="10" y="6" width="44" height="36" rx="3" fill="#e8d8b0" stroke="#7a5a22" strokeWidth="2" />
+        <path d="M10 9 q-6 0 -6 6 q0 6 6 6 Z" fill="#d8c79c" stroke="#7a5a22" strokeWidth="2" />
+        <path d="M54 9 q6 0 6 6 q0 6 -6 6 Z" fill="#d8c79c" stroke="#7a5a22" strokeWidth="2" />
+        <path d="M20 18 L44 18 M20 26 L44 26 M20 34 L36 34" stroke="#b08642" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      <p className="muted">No battles recorded yet — glory awaits.</p>
+    </div>
+  );
+}

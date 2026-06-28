@@ -1,19 +1,30 @@
 import { useEffect, useRef, useState } from "react";
-import { getWorld, doColonize, doRaid, sendMessage } from "../api";
-import type { WorldData, WorldIsland, WorldCity, UnitDto } from "../types";
-import { TravelPreview } from "../movements";
+import { getWorld, getIslandSlots, doRaid, sendMessage } from "../api";
+import type { WorldData, WorldIsland, WorldCity, UnitDto, Hero, IslandSlots } from "../types";
+import { TravelPreview, HeroPicker } from "../movements";
+import { ResourceIslandModal } from "./NodePanel";
+import { FoundCityModal } from "./FoundCity";
+import BanditCampModal from "./BanditCampModal";
 
 const fmt = (n: number) => n >= 10000 ? (n / 1000).toFixed(1) + "k" : Math.floor(n).toString();
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
+const SLOTS_PER_ISLAND = 12;
+// extra sea around the islands so the map can be panned past their bounds
+const PAD_X = 520, PAD_Y = 360;
 
-export default function WorldView({ activeCityId, myUnits, onChanged, setErr }: {
-  activeCityId: number; myUnits: UnitDto[]; onChanged: () => void; setErr: (s: string) => void;
+export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, onChanged, setErr }: {
+  activeCityId: number; myUnits: UnitDto[]; heroes: Hero[]; myPlayerId: number; onChanged: () => void; setErr: (s: string) => void;
 }) {
   const [data, setData] = useState<WorldData | null>(null);
   const [sel, setSel] = useState<WorldIsland | null>(null);
+  const [slots, setSlots] = useState<IslandSlots | null>(null);
+  const [foundSlot, setFoundSlot] = useState<{ islandId: number; islandName: string; slotIndex: number } | null>(null);
+  const [nodeIsland, setNodeIsland] = useState<WorldIsland | null>(null);
+  const [banditIsland, setBanditIsland] = useState<WorldIsland | null>(null);
   const [selCity, setSelCity] = useState<WorldCity | null>(null);   // drives the player popup
   const [raidTarget, setRaidTarget] = useState<WorldCity | null>(null);
   const [raidCounts, setRaidCounts] = useState<Record<string, number>>({});
+  const [raidHeroId, setRaidHeroId] = useState<number | null>(null);
   const [msgTo, setMsgTo] = useState<{ id: number; name: string } | null>(null);
   const [msgBody, setMsgBody] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
@@ -26,8 +37,8 @@ export default function WorldView({ activeCityId, myUnits, onChanged, setErr }: 
     if (!data || !scroller.current) return;
     const mine = data.islands.find(i => i.cities.some(c => c.faction === "self"));
     if (!mine) return;
-    scroller.current.scrollLeft = mine.px - scroller.current.clientWidth / 2;
-    scroller.current.scrollTop = mine.py - scroller.current.clientHeight / 2;
+    scroller.current.scrollLeft = mine.px + PAD_X - scroller.current.clientWidth / 2;
+    scroller.current.scrollTop = mine.py + PAD_Y - scroller.current.clientHeight / 2;
   }
   useEffect(() => { if (data) setTimeout(centerOnMyCity, 30); }, [data]);
 
@@ -37,7 +48,9 @@ export default function WorldView({ activeCityId, myUnits, onChanged, setErr }: 
     setErr("");
     try { await fn(); await load(); onChanged(); } catch (e: any) { setErr(e.message); }
   };
-  const colonize = (islandId: number, slot: number) => act(() => doColonize(activeCityId, islandId, slot));
+  // load the 12-slot occupancy whenever an island modal opens
+  const loadSlots = (islandId: number) => getIslandSlots(islandId).then(setSlots).catch((e: any) => setErr(e.message));
+  function openIsland(isl: WorldIsland) { setSel(isl); setSlots(null); loadSlots(isl.id); }
 
   // cities belonging to the same owner as the clicked city (across all islands)
   const playerCities = (pid: number | null) =>
@@ -46,15 +59,18 @@ export default function WorldView({ activeCityId, myUnits, onChanged, setErr }: 
 
   function openRaid(c: WorldCity) {
     setRaidCounts({});
+    setRaidHeroId(null);
     setRaidTarget(c);
   }
   function sendRaid() {
     if (!raidTarget) return;
     const units = Object.fromEntries(Object.entries(raidCounts).filter(([, n]) => n > 0));
     if (Object.keys(units).length === 0) { setErr("Select at least one unit"); return; }
-    act(() => doRaid(activeCityId, raidTarget.id, units));
+    act(() => doRaid(activeCityId, raidTarget.id, units, raidHeroId));
     setRaidTarget(null); setSelCity(null);
   }
+  // heroes that can join: unlocked + idle in the city we attack from
+  const heroesHere = heroes.filter(h => h.unlocked && h.state === "IDLE" && h.stationedCityId === activeCityId);
   async function doSendMessage() {
     if (!msgTo || !msgBody.trim()) return;
     setErr("");
@@ -87,16 +103,42 @@ export default function WorldView({ activeCityId, myUnits, onChanged, setErr }: 
         onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
         <div className="wspace">
           {data.islands.map(isl => {
+            if (isl.resource){
+              const size = 110;
+              return (
+                <div className="island resource-island" key={isl.id} style={{ left: isl.px + PAD_X, top: isl.py + PAD_Y, width: size, height: size }}
+                  onClick={() => { if (!wasDragged()) setNodeIsland(isl); }} title={isl.name + " — resource nodes"}>
+                  <div className="island-land sanctuary" style={{ borderRadius: blobRadius(isl.id) }}>
+                    <span className="sanctuary-ico">⛩</span>
+                  </div>
+                  <div className="nm">{isl.name}</div>
+                </div>
+              );
+            }
             const n = isl.cities.length;
             const size = 130 + n * 16;
             const mine = isl.cities.some(c => c.faction === "self");
+            const free = SLOTS_PER_ISLAND - n;
             return (
-              <div className="island" key={isl.id} style={{ left: isl.px, top: isl.py, width: size, height: size }}
-                onClick={() => { if (!wasDragged()) setSel(isl); }} title={isl.name}>
+              <div className="island" key={isl.id} style={{ left: isl.px + PAD_X, top: isl.py + PAD_Y, width: size, height: size }}
+                onClick={() => { if (!wasDragged()) openIsland(isl); }} title={`${isl.name} — ${free} free plot${free === 1 ? "" : "s"}`}>
                 <div className="island-land" style={{ borderRadius: blobRadius(isl.id) }}>
                   {mine && <span className="island-star">★</span>}
+                  {/* bandit camp — only on your home island */}
+                  {mine && <button className="bandit-camp-ico" title="Bandit Camp"
+                    onClick={(e) => { e.stopPropagation(); if (!wasDragged()) setBanditIsland(isl); }}>🏴‍☠️</button>}
+                  {/* one marker per empty plot so every free city slot is visible on the map */}
+                  {Array.from({ length: SLOTS_PER_ISLAND }).map((_, slot) => {
+                    if (isl.cities.some(c => c.slot === slot)) return null;
+                    const a = (slot / SLOTS_PER_ISLAND) * 2 * Math.PI - Math.PI / 2;
+                    const rad = size * 0.33;
+                    return <span key={"e" + slot} className="wslot-empty"
+                      style={{ left: `calc(50% + ${Math.cos(a) * rad}px)`, top: `calc(50% + ${Math.sin(a) * rad}px)` }}
+                      title={`Empty plot ${slot + 1} — found a city here`}
+                      onClick={(e) => { e.stopPropagation(); if (!wasDragged()) openIsland(isl); }}>🏛</span>;
+                  })}
                   {isl.cities.map(c => {
-                    const a = (c.slot / 10) * 2 * Math.PI - Math.PI / 2;
+                    const a = (c.slot / SLOTS_PER_ISLAND) * 2 * Math.PI - Math.PI / 2;
                     const rad = size * 0.33;
                     return (
                       <span key={c.slot} className={"wcity faction-bg-" + c.faction}
@@ -113,40 +155,72 @@ export default function WorldView({ activeCityId, myUnits, onChanged, setErr }: 
         </div>
       </div>
 
-      {/* island plot list (colonise empty plots) */}
+      {/* bandit camp */}
+      {banditIsland && (
+        <BanditCampModal islandId={banditIsland.id} activeCityId={activeCityId}
+          cityOnIsland={banditIsland.cities.some(c => c.id === activeCityId)} myUnits={myUnits}
+          onClose={() => setBanditIsland(null)} onChanged={() => { load(); onChanged(); }} setErr={setErr} />
+      )}
+
+      {/* resource island → node list */}
+      {nodeIsland && (
+        <ResourceIslandModal islandId={nodeIsland.id} islandName={nodeIsland.name}
+          ctx={{ myPlayerId, activeCityId, myUnits, heroes: heroesHere, setErr, onChanged: () => { load(); onChanged(); } }}
+          onClose={() => setNodeIsland(null)} />
+      )}
+
+      {/* island plot list — 12 slots, found a city on empty settleable plots */}
       {sel && (
         <div className="modal-backdrop" onClick={() => setSel(null)}>
-          <div className="modal-window" onClick={e => e.stopPropagation()}>
+          <div className="modal-window" onClick={e => e.stopPropagation()} style={{ width: "min(560px,100%)" }}>
             <div className="modal-header">
-              <h2>{sel.name}</h2>
+              <h2>{sel.name} <small className="muted">Cities: {slots ? slots.occupied : "…"} / {SLOTS_PER_ISLAND}</small></h2>
               <button className="modal-close" onClick={() => setSel(null)}>✕</button>
             </div>
             <div className="modal-body">
-              <table>
-                <thead><tr><th>Plot</th><th>City</th><th>Owner</th><th>Points</th><th></th></tr></thead>
-                <tbody>
-                  {Array.from({ length: 10 }).map((_, slot) => {
-                    const c = sel.cities.find(x => x.slot === slot);
-                    if (!c) return (
-                      <tr key={slot}><td>{slot + 1}</td><td className="muted">empty plot</td><td></td><td></td>
-                        <td><button className="btn ghost" onClick={() => colonize(sel.id, slot)}>Colonise</button></td></tr>
-                    );
-                    return (
-                      <tr key={slot}>
-                        <td>{slot + 1}</td>
-                        <td className={"faction-" + c.faction}><a style={{ cursor: "pointer" }} onClick={() => { setSel(null); setSelCity(c); }}>{c.name}</a></td>
-                        <td className="muted">{c.owner}</td>
-                        <td>{fmt(c.points)}</td>
-                        <td>{c.faction !== "self" && c.faction !== "ally" &&
-                          <button className="btn" onClick={() => { setSel(null); openRaid(c); setSelCity(c); }}>Raid</button>}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              {!slots ? <p className="muted">Surveying the island…</p> : (
+                <table>
+                  <thead><tr><th>Plot</th><th>City</th><th>Owner</th><th>Race</th><th></th></tr></thead>
+                  <tbody>
+                    {slots.slots.map(s => {
+                      if (s.status === "EMPTY") return (
+                        <tr key={s.slotIndex}>
+                          <td>{s.slotIndex + 1}</td>
+                          <td className={"muted" + (s.canSettle ? " slot-open" : "")}>empty plot</td>
+                          <td></td><td></td>
+                          <td>{s.canSettle
+                            ? <button className="btn" onClick={() => { setFoundSlot({ islandId: sel.id, islandName: sel.name, slotIndex: s.slotIndex }); }}>🏛 Found city</button>
+                            : <small className="muted" title={s.reason ?? ""}>{s.reason ?? "—"}</small>}</td>
+                        </tr>
+                      );
+                      const wc = sel.cities.find(x => x.id === s.cityId) ?? null;
+                      return (
+                        <tr key={s.slotIndex}>
+                          <td>{s.slotIndex + 1}</td>
+                          <td className={"faction-" + (s.faction ?? "")}>
+                            {wc ? <a style={{ cursor: "pointer" }} onClick={() => { setSel(null); setSelCity(wc); }}>{s.cityName}</a> : s.cityName}
+                          </td>
+                          <td className="muted">{s.ownerName}{s.alliance ? ` · ${s.alliance}` : ""}</td>
+                          <td title={s.race?.name}>{s.race ? `${s.race.icon} ${s.race.name}` : "—"}</td>
+                          <td>{wc && s.faction !== "self" && s.faction !== "ally" &&
+                            <button className="btn" onClick={() => { setSel(null); openRaid(wc); setSelCity(wc); }}>Raid</button>}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* found-city stepper (send hero → choose race) */}
+      {foundSlot && (
+        <FoundCityModal islandId={foundSlot.islandId} islandName={foundSlot.islandName} slotIndex={foundSlot.slotIndex}
+          heroes={heroes} fromCityId={activeCityId} fromCityName={null}
+          onClose={() => setFoundSlot(null)} setErr={setErr}
+          onChanged={() => { setSel(null); load(); onChanged(); }} />
       )}
 
       {/* player popup (clicked a city) */}
@@ -216,6 +290,7 @@ export default function WorldView({ activeCityId, myUnits, onChanged, setErr }: 
                           onChange={e => setRaidCounts({ ...raidCounts, [u.type]: Math.max(0, Math.min(u.count, +e.target.value)) })} />
                       </div>
                     ))}
+                    <HeroPicker heroes={heroesHere} value={raidHeroId} onChange={setRaidHeroId} />
                     <TravelPreview originCityId={activeCityId} targetCityId={raidTarget.id} units={raidCounts} />
                     <button className="btn" onClick={sendRaid}>⚔ Send raid</button>
                   </>

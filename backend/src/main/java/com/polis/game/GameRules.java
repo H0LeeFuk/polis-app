@@ -25,7 +25,7 @@ public final class GameRules {
     return (int)Math.max(3, Math.round(t*speed));
   }
   public static int unitSeconds(UnitType u, int fromBuildingLevel){
-    return (int)Math.max(3, Math.round(u.time*(1-Math.min(0.5,(fromBuildingLevel-1)*0.03))));
+    return (int)Math.max(3, Math.round(u.getTrainSeconds()*(1-Math.min(0.5,(fromBuildingLevel-1)*0.03))));
   }
   public static int buildingPoints(int level){ return level*(level+1)/2; }
   public static int cityPoints(Map<BuildingType,Integer> levels){
@@ -33,4 +33,7 @@ public final class GameRules {
   }
   public static int levelReq(int level){ return 60+level*60; }
   public static int citySlots(int level){ return level+1; }
+
+  /** Fixed number of city plots on every island. */
+  public static final int SLOTS_PER_ISLAND = 12;
 }
