@@ -1013,10 +1013,12 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
               })()}
             </div>
 
-            {(selected.type === "BARRACKS" || selected.type === "HARBOR") && selected.level > 0 && (
+            {(selected.type === "BARRACKS" || selected.type === "HARBOR") && (
               <div className="bld-section">
                 {(() => {
                   const isHarbor = selected.type === "HARBOR";
+                  if (selected.level === 0)
+                    return <p className="muted">Build the {isHarbor ? "Harbor" : "Barracks"} first, then you can {isHarbor ? "build ships here" : "train troops here"}.</p>;
                   const list = active.trainable.filter(u => u.from === selected.type);
                   const card = (u: Trainable) => {
                     const specShort = u.elite && u.specialResource ? r.special < u.costSpecial : false;
