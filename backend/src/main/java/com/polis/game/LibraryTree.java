@@ -5,16 +5,24 @@ import com.polis.domain.LibraryBranch;
 import java.util.*;
 
 /**
- * Seeded-in-code Library research tree (3 branches × 3 tiers). The point budget is deliberately
- * scarcer than the full tree cost (~80 points at Library 20 vs ~130 to buy everything), forcing
- * each city to specialize. Effects are accumulated into a per-city bundle by {@link LibraryService}.
+ * Seeded-in-code Library research tree — 3 branches × 10 researches (30 total). Each branch is a
+ * balanced mix (a new unit, a unit upgrade, troop speed, storage, looting, defense, economy, a
+ * signature mechanic) so no branch is strictly stronger; they differ in flavor, not raw power.
  *
- * Buff stacking order documented everywhere combat math runs: race → Library → hero attrs → hero items.
+ * The point budget ({@link #POINTS_PER_LEVEL} × {@link #MAX_LEVEL}) is deliberately scarcer than the
+ * full tree cost, so each city specializes (master ~one branch, dabble in a second; never all three).
+ *
+ * <p>Branches: WAR = "The Warpath" (assault & conquest), WARDS = "The Bastion" (defense, resilience &
+ * economy), LORE = "The Wild Hunt" (mobility, beasts & the hero). Effects are accumulated into a
+ * per-city bundle by {@link LibraryService}. Buff stacking order documented everywhere combat math
+ * runs: race → Library → hero attrs → hero items.
  */
 public final class LibraryTree {
   private LibraryTree(){}
 
-  public static final int POINTS_PER_LEVEL = 4;
+  // 2 points/level → 40 at Library 20. Full tree costs ~57, so a city can master ~one branch and
+  // part of a second, never all three — specialization is forced.
+  public static final int POINTS_PER_LEVEL = 2;
   public static final int MAX_LEVEL = 20;
 
   /** A research node. effects: additive percentages (0.05 = +5%); flags: boolean unlocks. */
@@ -24,45 +32,56 @@ public final class LibraryTree {
                          Map<String,Double> effects, Set<String> flags){}
 
   private static Research r(String id, LibraryBranch b, int tier, String name, String txt,
-                            int cost, int dur, int minLv, List<String> pre, boolean two,
+                            int cost, int minLv, List<String> pre,
                             Map<String,Double> eff, String... flags){
-    return new Research(id, b, tier, name, txt, cost, dur, minLv, pre, two, eff, Set.of(flags));
+    return new Research(id, b, tier, name, txt, cost, durationFor(cost), minLv, pre, false, eff, Set.of(flags));
   }
   private static Map<String,Double> e(Object... kv){
     Map<String,Double> m = new LinkedHashMap<>();
     for (int i=0;i<kv.length;i+=2) m.put((String)kv[i], ((Number)kv[i+1]).doubleValue());
     return m;
   }
-  private static final int D1=300, D2=900, D3=1800;
+  /** Research time scales with point cost: cheap foundations are fast, signature researches are slow. */
+  private static int durationFor(int cost){
+    return switch (cost){ case 1 -> 300; case 2 -> 900; case 3 -> 1800; default -> 3600; };
+  }
 
-  // Costs sum to ~104 vs 80 points at Library 20 — you can master ~2 branches, never all three.
   public static final List<Research> ALL = List.of(
-    // ⚔ WAR
-    r("whetstones", LibraryBranch.WAR,1,"Whetstones","+5% attack (all troops)",2,D1,2,List.of(),false,e("attack",0.05)),
-    r("drillmasters",LibraryBranch.WAR,1,"Drillmasters","−10% troop training time",2,D1,2,List.of(),false,e("trainTime",0.10)),
-    r("beast_riders",LibraryBranch.WAR,2,"Beast Riders","+10% mounted attack",4,D2,0,List.of("whetstones"),false,e("attack",0.05)),
-    r("keen_volleys",LibraryBranch.WAR,2,"Keen Volleys","+10% distance attack",4,D2,0,List.of("whetstones"),false,e("attack",0.05)),
-    r("war_chants", LibraryBranch.WAR,2,"War Chants","Reduced 1st-round losses on attack",4,D2,0,List.of("drillmasters"),false,e(),"warChants"),
-    r("bloodfury",  LibraryBranch.WAR,3,"Bloodfury","+15% attack, −5% defense",8,D3,10,List.of(),true,e("attack",0.15,"defense",-0.05)),
-    r("plunderers_creed",LibraryBranch.WAR,3,"Plunderer's Creed","+20% loot on victories",8,D3,12,List.of("war_chants"),false,e("loot",0.20)),
-    // 🛡 WARDS
-    r("runed_shields",LibraryBranch.WARDS,1,"Runed Shields","+5% defense (all)",2,D1,2,List.of(),false,e("defense",0.05)),
-    r("far_seers",  LibraryBranch.WARDS,1,"Far-Seers","Reveal incoming attack composition",2,D1,3,List.of(),false,e(),"farSeers"),
-    r("stone_bulwark",LibraryBranch.WARDS,2,"Stone Bulwark","+12% Earth defense",4,D2,0,List.of("runed_shields"),false,e("defEarth",0.12)),
-    r("ember_wards",LibraryBranch.WARDS,2,"Ember Wards","+12% Fire defense",4,D2,0,List.of("runed_shields"),false,e("defFire",0.12)),
-    r("gale_wards",LibraryBranch.WARDS,2,"Gale Wards","+12% Wind defense",4,D2,0,List.of("far_seers"),false,e("defWind",0.12)),
-    r("tide_wards",LibraryBranch.WARDS,2,"Tide Wards","+12% Water defense",4,D2,0,List.of("far_seers"),false,e("defWater",0.12)),
-    r("aegis_ward", LibraryBranch.WARDS,3,"Aegis Ward","+15% defense (all)",8,D3,10,List.of(),true,e("defense",0.15)),
-    r("everguard",  LibraryBranch.WARDS,3,"Everguard","Defenders recover part of losses",10,D3,14,List.of("aegis_ward"),false,e(),"recover"),
-    // 📜 LORE & DOMINION
-    r("wayfinding", LibraryBranch.LORE,1,"Wayfinding","−10% travel time",2,D1,2,List.of(),false,e("travel",0.10)),
-    r("pack_trains",LibraryBranch.LORE,1,"Pack Trains","+15% loot capacity",2,D1,3,List.of(),false,e("loot",0.15)),
-    r("tidecraft",  LibraryBranch.LORE,2,"Tidecraft","−15% naval travel time",4,D2,0,List.of("wayfinding"),false,e("navalTravel",0.15)),
-    r("siegecraft", LibraryBranch.LORE,2,"Siegecraft","Unlocks siege engines",8,D2,8,List.of(),false,e(),"siege"),
-    r("abundance",  LibraryBranch.LORE,2,"Abundance","+10% resource production",4,D2,0,List.of("pack_trains"),false,e("production",0.10)),
-    r("dominion",   LibraryBranch.LORE,3,"Dominion","Enables conquering enemy cities",12,D3,15,List.of("siegecraft"),false,e(),"dominion"),
-    r("grand_roads",LibraryBranch.LORE,3,"Grand Roads","−20% travel between your cities",6,D3,14,List.of("tidecraft"),false,e("cityTravel",0.20)),
-    r("deepforges", LibraryBranch.LORE,2,"Deepforges","−15% naval unit training time",4,D2,0,List.of("tidecraft"),false,e("navalTrainSpeed",0.15))
+    // ─────────────────────────── BRANCH I — "The Warpath" (assault & conquest) ───────────────────
+    r("whetstones",    LibraryBranch.WAR,1,"Whetstones","+5% attack (all troops)",                       1,2, List.of(),               e("attack",0.05)),
+    r("drillmasters",  LibraryBranch.WAR,1,"Drillmasters","−12% troop training time",                    1,2, List.of(),               e("trainTime",0.12)),
+    r("forced_march",  LibraryBranch.WAR,1,"Forced March","+12% troop movement speed",                   1,3, List.of(),               e("travel",0.12)),
+    r("raider",        LibraryBranch.WAR,2,"Raider","Unlocks the Raider — a cheap, fast offensive unit", 2,3, List.of("whetstones"),   e(), "unlockRaider"),
+    r("war_stores",    LibraryBranch.WAR,1,"War Stores","+25% resource storage capacity",                1,3, List.of(),               e("storage",0.25)),
+    r("bloodlust",     LibraryBranch.WAR,2,"Bloodlust","Each consecutive win within 6h: +3% attack (cap +15%)",2,6, List.of("whetstones"), e(), "bloodlust"),
+    r("honed_raiders", LibraryBranch.WAR,3,"Honed Raiders","Unit upgrade: +15% attack & +10% HP for the Raider",2,7, List.of("raider"),   e(), "honedRaiders"),
+    r("pillage",       LibraryBranch.WAR,2,"Pillage","+25% resources stolen on a victorious attack",     2,7, List.of("war_stores"),  e("lootStolen",0.25)),
+    r("breach_engines",LibraryBranch.WAR,3,"Breach Engines","Build rams & siege towers; +20% wall damage",3,9, List.of("bloodlust"),   e("siegeWall",0.20), "siege"),
+    r("conquest",      LibraryBranch.WAR,3,"Conquest","Enables conquering enemy cities",                 4,14,List.of("breach_engines"),e(), "dominion"),
+
+    // ─────────────────────────── BRANCH II — "The Bastion" (defense, resilience & economy) ───────
+    r("runed_wards",     LibraryBranch.WARDS,1,"Runed Wards","+5% defense (all elements)",               1,2, List.of(),                 e("defense",0.05)),
+    r("master_builders", LibraryBranch.WARDS,1,"Master Builders","−15% building construction time",      1,2, List.of(),                 e("buildTime",0.15)),
+    r("quickstep",       LibraryBranch.WARDS,1,"Quickstep","+10% troop movement speed",                  1,3, List.of(),                 e("travel",0.10)),
+    r("warden",          LibraryBranch.WARDS,2,"Warden","Unlocks the Warden — a tanky defensive unit",   2,4, List.of("runed_wards"),    e(), "unlockWarden"),
+    r("deep_vaults",     LibraryBranch.WARDS,2,"Deep Vaults","+35% resource storage capacity",           2,4, List.of(),                 e("storage",0.35)),
+    r("city_guard",      LibraryBranch.WARDS,2,"City Guard","Farm's \"Call the Guard\": summon farmer-militia every 5h",2,6, List.of("runed_wards"), e(), "cityGuard"),
+    r("tempered_wardens",LibraryBranch.WARDS,3,"Tempered Wardens","Unit upgrade: +20% defense for the Warden",2,7, List.of("warden"),     e(), "temperedWardens"),
+    r("hidden_granaries",LibraryBranch.WARDS,2,"Hidden Granaries","Protect 20% of your resources from being looted",2,7, List.of("deep_vaults"), e("lootProtect",0.20)),
+    r("spiteful_walls",  LibraryBranch.WARDS,3,"Spiteful Walls","Attackers assaulting this city suffer +15% extra losses",3,10,List.of("city_guard"), e(), "spitefulWalls"),
+    r("last_bastion",    LibraryBranch.WARDS,3,"Last Bastion","Garrison below 25% → +25% defense for the rest of the battle",4,13,List.of("spiteful_walls"), e(), "lastBastion"),
+
+    // ─────────────────────────── BRANCH III — "The Wild Hunt" (mobility, beasts & the hero) ──────
+    r("sharpened_claws", LibraryBranch.LORE,1,"Sharpened Claws","+5% attack (all troops)",               1,2, List.of(),                 e("attack",0.05)),
+    r("deep_veins",      LibraryBranch.LORE,1,"Deep Veins","+12% special-resource production",           1,2, List.of(),                 e("specialProd",0.12)),
+    r("wind_gait",       LibraryBranch.LORE,1,"Wind Gait","+15% troop movement speed (the fastest)",     1,3, List.of(),                 e("travel",0.15)),
+    r("outrider",        LibraryBranch.LORE,2,"Outrider","Unlocks the Outrider — a fast mounted/flying skirmisher",2,3, List.of("sharpened_claws"), e(), "unlockOutrider"),
+    r("burrow_stores",   LibraryBranch.LORE,1,"Burrow Stores","+25% resource storage capacity",          1,3, List.of(),                 e("storage",0.25)),
+    r("pack_instincts",  LibraryBranch.LORE,3,"Pack Instincts","Unit upgrade: +12% attack & +12% speed for the Outrider",2,6, List.of("outrider"), e(), "packInstincts"),
+    r("ambush",          LibraryBranch.LORE,2,"Ambush","+12% attack and +15% loot vs targets weaker than you",2,7, List.of("outrider"),  e(), "ambush"),
+    r("plunderers_haul", LibraryBranch.LORE,2,"Plunderer's Haul","+20% loot carry capacity & +15% resources stolen",2,7, List.of("burrow_stores"), e("loot",0.20,"lootStolen",0.15)),
+    r("blitz",           LibraryBranch.LORE,3,"Blitz","−30% travel time for the next attack, on a cooldown",3,10,List.of("wind_gait"),   e(), "blitz"),
+    r("siegebreaker",    LibraryBranch.LORE,3,"Hero: Siegebreaker","Hero-led army: +40% wall damage, ignores 10% wall defense",4,13,List.of("blitz"), e(), "siegebreaker")
   );
 
   private static final Map<String,Research> BY_ID = new LinkedHashMap<>();

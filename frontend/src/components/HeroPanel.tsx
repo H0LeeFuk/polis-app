@@ -3,6 +3,7 @@ import {
   getHeroes, setHeroAttributes, armHeroSkill,
   getHeroInventory, equipHeroItem, unequipHeroSlot, getMissions,
 } from "../api";
+import { useDraggable } from "../useDraggable";
 import type { Hero, HeroSkillDto, HeroItemDto, CitySummary } from "../types";
 
 const BUFF_LABEL: Record<string, string> = {
@@ -37,6 +38,7 @@ function countdown(iso: string | null): string {
 export default function HeroPanel({ cities, onClose, onChanged, focusHeroKey }: {
   cities: CitySummary[]; onClose: () => void; onChanged?: () => void; focusHeroKey?: string;
 }) {
+  const win = useDraggable<HTMLDivElement>();
   const [heroes, setHeroes] = useState<Hero[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<string>(focusHeroKey ?? "LEO");
@@ -51,7 +53,7 @@ export default function HeroPanel({ cities, onClose, onChanged, focusHeroKey }: 
 
   return (
     <div className="mvov-backdrop" onClick={onClose}>
-      <div className="mvov hero-panel" onClick={e => e.stopPropagation()}>
+      <div className="mvov hero-panel" ref={win} onClick={e => e.stopPropagation()}>
         <div className="mvov-head">
           <h2>🏛 Heroes</h2>
           <button className="modal-close" onClick={onClose}>✕</button>

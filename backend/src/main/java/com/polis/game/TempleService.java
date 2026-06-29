@@ -37,13 +37,13 @@ public class TempleService {
   public Festival start(Long playerId, Long cityId, Festival.Type type, Festival.Fuel fuel){
     City c = owned(playerId, cityId);
     if (cityService.level(cityId, BuildingType.TEMPLE) <= 0)
-      throw new IllegalStateException("Build a Temple first");
-    // Both festival types may run together (one Plenty + one Triumph); only block a second of the SAME type.
+      throw new IllegalStateException("Build an Altar first");
+    // Both rites may run together (one Offering + one Blood); only block a second of the SAME rite.
     if (festivals.countByCityIdAndFestivalTypeAndStatus(cityId, type, Festival.Status.RUNNING) > 0)
-      throw new IllegalStateException("That festival is already running in this city");
-    // the two options are fixed pairings of festival + fuel
+      throw new IllegalStateException("That rite is already running in this city");
+    // the two options are fixed pairings of rite + fuel
     Festival.Fuel expected = type == Festival.Type.FESTIVAL_OF_PLENTY ? Festival.Fuel.RESOURCES : Festival.Fuel.COMBAT_POINTS;
-    if (fuel != expected) throw new IllegalArgumentException("That festival uses " + expected + " as fuel");
+    if (fuel != expected) throw new IllegalArgumentException("That rite uses " + expected + " as fuel");
 
     Player p = players.findById(playerId).orElseThrow();
     if (fuel == Festival.Fuel.RESOURCES){

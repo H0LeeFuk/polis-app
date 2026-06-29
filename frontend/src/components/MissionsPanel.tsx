@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getMissions, claimMission } from "../api";
+import { useDraggable } from "../useDraggable";
 import type { Mission, MissionsData } from "../types";
 
 const REWARD_GLYPH: Record<string, string> = { wood: "🪵", stone: "🪨", wheat: "🌾", silver: "🌾", heroXp: "✨" };
@@ -7,6 +8,7 @@ const rewardText = (r: Record<string, number>) =>
   Object.entries(r).map(([k, v]) => `${REWARD_GLYPH[k] ?? ""}${v} ${k === "heroXp" ? "XP" : k}`).join(" · ");
 
 export default function MissionsPanel({ onClose, onChanged }: { onClose: () => void; onChanged?: () => void }) {
+  const win = useDraggable<HTMLDivElement>();
   const [data, setData] = useState<MissionsData | null>(null);
   const [err, setErr] = useState("");
   const [celebrate, setCelebrate] = useState<string | null>(null);
@@ -25,7 +27,7 @@ export default function MissionsPanel({ onClose, onChanged }: { onClose: () => v
 
   return (
     <div className="mvov-backdrop" onClick={onClose}>
-      <div className="mvov missions-panel" onClick={e => e.stopPropagation()}>
+      <div className="mvov missions-panel" ref={win} onClick={e => e.stopPropagation()}>
         <div className="mvov-head">
           <h2>📜 Missions</h2>
           <button className="modal-close" onClick={onClose}>✕</button>

@@ -29,27 +29,27 @@ public class TickScheduler {
   private final ResourceNodeRepo resourceNodes;
   private final SettleService settleService;
   private final LibraryService library;
-  private final BanditCampService banditCamps;
   private final TradeService trade;
   private final ProgressionService progression;
   private final TempleService temple;
   private final WonderService wonders;
   private final ColossusService colossi;
   private final SpyService spyService;
+  private final ReinforcementRepo reinforcements;
 
   public TickScheduler(CityService cityService, CityFactory cityFactory, CityRepo cities, UnitRepo units,
                        JobRepo jobs, MovementRepo movements, PlayerRepo players, BattleReportService reports,
                        CombatEngine combat, UnitCatalog catalog, HeroService heroService, HeroRepo heroRepo,
                        NodeService nodeService, ResourceNodeRepo resourceNodes, SettleService settleService,
-                       LibraryService library, BanditCampService banditCamps, TradeService trade,
+                       LibraryService library, TradeService trade,
                        ProgressionService progression, TempleService temple, WonderService wonders,
-                       ColossusService colossi, SpyService spyService){
-    this.wonders=wonders; this.colossi=colossi; this.spyService=spyService;
+                       ColossusService colossi, SpyService spyService, ReinforcementRepo reinforcements){
+    this.wonders=wonders; this.colossi=colossi; this.spyService=spyService; this.reinforcements=reinforcements;
     this.cityService=cityService; this.cityFactory=cityFactory; this.cities=cities; this.units=units;
     this.jobs=jobs; this.movements=movements; this.players=players; this.reports=reports;
     this.combat=combat; this.catalog=catalog; this.heroService=heroService; this.heroRepo=heroRepo;
     this.nodeService=nodeService; this.resourceNodes=resourceNodes; this.settleService=settleService;
-    this.library=library; this.banditCamps=banditCamps; this.trade=trade;
+    this.library=library; this.trade=trade;
     this.progression=progression; this.temple=temple;
   }
 
@@ -77,13 +77,13 @@ public class TickScheduler {
       switch (m.getPhase()){
         case COLONY -> resolveColony(m);
         case OUT     -> {
-          if (m.getTargetCampId()!=null) banditCamps.onArrive(m, now);
-          else if (m.getTargetColossusId()!=null) colossi.onArrive(m, now);
+          if (m.getTargetColossusId()!=null) colossi.onArrive(m, now);
           else if (m.getTargetWonderId()!=null) wonders.resolveAttack(m, now);
           else if (m.getTargetNodeId()!=null) resolveNodeAttack(m, now);
           else resolveRaid(m, now);
         }
         case RETURN  -> resolveReturn(m);
+        case SUPPORT -> resolveSupport(m);
         case OCCUPY  -> { if (m.getTargetWonderId()!=null) wonders.resolveOccupy(m, now); else nodeService.resolveOccupy(m, now); }
         default      -> {}
       }
@@ -122,11 +122,16 @@ public class TickScheduler {
 
     Map<String,Integer> attackerSent = new LinkedHashMap<>(m.getUnits());
 
-    // defender garrison snapshot: the units stationed at the target right now
+    // defender garrison snapshot: the units stationed at the target right now, PLUS any friendly
+    // reinforcements stationed here by allies (they fight on the host's behalf and take casualties).
     List<CityUnit> garrison = units.findByCityId(tgt.getId());
+    List<Reinforcement> reinf = reinforcements.findByHostCityId(tgt.getId());
     Map<String,Integer> defenderPresent = new LinkedHashMap<>();
     for (CityUnit cu : garrison)
       if (cu.getCount() > 0) defenderPresent.merge(cu.getType().toUpperCase(), cu.getCount(), Integer::sum);
+    for (Reinforcement r0 : reinf)
+      if (r0.getUnits() != null) for (var e : r0.getUnits().entrySet())
+        if (e.getValue() != null && e.getValue() > 0) defenderPresent.merge(e.getKey().toUpperCase(), e.getValue(), Integer::sum);
 
     // Two-layer combat: this dispatch is one layer — a SEA attack hits the enemy fleet, a LAND
     // attack the garrison. Resolve only the matching layer; the other is untouched. Transports
@@ -146,33 +151,51 @@ public class TickScheduler {
     Race atkRace = srcCity!=null ? srcCity.getRace() : null;
     LibraryService.LibEffects atkLib = srcCity!=null ? library.effects(srcCity.getId()) : LibraryService.LibEffects.none();
     LibraryService.LibEffects defLib = library.effects(tgt.getId());
+
+    // ── Library combat conditionals (Warpath / Bastion / Wild Hunt signature mechanics) ──
+    // Bloodlust: a victorious attack streak within 6h stacks +3% attack (cap +15%).
+    double bloodlust = atkLib.has("bloodlust") && srcCity != null
+        ? 1 + Math.min(0.15, bloodlustStacks(srcCity, now) * 0.03) : 1.0;
+    // Ambush: bonus attack vs a weaker target (lower city power).
+    boolean ambush = atkLib.has("ambush") && srcCity != null && tgt.getPower() < srcCity.getPower();
+    double ambushAtk = ambush ? 1.12 : 1.0;
+    // Spiteful Walls: attackers assaulting this city suffer +15% extra losses.
+    double spite = defLib.has("spitefulWalls") ? 1.15 : 1.0;
+    // Last Bastion: a heavily-outnumbered garrison (4:1+) fights at +25% defense.
+    int atkCount = countOf(attackerCombat), defCount = countOf(defenderCombat);
+    double lastBastion = (defLib.has("lastBastion") && defCount > 0 && atkCount >= defCount * 4) ? 1.25 : 1.0;
+
     mods = new CombatEngine.Mods(
-        mods.attackMult() * (atkRace!=null ? atkRace.attackMult : 1.0) * atkLib.attackMult(),
-        mods.defenseMult() * (tgt.getRace()!=null ? tgt.getRace().defenseMult : 1.0) * defLib.defenseMult(),
+        mods.attackMult() * (atkRace!=null ? atkRace.attackMult : 1.0) * atkLib.attackMult() * bloodlust * ambushAtk,
+        mods.defenseMult() * (tgt.getRace()!=null ? tgt.getRace().defenseMult : 1.0) * defLib.defenseMult() * lastBastion,
         mods.defFireMult()  * defLib.defFireMult(),
         mods.defWindMult()  * defLib.defWindMult(),
         mods.defEarthMult() * defLib.defEarthMult(),
         mods.defWaterMult() * defLib.defWaterMult(),
-        mods.attackerLossMult());
+        mods.attackerLossMult() * spite);
+
+    // per-unit Library upgrades (attacker buffs its units, defender buffs its garrison) + siege mult
+    CombatEngine.UnitMods um = libUnitMods(atkLib, defLib, attackerHero);
 
     Element atkElement = atkRace != null ? atkRace.element : Element.FIRE;
     CombatEngine.CombatFx fx = attackerHero != null ? heroService.combatFx(attackerHero) : CombatEngine.CombatFx.none();
     double heroAtk = attackerHero != null ? heroService.baseAttack(attackerHero) : 0;
-    CombatEngine.Result r = combat.resolve(attackerCombat, atkElement, defenderCombat, mods, fx, heroAtk);
+    CombatEngine.Result r = combat.resolve(attackerCombat, atkElement, defenderCombat, mods, fx, heroAtk, um);
     BattleOutcome outcome = r.outcome();
 
-    // apply defender casualties back to the garrison
-    for (CityUnit cu : garrison){
-      int lost = r.defenderLost().getOrDefault(cu.getType().toUpperCase(), 0);
-      if (lost > 0){ cu.setCount(Math.max(0, cu.getCount()-lost)); units.save(cu); }
-    }
+    // snapshot garrison counts so the retaliation heal credits only the garrison's own losses
+    Map<Long,Integer> garrisonBefore = new HashMap<>();
+    for (CityUnit cu : garrison) garrisonBefore.put(cu.getId(), cu.getCount());
 
-    // RETALIATION_HEAL: a defending hero recovers a fraction of the garrison's losses on a successful hold
+    // apply defender casualties across the garrison AND any stationed reinforcements (proportional)
+    applyDefenderLosses(garrison, reinf, r.defenderLost());
+
+    // RETALIATION_HEAL: a defending hero recovers a fraction of the GARRISON's own losses on a hold
     if (outcome == BattleOutcome.DEFEAT && defenderHero != null){
       double heal = heroService.retaliationHealPct(defenderHero);
       if (heal > 0) for (CityUnit cu : garrison){
-        int lost = r.defenderLost().getOrDefault(cu.getType().toUpperCase(), 0);
-        int back = (int)Math.round(lost * heal);
+        int lostHere = Math.max(0, garrisonBefore.getOrDefault(cu.getId(), cu.getCount()) - cu.getCount());
+        int back = (int)Math.round(lostHere * heal);
         if (back > 0){ cu.setCount(cu.getCount()+back); units.save(cu); }
       }
     }
@@ -186,12 +209,15 @@ public class TickScheduler {
     if (outcome == BattleOutcome.VICTORY && layer == CombatLayer.LAND){
       long carry = armyCarry(r.attackerSurvived());
       if (atkRace != null) carry = (long)(carry * atkRace.lootMult);                    // race loot bonus
-      carry = (long)(carry * atkLib.lootMult());                                        // Library loot research
+      carry = (long)(carry * atkLib.lootMult());                                        // Library carry-capacity research (Plunderer's Haul)
+      carry = (long)(carry * atkLib.lootStolenMult());                                  // Pillage / Plunderer's Haul steal bonus
+      if (ambush) carry = (long)(carry * 1.15);                                         // Ambush: +15% loot vs weaker target
       if (attackerHero != null) carry = (long)(carry * heroService.lootMult(attackerHero)); // Cunning
       // lootable pool: the three base resources + the target's OWN race special (race-locked source)
       List<ResourceType> lootable = new ArrayList<>(List.of(ResourceType.WOOD, ResourceType.STONE, ResourceType.WHEAT));
       if (tgt.getRace() != null) lootable.add(tgt.getRace().specialResource);
       long pool = 0; for (ResourceType rt : lootable) pool += (long) tgt.get(rt);
+      pool = (long)(pool * (1 - defLib.lootProtectFrac()));                             // Hidden Granaries: protect a slice of the hoard
       long want = Math.min(carry, pool);
       if (want > 0 && pool > 0){
         for (ResourceType rt : lootable){
@@ -206,6 +232,9 @@ public class TickScheduler {
     // power still tracks the beating a city has taken (drives barbarian difficulty/score)
     tgt.setPower(outcome == BattleOutcome.VICTORY ? Math.max(40, tgt.getPower()*0.45+20) : Math.max(40, tgt.getPower()*0.9));
     cities.save(tgt);
+
+    // Bloodlust: keep the attacker's victory streak (or break it) after the fight is decided.
+    if (srcCity != null && atkLib.has("bloodlust")){ updateBloodlust(srcCity, outcome, now); cities.save(srcCity); }
 
     // Combat Points (spendable war currency / festival fuel) — anti-farmed; the winner earns them.
     Player defP = tgt.getPlayerId()!=null ? players.findById(tgt.getPlayerId()).orElse(null) : null;
@@ -342,6 +371,64 @@ public class TickScheduler {
     heroRepo.findByActiveMovementId(m.getId()).ifPresent(h -> heroService.arriveHome(h, m.getSourceCityId()));
   }
 
+  /** Reinforcements arrive: station them at the host city (merge into its support pool). */
+  private void resolveSupport(Movement m){
+    City host = cities.findById(m.getTargetCityId()).orElse(null);
+    if (host == null){ returnArmy(m, m.getUnits(), null); return; }   // target vanished → march the troops home
+    Reinforcement r = reinforcements.findByHostCityIdAndOwnerPlayerId(host.getId(), m.getPlayerId())
+        .orElseGet(() -> { Reinforcement n = new Reinforcement();
+          n.setWorldId(m.getWorldId()); n.setHostCityId(host.getId()); n.setOwnerPlayerId(m.getPlayerId());
+          return n; });
+    Map<String,Integer> u = r.getUnits()==null ? new LinkedHashMap<>() : new LinkedHashMap<>(r.getUnits());
+    for (var e : m.getUnits().entrySet())
+      if (e.getValue()!=null && e.getValue()>0) u.merge(e.getKey().toUpperCase(), e.getValue(), Integer::sum);
+    r.setUnits(u);
+    reinforcements.save(r);
+  }
+
+  /**
+   * Distribute the engine's defender losses (by UPPERCASE unit type) across the garrison stacks and
+   * any stationed reinforcement stacks, proportional to each stack's count of that type. Persists the
+   * survivors and deletes emptied reinforcement records.
+   */
+  private void applyDefenderLosses(List<CityUnit> garrison, List<Reinforcement> reinf, Map<String,Integer> lost){
+    for (var e : lost.entrySet()){
+      String type = e.getKey(); int remaining = e.getValue() == null ? 0 : e.getValue();
+      if (remaining <= 0) continue;
+      // total of this type present across garrison + reinforcements
+      int total = 0;
+      for (CityUnit cu : garrison) if (cu.getType().equalsIgnoreCase(type)) total += cu.getCount();
+      for (Reinforcement r : reinf) total += r.getUnits().getOrDefault(type, 0);
+      if (total <= 0) continue;
+      // proportional removal; the garrison absorbs any rounding remainder last
+      for (Reinforcement r : reinf){
+        int have = r.getUnits().getOrDefault(type, 0);
+        if (have <= 0) continue;
+        int take = Math.min(have, (int)Math.floor((double)e.getValue() * have / total));
+        if (take > 0){ r.getUnits().put(type, have - take); remaining -= take; }
+      }
+      for (CityUnit cu : garrison){
+        if (remaining <= 0) break;
+        if (!cu.getType().equalsIgnoreCase(type)) continue;
+        int take = Math.min(cu.getCount(), remaining);
+        cu.setCount(cu.getCount() - take); remaining -= take;
+      }
+      // any leftover (rounding) falls on remaining reinforcement stacks
+      for (Reinforcement r : reinf){
+        if (remaining <= 0) break;
+        int have = r.getUnits().getOrDefault(type, 0);
+        int take = Math.min(have, remaining);
+        if (take > 0){ r.getUnits().put(type, have - take); remaining -= take; }
+      }
+    }
+    for (CityUnit cu : garrison) units.save(cu);
+    for (Reinforcement r : reinf){
+      r.getUnits().values().removeIf(v -> v == null || v <= 0);
+      if (r.getUnits().isEmpty()) reinforcements.delete(r);
+      else reinforcements.save(r);
+    }
+  }
+
   private void returnArmy(Movement m, Map<String,Integer> army, Map<String,Long> loot){
     City home = cities.findById(m.getSourceCityId()).orElse(null); if (home==null) return;
     for (var e : army.entrySet()){
@@ -361,6 +448,31 @@ public class TickScheduler {
     }
   }
 
+
+  /** Effective Bloodlust stacks: 0 if the 6h streak window has lapsed, else the stored count. */
+  private int bloodlustStacks(City c, Instant now){
+    Instant last = c.getBloodlustLastWin();
+    if (last == null || last.plusSeconds(6*3600).isBefore(now)) return 0;
+    return c.getBloodlustStacks();
+  }
+  /** A win extends the streak (cap 5 = +15%); any loss breaks it. */
+  private void updateBloodlust(City c, BattleOutcome outcome, Instant now){
+    if (outcome == BattleOutcome.VICTORY){
+      c.setBloodlustStacks(Math.min(5, bloodlustStacks(c, now) + 1));
+      c.setBloodlustLastWin(now);
+    } else { c.setBloodlustStacks(0); c.setBloodlustLastWin(null); }
+  }
+  /** Per-unit Library upgrades + siege multiplier for a raid (attacker buffs, defender buffs, siege). */
+  private CombatEngine.UnitMods libUnitMods(LibraryService.LibEffects atkLib, LibraryService.LibEffects defLib, Hero attackerHero){
+    Map<String,Double> atk = new HashMap<>(), def = new HashMap<>();
+    if (atkLib.has("honedRaiders"))   atk.put("RAIDER",   1.15);  // Honed Raiders: +15% attack
+    if (atkLib.has("packInstincts"))  atk.put("OUTRIDER", 1.12);  // Pack Instincts: +12% attack (speed handled in movement)
+    if (defLib.has("temperedWardens"))def.put("WARDEN",   1.20);  // Tempered Wardens: +20% defense
+    if (defLib.has("honedRaiders"))   def.put("RAIDER",   1.10);  // Honed Raiders: +10% HP ≈ +10% defense
+    double siege = atkLib.siegeWallMult();                        // Breach Engines: +20% wall damage
+    if (attackerHero != null && atkLib.has("siegebreaker")) siege *= 1.40;  // Siegebreaker hero: +40%
+    return new CombatEngine.UnitMods(atk, def, siege);
+  }
 
   private long armyCarry(Map<String,Integer> a){ long s=0; for (var e:a.entrySet()) s+=(long)catalog.get(e.getKey()).getCarryCapacity()*e.getValue(); return s; }
   private int popOf(Map<String,Integer> a){ int s=0; for (var e:a.entrySet()) s+=catalog.get(e.getKey()).getPopulationCost()*e.getValue(); return s; }

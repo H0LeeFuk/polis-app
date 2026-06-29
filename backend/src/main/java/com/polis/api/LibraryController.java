@@ -33,4 +33,8 @@ public class LibraryController {
 
   @GetMapping("/active-bonuses")
   public Map<String,Object> activeBonuses(@PathVariable Long cityId){ return library.activeBonuses(me(), cityId); }
+
+  /** Bastion "City Guard": summon farmer-militia into the garrison (on a cooldown). */
+  @PostMapping("/call-guard")
+  public Map<String,Object> callGuard(@PathVariable Long cityId){ return library.callGuard(me(), cityId); }
 }

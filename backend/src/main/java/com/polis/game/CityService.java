@@ -45,7 +45,10 @@ public class CityService {
 
   public int level(Long cityId, BuildingType t){ return levels(cityId).getOrDefault(t,0); }
 
-  public long capacity(Long cityId){ return GameRules.storeCap(level(cityId, BuildingType.WAREHOUSE)); }
+  public long capacity(Long cityId){
+    // Warehouse cap, raised by Library storage research (War Stores / Deep Vaults / Burrow Stores).
+    return Math.round(GameRules.storeCap(level(cityId, BuildingType.WAREHOUSE)) * library.effects(cityId).storageMult());
+  }
 
   /** True for the dev "god" account whose resources stay pinned at the warehouse cap. */
   private boolean isGodAccount(Long playerId){
@@ -61,6 +64,11 @@ public class CityService {
     int used = 0;
     for (CityBuilding b : buildings.findByCityId(cityId)) used += b.getLevel()*b.getType().pop;
     for (CityUnit u : units.findByCityId(cityId)) used += u.getCount()*catalog.get(u.getType()).getPopulationCost();
+    // units still in the training queue already reserve their population — otherwise the city looks
+    // like it has free pop while a batch is brewing, and a second train order would over-fill the cap.
+    for (BuildJob j : jobs.findByCityIdOrderByQueueTypeAscPositionAsc(cityId))
+      if (j.getUnitType() != null && j.getBatch() != null)
+        used += j.getBatch() * catalog.get(j.getUnitType()).getPopulationCost();
     // troops marching from this city still belong to it — count them so population is steady while
     // an army is away (it only changes on recruit, upgrade, or losses), not when you send an attack.
     for (Movement m : movements.findBySourceCityIdAndResolvedFalse(cityId))
@@ -80,17 +88,19 @@ public class CityService {
     double elapsed = Math.max(0, (now.toEpochMilli() - c.getLastTickAt().toEpochMilli())/1000.0);
     if (elapsed > 0){
       Map<BuildingType,Integer> lv = levels(c.getId());
-      long cap = GameRules.storeCap(lv.get(BuildingType.WAREHOUSE));
-      // production: race bonus → Library "Abundance" research (documented stacking order)
-      double prod = (c.getRace()!=null ? c.getRace().prodMult : 1.0) * library.effects(c.getId()).prodMult();
+      LibraryService.LibEffects fx = library.effects(c.getId());
+      long cap = Math.round(GameRules.storeCap(lv.get(BuildingType.WAREHOUSE)) * fx.storageMult());
+      // production: race bonus → Library production research (documented stacking order)
+      double prod = (c.getRace()!=null ? c.getRace().prodMult : 1.0) * fx.prodMult();
       c.setWood(Math.min(cap,  c.getWood()  + GameRules.prodPerHour(lv.get(BuildingType.TIMBER))*prod/3600.0*elapsed));
       c.setStone(Math.min(cap, c.getStone() + GameRules.prodPerHour(lv.get(BuildingType.QUARRY))*prod/3600.0*elapsed));
       c.setWheat(Math.min(cap, c.getWheat() + GameRules.prodPerHour(lv.get(BuildingType.MINE))*prod/3600.0*elapsed));
-      // special resource: the EXTRACTOR yields the city RACE's special (Coal/Iron/Crystals/Pearls)
+      // special resource: the EXTRACTOR yields the city RACE's special (Coal/Iron/Crystals/Pearls);
+      // the Wild Hunt "Deep Veins" research further boosts ONLY the special resource.
       int extractor = lv.get(BuildingType.EXTRACTOR);
       if (extractor>0 && c.getRace()!=null){
         ResourceType sp = c.getRace().specialResource;
-        c.set(sp, Math.min(cap, c.get(sp) + GameRules.prodPerHour(extractor)*prod/3600.0*elapsed));
+        c.set(sp, Math.min(cap, c.get(sp) + GameRules.prodPerHour(extractor)*prod*fx.specialProdMult()/3600.0*elapsed));
       }
       c.setLastTickAt(now);
     }
@@ -98,7 +108,7 @@ public class CityService {
     // resources never deplete and never exceed the cap. Every other account obeys the
     // normal capped accrual above.
     if (c.getPlayerId()!=null && isGodAccount(c.getPlayerId())){
-      double cap = GameRules.storeCap(level(c.getId(), BuildingType.WAREHOUSE));
+      double cap = capacity(c.getId());
       c.setWood(cap);
       c.setStone(cap);
       c.setWheat(cap);

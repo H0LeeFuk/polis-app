@@ -23,12 +23,13 @@ public class SpyService {
   private final SpyMissionRepo missions;
   private final SpyReportRepo reports;
   private final SpyAlertRepo alerts;
+  private final TravelTimeService travel;
   private final Random rnd = new Random();
 
   public SpyService(CityRepo cities, CityService cityService, UnitRepo units, PlayerRepo players,
-                    SpyMissionRepo missions, SpyReportRepo reports, SpyAlertRepo alerts){
+                    SpyMissionRepo missions, SpyReportRepo reports, SpyAlertRepo alerts, TravelTimeService travel){
     this.cities=cities; this.cityService=cityService; this.units=units; this.players=players;
-    this.missions=missions; this.reports=reports; this.alerts=alerts;
+    this.missions=missions; this.reports=reports; this.alerts=alerts; this.travel=travel;
   }
 
   /** Watchtower view for a city: its level and the two derived chances. */
@@ -63,9 +64,14 @@ public class SpyService {
     origin.setWood(origin.getWood() - cost); origin.setStone(origin.getStone() - cost); origin.setWheat(origin.getWheat() - cost);
     cities.save(origin);
 
+    // travel time scales with the distance between the two cities (like a marching army), paced as a
+    // lone fast scout — so spying a neighbour is quick and spying across the map takes real time.
+    int travelSecs = travel.seconds(origin.getIslandId(), target.getIslandId(), GameRules.SPY_MINUTES_PER_TILE);
+    int secs = Math.max(GameRules.SPY_MIN_SECONDS, travelSecs);
+
     SpyMission m = new SpyMission();
     m.setSpyingPlayerId(playerId); m.setOriginCityId(originCityId); m.setTargetCityId(targetCityId);
-    m.setResolvesAt(Instant.now().plusSeconds(GameRules.SPY_SECONDS));
+    m.setResolvesAt(Instant.now().plusSeconds(secs));
     SpyMission saved = missions.save(m);
 
     Map<String,Object> out = new LinkedHashMap<>();

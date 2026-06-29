@@ -26,6 +26,12 @@ public class MovementController {
     return movements.cityMovements(me(), cityId);
   }
 
+  /** Friendly troops stationed at this city (reinforcements defending it). */
+  @GetMapping("/api/cities/{cityId}/reinforcements")
+  public List<Map<String,Object>> reinforcements(@PathVariable Long cityId){
+    return movements.cityReinforcements(me(), cityId);
+  }
+
   /** Live travel-time preview while the player picks troops — does NOT create a movement. */
   @GetMapping("/api/cities/{originCityId}/attack/preview")
   public Map<String,Object> attackPreview(@PathVariable Long originCityId,

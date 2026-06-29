@@ -69,6 +69,10 @@ public final class GameRules {
   /** Spy mission cost (each base resource) and resolve delay. */
   public static final long SPY_RESOURCE_COST = 2_000;
   public static final int  SPY_SECONDS = 120;
+  /** A spy is a lone fast scout: its travel is paced by distance like an army, at this scout pace. */
+  public static final int  SPY_MINUTES_PER_TILE = 6;
+  /** Floor on a spy mission's resolve time regardless of how close the target is. */
+  public static final int  SPY_MIN_SECONDS = 30;
   /** Chance a spy launched from a Watchtower of this level succeeds (before the defender's catch chance). */
   public static double spySuccessChance(int level){ return Math.min(0.95, 0.30 + level * 0.0325); }   // L0 .30 → L20 .95
   /** Chance a Watchtower of this level catches an enemy spy targeting the city. */

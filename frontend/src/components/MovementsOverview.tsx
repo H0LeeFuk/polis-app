@@ -2,14 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { getWorld } from "../api";
 import type { Movement, PlayerMovements, WorldData } from "../types";
 import { fmtEta, fmtArrival, progressPct, troopSummary, kindMeta, moveKind } from "../movements";
+import { useDraggable } from "../useDraggable";
 
-type Filter = "all" | "attack" | "return" | "incoming" | "colony" | "support";
+type Filter = "all" | "attack" | "return" | "incoming" | "colony" | "support" | "spy";
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 /** Area 3 — full-screen bird's-eye view of every troop movement across the empire. */
 export default function MovementsOverview({ data, now, onClose, onGoCity }: {
   data: PlayerMovements | null; now: number; onClose: () => void; onGoCity: (cityId: number | null) => void;
 }) {
+  const win = useDraggable<HTMLDivElement>();
   const [filter, setFilter] = useState<Filter>("all");
   const [cityFilter, setCityFilter] = useState<string>("");
   const [world, setWorld] = useState<WorldData | null>(null);
@@ -42,11 +44,12 @@ export default function MovementsOverview({ data, now, onClose, onGoCity }: {
     { id: "incoming", label: "⚠ Incoming" },
     { id: "colony", label: "🚢 Colony" },
     { id: "support", label: "🤝 Support" },
+    { id: "spy", label: "🕵 Spies" },
   ];
 
   return (
     <div className="mvov-backdrop" onClick={onClose}>
-      <div className="mvov" onClick={e => e.stopPropagation()}>
+      <div className="mvov" ref={win} onClick={e => e.stopPropagation()}>
         <div className="mvov-head">
           <h2>🪖 Troop Movements</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -139,7 +142,7 @@ function MiniMap({ world, moves, now }: { world: WorldData | null; moves: Moveme
   }).filter(Boolean) as { id: number; kind: string; x: number; y: number; from: { x: number; y: number }; to: { x: number; y: number } }[];
 
   const colour: Record<string, string> = {
-    attack: "#e0524a", incoming: "#ff3b30", return: "#4aa3df", colony: "#d8ad53", support: "#6fd08a",
+    attack: "#e0524a", incoming: "#ff3b30", return: "#4aa3df", colony: "#d8ad53", support: "#6fd08a", spy: "#b07fd4",
   };
 
   return (

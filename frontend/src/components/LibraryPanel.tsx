@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { getLibrary, startLibraryResearch, respecLibrary } from "../api";
+import { getLibrary, startLibraryResearch, respecLibrary, callCityGuard } from "../api";
 import type { LibraryData, LibraryNode } from "../types";
 
 const BRANCHES: { key: "WAR" | "WARDS" | "LORE"; icon: string; title: string }[] = [
-  { key: "WAR", icon: "⚔", title: "War" },
-  { key: "WARDS", icon: "🛡", title: "Wards" },
-  { key: "LORE", icon: "📜", title: "Lore & Dominion" },
+  { key: "WAR", icon: "⚔", title: "The Warpath" },
+  { key: "WARDS", icon: "🛡", title: "The Bastion" },
+  { key: "LORE", icon: "🐺", title: "The Wild Hunt" },
 ];
 
 const fmtDur = (s: number) => {
@@ -51,6 +51,13 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
     catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
+  const callGuard = async () => {
+    setErr(""); setBusy(true);
+    try { const r = await callCityGuard(cityId); setErr(`Summoned ${r.summoned} militia to the garrison.`); onChanged?.(); }
+    catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  const guardReady = !!data?.tree.find(n => n.id === "city_guard" && n.state === "COMPLETED");
 
   // Why is a locked node not yet researchable? Spell it out so the tree is self-explanatory.
   const lockReason = (n: LibraryNode): string => {
@@ -110,6 +117,7 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
                 <i className="lg avail" /> ready
                 <i className="lg locked" /> locked
               </span>
+              {guardReady && <button className="btn" onClick={callGuard} disabled={busy}>🧑‍🌾 Call the Guard</button>}
               <button className="btn ghost danger" onClick={respec} disabled={busy}>↺ Reset research (re-spec)</button>
             </div>
           </div>
@@ -125,7 +133,7 @@ function LibNode({ n, byId, reason, busy, onResearch }: {
   const stateCls = n.state === "COMPLETED" ? "done"
     : n.state === "RESEARCHING" ? "busy"
       : n.available ? "avail" : "locked";
-  const cls = "lib-node st-" + stateCls + (n.id === "dominion" ? " marquee" : "");
+  const cls = "lib-node st-" + stateCls + (n.id === "conquest" ? " marquee" : "");
   return (
     <div className={cls}>
       <div className="lib-node-head"><b>{n.name}</b><span className="lib-cost">{n.pointCost}◈</span></div>

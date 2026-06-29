@@ -17,12 +17,12 @@ public class AccountSetupService {
   private final HeroRepo heroRepo;
   private final MissionService missions;
   private final CityRepo cities;
-  private final BanditCampService banditCamps;
+  private final BanditTowerService banditTower;
 
   public AccountSetupService(HeroService heroes, HeroRepo heroRepo, MissionService missions, CityRepo cities,
-                            BanditCampService banditCamps){
+                            BanditTowerService banditTower){
     this.heroes = heroes; this.heroRepo = heroRepo; this.missions = missions; this.cities = cities;
-    this.banditCamps = banditCamps;
+    this.banditTower = banditTower;
   }
 
   @Transactional
@@ -37,7 +37,7 @@ public class AccountSetupService {
 
     missions.seedForPlayer(playerId);
 
-    // one bandit camp per player, at their first city — created on entering the server
-    banditCamps.ensureForPlayer(playerId);
+    // one account-wide Bandit Tower per player — seeded at level 1 on entering the server
+    banditTower.ensureProgress(playerId);
   }
 }

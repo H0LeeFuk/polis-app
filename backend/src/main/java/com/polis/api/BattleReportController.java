@@ -21,8 +21,9 @@ public class BattleReportController {
                                        @RequestParam(defaultValue = "20") int size,
                                        @RequestParam(required = false) String outcome,
                                        @RequestParam(required = false) Boolean read,
-                                       @RequestParam(required = false) Long cityId){
-    return reports.list(me(), parseOutcome(outcome), read, cityId, page, size);
+                                       @RequestParam(required = false) Long cityId,
+                                       @RequestParam(required = false) String role){
+    return reports.list(me(), parseOutcome(outcome), read, cityId, role, page, size);
   }
 
   @GetMapping("/api/players/me/battle-reports/unread-count")

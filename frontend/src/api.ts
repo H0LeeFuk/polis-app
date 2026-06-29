@@ -1,7 +1,7 @@
 import type {
   GameState, WorldData, RankRow, InboxMsg, Movement, AttackPreview, PlayerMovements,
   BattleReport, BattleReportPage, BattleOutcome, Hero, ResourceNode, HeroItemDto,
-  BanditCamp, BanditAttackResult, IslandSlots, FoundingStatus, MissionsData, IslandBoss, BossAttackResult,
+  BanditTowerState, BanditTowerLevelRow, BanditTowerAttackResult, IslandSlots, FoundingStatus, MissionsData, IslandBoss, BossAttackResult,
   LibraryData, TradeMarket, BuyPreview, TradeConvoyDto, AllianceView,
   TempleState, Progression,
   WorldEndgame, WonderDto, WonderLeader,
@@ -49,6 +49,9 @@ export const doRename   = (c: number, name: string) => post(c, "rename", { name 
 export const doCancel   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/cancel/${jobId}`, { method: "POST" });
 export const doFinish   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/finish/${jobId}`, { method: "POST" });
 export const doAttack   = (c: number, targetCityId: number, units: Record<string, number>, heroId: number | null = null) => post(c, "attack", { targetCityId, units, heroId });
+export const doSupport  = (c: number, targetCityId: number, units: Record<string, number>) => post(c, "support", { targetCityId, units });
+export const getReinforcements = (cityId: number) =>
+  api<{ ownerPlayerId: number; owner: string; mine: boolean; units: Record<string, number> }[]>(`/api/cities/${cityId}/reinforcements`);
 
 // Temple / Festivals / progression
 export const getTemple = (c: number) => api<TempleState>(`/api/cities/${c}/temple`);
@@ -95,7 +98,7 @@ export const getIntel = (targetCityId: number) =>
   api<{ hasIntel: boolean; intel?: SpyIntel }>(`/api/players/me/intel?targetCityId=${targetCityId}`);
 
 // --- battle reports ---
-export interface ReportFilters { page?: number; size?: number; outcome?: BattleOutcome; read?: boolean; cityId?: number; }
+export interface ReportFilters { page?: number; size?: number; outcome?: BattleOutcome; read?: boolean; cityId?: number; role?: "ATTACKER" | "DEFENDER"; }
 function reportQuery(f: ReportFilters): string {
   const p = new URLSearchParams();
   if (f.page != null) p.set("page", String(f.page));
@@ -103,6 +106,7 @@ function reportQuery(f: ReportFilters): string {
   if (f.outcome) p.set("outcome", f.outcome);
   if (f.read != null) p.set("read", String(f.read));
   if (f.cityId != null) p.set("cityId", String(f.cityId));
+  if (f.role) p.set("role", f.role);
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -143,6 +147,8 @@ export const startLibraryResearch = (cityId: number, researchId: string) =>
   api<{ ok: boolean }>(`/api/cities/${cityId}/library/research`, { method: "POST", body: JSON.stringify({ researchId }) });
 export const respecLibrary = (cityId: number) =>
   api<{ ok: boolean }>(`/api/cities/${cityId}/library/respec`, { method: "POST" });
+export const callCityGuard = (cityId: number) =>
+  api<{ ok: boolean; summoned: number; readyAt: string }>(`/api/cities/${cityId}/library/call-guard`, { method: "POST" });
 
 // --- trade / marketplace + convoy logistics ---
 export const getTradeMarket = (cityId: number) => api<TradeMarket>(`/api/cities/${cityId}/trade`);
@@ -192,10 +198,12 @@ export const investWonder = (id: number, cityId: number, each: number) =>
   api<WonderDto>(`/api/world/wonders/${id}/invest`, { method: "POST", body: JSON.stringify({ cityId, each }) });
 export const forceEndgame = () => api<{ ok: boolean }>("/api/world/force-endgame", { method: "POST" });
 
-// --- bandit camp ---
-export const getBanditCamp = (islandId: number) => api<BanditCamp>(`/api/islands/${islandId}/bandit-camp`);
-export const attackBanditCamp = (islandId: number, cityId: number, troops: Record<string, number>) =>
-  api<BanditAttackResult>(`/api/islands/${islandId}/bandit-camp/attack`, { method: "POST", body: JSON.stringify({ cityId, troops }) });
+// --- bandit tower (account-wide 100-level PvE climb) ---
+export const getBanditTower = () => api<BanditTowerState>("/api/players/me/bandit-tower");
+export const getBanditTowerLevels = () => api<BanditTowerLevelRow[]>("/api/players/me/bandit-tower/levels");
+export const attackBanditTower = (fromCityId: number, troops: Record<string, number>, includeHeroId?: number | null) =>
+  api<BanditTowerAttackResult>("/api/players/me/bandit-tower/attack",
+    { method: "POST", body: JSON.stringify({ fromCityId, troops, includeHeroId: includeHeroId ?? null }) });
 
 // --- alliances ---
 export const createAlliance = (tag: string, name: string) =>

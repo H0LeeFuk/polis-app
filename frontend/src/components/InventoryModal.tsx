@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getHeroInventory } from "../api";
+import { useDraggable } from "../useDraggable";
 import type { HeroItemDto, ItemSlot, ItemRarity } from "../types";
 
 const BUFF_LABEL: Record<string, string> = {
@@ -16,6 +17,7 @@ const MIN_SLOTS = 24;
 
 /** Relic bag shared by both heroes — Aegean armoury styling. Equip from the Heroes panel. */
 export default function InventoryModal({ onClose }: { onClose: () => void }) {
+  const win = useDraggable<HTMLDivElement>();
   const [items, setItems] = useState<HeroItemDto[] | null>(null);
   const [slot, setSlot] = useState<"ALL" | ItemSlot>("ALL");
   const [rarity, setRarity] = useState<"ALL" | ItemRarity>("ALL");
@@ -33,7 +35,7 @@ export default function InventoryModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="mvov-backdrop" onClick={onClose}>
-      <div className="inv2" onClick={e => e.stopPropagation()}>
+      <div className="inv2" ref={win} onClick={e => e.stopPropagation()}>
         <div className="inv2-frame">
           <div className="inv2-head">
             <span className="inv2-title">⚱ Relic Vault</span>

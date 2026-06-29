@@ -20,6 +20,7 @@ public class CityController {
   public record ResearchRequest(String researchType){}
   public record RenameRequest(String name){}
   public record AttackRequest(Long targetCityId, Map<String,Integer> units, Long heroId){}
+  public record SupportRequest(Long targetCityId, Map<String,Integer> units){}
 
   @PostMapping("/build")
   public Map<String,Object> build(@PathVariable Long cityId, @RequestBody BuildRequest r){
@@ -51,6 +52,13 @@ public class CityController {
   public MovementDTO attack(@PathVariable Long cityId, @RequestBody AttackRequest r){
     Long me = me();
     Movement m = build.attack(me, cityId, r.targetCityId(), r.units(), r.heroId());
+    return movements.dto(m, me);
+  }
+  // Send reinforcements to a friendly city (own / alliance); the troops stay there and defend it.
+  @PostMapping("/support")
+  public MovementDTO support(@PathVariable Long cityId, @RequestBody SupportRequest r){
+    Long me = me();
+    Movement m = build.support(me, cityId, r.targetCityId(), r.units());
     return movements.dto(m, me);
   }
   private Map<String,Object> ok(){ return Map.of("ok", true); }

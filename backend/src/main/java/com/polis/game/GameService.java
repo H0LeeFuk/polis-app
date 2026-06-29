@@ -197,7 +197,7 @@ public class GameService {
                         + " · catch enemy spies " + pct1(GameRules.spyDefenseChance(l)) + " → " + pct1(GameRules.spyDefenseChance(n));
       case MARKET    -> "Trade capacity " + marketCap(l) + " → " + marketCap(n)
                         + " · " + marketConvoys(l) + " → " + marketConvoys(n) + " convoys at once";
-      case TEMPLE    -> "Host Festivals → Culture Points (level up → +1 city slot)";
+      case TEMPLE    -> "Perform Rituals → Influence (level up → +1 city slot)";
     };
   }
   private static String pct1(double frac){ return Math.round(frac * 1000) / 10.0 + "%"; }

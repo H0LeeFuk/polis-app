@@ -88,6 +88,18 @@ public class CombatEngine {
     }
   }
 
+  /**
+   * Per-unit-type Library upgrades and a siege multiplier. {@code atk}/{@code def} are keyed by
+   * UPPERCASE unit name (1.0 = unchanged) so a research can buff only its own unit (Honed Raiders,
+   * Tempered Wardens, Pack Instincts); {@code siegeMult} scales siege/wall damage (Breach Engines,
+   * Siegebreaker). Use {@link #none()} when no per-unit modifier applies.
+   */
+  public record UnitMods(Map<String,Double> atk, Map<String,Double> def, double siegeMult){
+    public static UnitMods none(){ return new UnitMods(Map.of(), Map.of(), 1.0); }
+    double atkOf(String name){ return atk.getOrDefault(name.toUpperCase(), 1.0); }
+    double defOf(String name){ return def.getOrDefault(name.toUpperCase(), 1.0); }
+  }
+
   public record Result(
       BattleOutcome outcome,
       Map<String,Integer> attackerLost, Map<String,Integer> attackerSurvived,
@@ -110,12 +122,18 @@ public class CombatEngine {
     return resolve(attacker, attackerElement, defender, mods, fx, 0);
   }
 
+  public Result resolve(Map<String,Integer> attacker, Element attackerElement,
+                        Map<String,Integer> defender, Mods mods, CombatFx fx, double heroAttack){
+    return resolve(attacker, attackerElement, defender, mods, fx, heroAttack, UnitMods.none());
+  }
+
   /**
    * @param heroAttack flat anti-troop attack the leading hero contributes in {@code attackerElement}
    *                   (lets a hero fight — and march alone). Pass 0 when no hero leads.
+   * @param um per-unit Library upgrades + siege multiplier (Honed Raiders, Tempered Wardens, etc.).
    */
   public Result resolve(Map<String,Integer> attacker, Element attackerElement,
-                        Map<String,Integer> defender, Mods mods, CombatFx fx, double heroAttack){
+                        Map<String,Integer> defender, Mods mods, CombatFx fx, double heroAttack, UnitMods um){
     Element fallback = attackerElement != null ? attackerElement : Element.FIRE;
     // attacker anti-troop attack per element (+ siege tallied apart)
     EnumMap<Element,Double> atk = new EnumMap<>(Element.class);
@@ -124,8 +142,8 @@ public class CombatEngine {
     for (var e : attacker.entrySet()){
       if (e.getValue()==null || e.getValue()<=0) continue;
       UnitType u = catalog.get(e.getKey());
-      double power = (double)u.getAttack()*e.getValue() * mods.attackMult();
-      if (u.isSiege()){ siege += power; continue; }
+      double power = (double)u.getAttack()*e.getValue() * mods.attackMult() * um.atkOf(e.getKey());
+      if (u.isSiege()){ siege += power * um.siegeMult(); continue; }   // Breach Engines / Siegebreaker
       Element el = u.getAttackElement()!=null ? u.getAttackElement() : fallback;
       atk.merge(el, power, Double::sum);
     }
@@ -138,7 +156,8 @@ public class CombatEngine {
     for (var e : defender.entrySet()){
       if (e.getValue()==null || e.getValue()<=0) continue;
       UnitType u = catalog.get(e.getKey());
-      for (Element el : Element.values()) def.merge(el, (double)u.defenseOf(el)*e.getValue(), Double::sum);
+      double um2 = um.defOf(e.getKey());   // Tempered Wardens / Honed Raiders defensive upgrade
+      for (Element el : Element.values()) def.merge(el, (double)u.defenseOf(el)*e.getValue()*um2, Double::sum);
     }
     // base mult → per-element lean → armour-pen (capped fraction ignored)
     for (Element el : Element.values()){

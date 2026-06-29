@@ -20,6 +20,9 @@ import Rankings from "./Rankings";
 import MovementsOverview from "./MovementsOverview";
 import BattleReports from "./BattleReports";
 import HeroPanel from "./HeroPanel";
+import BanditTowerPanel from "./BanditTowerPanel";
+import ProfilePanel from "./ProfilePanel";
+import { useDraggable } from "../useDraggable";
 import { CityMovementsPanel, TravelPreview, UnitTooltip, HeroPicker, HERO_GLYPH, UNIT_GLYPH } from "../movements";
 import leoImg from "../assets/leo.png";
 import titaniaImg from "../assets/titania.png";
@@ -103,6 +106,10 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [unreadReports, setUnreadReports] = useState(0);
   const [raidAgain, setRaidAgain] = useState<{ id: number; name: string } | null>(null);
   const [showHero, setShowHero] = useState(false);
+  const [showTower, setShowTower] = useState(false);
+  // bumped whenever an order that creates a movement is dispatched, to force the movements panel to reload now
+  const [movesNonce, setMovesNonce] = useState(0);
+  const bumpMoves = () => setMovesNonce(n => n + 1);
   const [heroes, setHeroes] = useState<Hero[]>([]);
   const [founding, setFounding] = useState<FoundingStatus["founding"]>(null);
   const [chooseRace, setChooseRace] = useState(false);
@@ -112,6 +119,12 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [activeMission, setActiveMission] = useState<string | null>(null);
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
   const polling = useRef<number>();
+  // Monotonic refresh sequence: getState calls from the 3s poll, a rush/cancel action, and city
+  // switches run concurrently and resolve out of order. Without this guard a slow poll that captured
+  // the PRE-rush queue can resolve AFTER the rush's refresh and overwrite it with stale data — the
+  // rushed job "reappears" and the queue looks inflated until the next poll heals it. Only the latest
+  // issued request is allowed to apply its result.
+  const refreshSeq = useRef(0);
 
   const refreshUnreadReports = () => getUnreadReportCount().then(r => setUnreadReports(r.count)).catch(() => {});
   const refreshHeroes = () => getHeroes().then(setHeroes).catch(() => {});
@@ -142,8 +155,10 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   async function refresh(cityId = activeCityId) {
+    const seq = ++refreshSeq.current;
     try {
       const s = await getState(cityId);
+      if (seq !== refreshSeq.current) return;   // a newer refresh already won — drop this stale result
       setState(s);
       if (cityId === undefined) setActiveCityId(s.active.id);
     } catch (e: any) {
@@ -272,6 +287,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
           serverLine={`${player.ownedCities} ${player.ownedCities === 1 ? "city" : "cities"} · ${fmt(player.totalPoints)} pts`}
           onReports={() => setShowReports(true)} onMissions={() => setShowMissions(true)}
           onHeroes={() => setShowHero(true)} onInventory={() => setShowInv(true)}
+          onTower={() => setShowTower(true)}
           onModal={setModal} />
 
         <div className="stage">
@@ -290,14 +306,14 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
               onFinish={(j) => action(() => doFinish(active.id, j))()}
               onFound={() => setTab("world")} />}
 
-            {tab === "world" && <WorldView activeCityId={active.id} myUnits={active.units} heroes={heroes} myPlayerId={player.id} onChanged={() => { refresh(); refreshHeroes(); }} setErr={setErr} />}
+            {tab === "world" && <WorldView activeCityId={active.id} myUnits={active.units} heroes={heroes} myPlayerId={player.id} onChanged={() => { refresh(); refreshHeroes(); bumpMoves(); }} setErr={setErr} />}
           </div>
         </div>
 
         {(tab === "city" || tab === "world") && (
           <aside className="side-info">
             <TroopsPanel units={active.units} trainable={active.trainable} />
-            <CityMovementsPanel cityId={active.id} now={now}
+            <CityMovementsPanel cityId={active.id} now={now} reloadKey={movesNonce}
               onExpand={() => setShowMoves(true)}
               onAttackAgain={(id, name) => setRaidAgain({ id, name })} />
           </aside>
@@ -315,6 +331,8 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         onAttackAgain={(id, name) => { setShowReports(false); setRaidAgain({ id, name }); }} />}
 
       {showHero && <HeroPanel cities={cities} onClose={() => setShowHero(false)} onChanged={refreshHeroes} />}
+      {showTower && <BanditTowerPanel active={active} heroes={heroes} onClose={() => setShowTower(false)}
+        onChanged={() => { refresh(); refreshHeroes(); }} />}
 
       {showMissions && <MissionsPanel onClose={() => setShowMissions(false)}
         onChanged={() => { refreshMissions(); refreshHeroes(); }} />}
@@ -333,22 +351,13 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         heroes={heroesHere} target={raidAgain} onClose={() => setRaidAgain(null)}
         onSend={async (units, heroId) => {
           setErr("");
-          try { await doAttack(active.id, raidAgain.id, units, heroId); setRaidAgain(null); await refresh(); refreshHeroes(); }
+          try { await doAttack(active.id, raidAgain.id, units, heroId); setRaidAgain(null); await refresh(); refreshHeroes(); bumpMoves(); }
           catch (e: any) { setErr(e.message); }
         }} />}
 
       {modal === "rankings" && <Modal title="Rankings" onClose={() => setModal(null)}><Rankings /></Modal>}
-      {modal === "profile" && <Modal title="Profile" onClose={() => setModal(null)}>
-        <div className="popup-panel">
-          <h3>{player.username}</h3>
-          <div className="popup-grid">
-            <div><strong>Level</strong><span>{player.level}</span></div>
-            <div><strong>Points</strong><span>{fmt(player.totalPoints)}</span></div>
-            <div><strong>Cities</strong><span>{player.ownedCities}</span></div>
-            <div><strong>Alliance</strong><span>{player.alliance || "None"}</span></div>
-          </div>
-        </div>
-      </Modal>}
+      {modal === "profile" && <ProfilePanel player={player} cities={cities}
+        faction={active.race?.name ?? "—"} onClose={() => setModal(null)} />}
       {modal === "alliance" && <Modal title="Alliance" onClose={() => setModal(null)}>
         <AlliancePanel player={player} onChanged={() => refresh()} setErr={setErr} />
       </Modal>}
@@ -406,9 +415,9 @@ function TroopsPanel({ units, trainable }: { units: { type: string; count: numbe
   );
 }
 
-function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onMissions, onHeroes, onInventory, onModal }: {
+function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onMissions, onHeroes, onInventory, onTower, onModal }: {
   unreadReports: number; claimable: number; heroPts: number; serverLine: string;
-  onReports: () => void; onMissions: () => void; onHeroes: () => void; onInventory: () => void;
+  onReports: () => void; onMissions: () => void; onHeroes: () => void; onInventory: () => void; onTower: () => void;
   onModal: (m: "rankings" | "profile" | "alliance" | "messages" | "endgame") => void;
 }) {
   const Item = ({ icon, label, onClick, badge, hostile }: { icon: string; label: string; onClick: () => void; badge?: number; hostile?: boolean }) => (
@@ -424,6 +433,7 @@ function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onM
       <Item icon="📜" label="Reports" onClick={onReports} badge={unreadReports} hostile />
       <Item icon="🏳" label="Missions" onClick={onMissions} badge={claimable} />
       <Item icon="🛡" label="Heroes" onClick={onHeroes} badge={heroPts} />
+      <Item icon="🏰" label="Bandit Tower" onClick={onTower} />
       <Item icon="🎒" label="Inventory" onClick={onInventory} />
       <div className="nav-group">Social</div>
       <Item icon="🤝" label="Alliance" onClick={() => onModal("alliance")} />
@@ -589,7 +599,7 @@ function TempleSection({ cityId, now }: { cityId: number; now: number }) {
   const [err, setLocalErr] = useState("");
   const load = () => getTemple(cityId).then(setT).catch(() => {});
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [cityId]);
-  if (!t) return <div className="bld-section"><h3>🏛 Festivals</h3><p className="muted">Loading…</p></div>;
+  if (!t) return <div className="bld-section"><h3>⛧ Rituals</h3><p className="muted">Loading…</p></div>;
   const pr = t.progression;
   const run = (ft: string, fuel: string) => async () => {
     setLocalErr(""); setBusy(true);
@@ -607,7 +617,7 @@ function TempleSection({ cityId, now }: { cityId: number; now: number }) {
         <div className="festival-opt">
           <h4>{title}</h4>
           <div className="festival-running">
-            <div>🎉 completes in {clock(rem)} → +{r.culturePointsReward} Culture</div>
+            <div>⛧ completes in {clock(rem)} → +{r.culturePointsReward} Influence</div>
             <div className="bar"><i style={{ width: pct + "%" }} /></div>
           </div>
         </div>
@@ -617,30 +627,31 @@ function TempleSection({ cityId, now }: { cityId: number; now: number }) {
       <div className="festival-opt">
         <h4>{title}</h4>
         {costLine}
-        <div className="muted">+{t.cultureReward} Culture · ⏱ {clock(t.durationSeconds)}</div>
+        <div className="muted">+{t.cultureReward} Influence · ⏱ {clock(t.durationSeconds)}</div>
         <button className="btn" disabled={busy || !canAfford} onClick={run(ft, fuel)}>
-          {canAfford ? "Hold festival" : noFundsLabel}</button>
+          {canAfford ? "Perform rite" : noFundsLabel}</button>
       </div>
     );
   };
   return (
     <div className="bld-section">
-      <h3>🏛 Festivals <small className="muted" style={{ marginLeft: 6 }}>⚔ {t.combatPoints} Combat Points</small></h3>
+      <h3>⛧ Rituals <small className="muted" style={{ marginLeft: 6 }}>⚔ {t.combatPoints} Combat Points</small></h3>
       {err && <div className="hero-inline-err">{err}</div>}
       <div className="temple-prog">
         <div className="temple-prog-row"><b>Level {pr.level} / {pr.maxLevel}</b><span className="muted">Cities {pr.citiesOwned} / {pr.maxCities}</span></div>
         {pr.cultureForNextLevel != null ? (
           <>
             <div className="hf-xp"><i style={{ width: Math.min(100, Math.round((pr.culturePoints / pr.cultureForNextLevel) * 100)) + "%" }} /></div>
-            <small className="muted">{pr.culturePoints} / {pr.cultureForNextLevel} Culture to Level {pr.level + 1} → unlocks city #{pr.level + 1}</small>
+            <small className="muted">{pr.culturePoints} / {pr.cultureForNextLevel} Influence to Level {pr.level + 1} → unlocks city #{pr.level + 1}</small>
           </>
         ) : <small className="muted">Maximum level reached — 20 cities unlocked.</small>}
       </div>
+      <p className="muted altar-flavor">Offer tribute or the spoils of war at the Altar. Each rite yields <b>1 Influence</b> — accrue enough to reach the next level and unlock another city.</p>
       <div className="festival-menu">
-        <FestivalOpt ft="FESTIVAL_OF_PLENTY" fuel="RESOURCES" title="🌾 Festival of Plenty"
+        <FestivalOpt ft="FESTIVAL_OF_PLENTY" fuel="RESOURCES" title="🕯 Rite of Offering"
           costLine={<div className="muted">Cost: {t.resourceCost.toLocaleString()} each 🪵 🪨 🌾</div>}
           canAfford={t.canAffordResources} noFundsLabel="Not enough resources" />
-        <FestivalOpt ft="FESTIVAL_OF_TRIUMPH" fuel="COMBAT_POINTS" title="⚔ Festival of Triumph"
+        <FestivalOpt ft="FESTIVAL_OF_TRIUMPH" fuel="COMBAT_POINTS" title="🩸 Rite of Blood"
           costLine={<div className="muted">Cost: {t.combatCost} Combat Points</div>}
           canAfford={t.canAffordCombat} noFundsLabel="Not enough Combat Points" />
       </div>
@@ -862,7 +873,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
     TIMBER: "Harvest timber to fuel construction across the city.",
     MARKET: "Trade resources for gold. A higher level carries more per convoy, runs more convoys at once, and delivers faster.",
     WALL: "Fortify your city against attacks and invasions.",
-    TEMPLE: "Hold Festivals to earn Culture Points — raise your level to unlock more city slots.",
+    TEMPLE: "Perform Rituals at the Altar to earn Influence — raise your level to unlock more city slots.",
     WATCHTOWER: "Spy enemy cities before attacking. A higher Watchtower is more likely to spy successfully and to catch enemy spies scouting you.",
     GARRISON: "Hold troops and reinforce your city defenses.",
   };
@@ -903,7 +914,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
           {placed.map(({ p, b }) => {
             const sel = selectedBuilding === p.type;
             const imgX = p.x - p.w / 2;
-            const imgY = p.y - p.w * ICON_BASE;
+            const imgY = p.y - p.w * (p.base ?? ICON_BASE);
             return (
               <g key={p.type}
                 className={"bld-grp" + (sel ? " sel" : "")}
@@ -1014,7 +1025,8 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
             </div>
 
             {(selected.type === "BARRACKS" || selected.type === "HARBOR") && (
-              <div className="bld-section">
+              <div className="bld-section barracks-layout">
+                <div className="barracks-train">
                 {(() => {
                   const isHarbor = selected.type === "HARBOR";
                   if (selected.level === 0)
@@ -1069,7 +1081,9 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
                   }
                   return (<><h3>{isHarbor ? "🌊 Train aquatic army" : "Train troops"}</h3>{grid(list)}</>);
                 })()}
-                {(selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR).length > 0 && (
+                </div>
+                <div className="barracks-aside">
+                {(selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR).length > 0 ? (
                   <div className="train-queue">
                     <h4>In training</h4>
                     {(() => { const tq = selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR;
@@ -1092,10 +1106,8 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
                       );
                     }); })()}
                   </div>
-                )}
-                {active.units.length > 0 && (
-                  <p className="muted" style={{ marginTop: 10 }}>Troops: {active.units.map(u => `${u.count}× ${titleCase(u.type)}`).join(" · ")}</p>
-                )}
+                ) : <p className="muted tq-empty">Nothing in training yet — pick a unit and hit Train.</p>}
+                </div>
               </div>
             )}
 
@@ -1162,7 +1174,9 @@ function ConstructionBar({ jobs, now, onCancel, onFinish }: { jobs: any[]; now: 
         const rushSecs = rem ?? j.totalSeconds;
         return (
           <div className={"cbslot" + (i === 0 ? " active" : "")} key={j.id} title={`${titleCase(j.label)} → Lv ${j.toLevel}`}>
-            <span className="cbart" dangerouslySetInnerHTML={{ __html: buildingSvg(j.label, j.toLevel || 1) }} />
+            {PLACEMENT_BY_TYPE[j.label]
+              ? <span className="cbart"><img src={PLACEMENT_BY_TYPE[j.label].icon} alt={titleCase(j.label)} /></span>
+              : <span className="cbart" dangerouslySetInnerHTML={{ __html: buildingSvg(j.label, j.toLevel || 1) }} />}
             <span className="cbtime">{j.position > 0 ? `#${j.position}` : rem != null ? clock(rem) : "…"}</span>
             <div className="cbbar"><i style={{ width: pct + "%" }} /></div>
             {canRush && <button className="cbrush" title={`Rush for ${Math.max(1, Math.ceil(rushSecs / 60))} gold`} onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rushSecs / 60))}</button>}
@@ -1255,9 +1269,10 @@ function RaidAgainModal({ originCityId, originName, myUnits, heroes, target, onC
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode; }) {
+  const win = useDraggable<HTMLDivElement>();
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-window" onClick={e => e.stopPropagation()}>
+      <div className="modal-window" ref={win} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{title}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>

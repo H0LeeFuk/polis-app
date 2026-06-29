@@ -23,6 +23,14 @@ public class City {
   private int points;
   @Column(name="last_tick_at") private Instant lastTickAt = Instant.now();
   private Instant createdAt = Instant.now();
+
+  // Library "Bloodlust" (Warpath): each consecutive victorious attack within 6h stacks +3% attack.
+  @Column(name="bloodlust_stacks") private int bloodlustStacks = 0;
+  @Column(name="bloodlust_last_win") private Instant bloodlustLastWin;
+  // Library "Blitz" (Wild Hunt): −30% travel for the next attack, then on cooldown until this time.
+  @Column(name="blitz_ready_at") private Instant blitzReadyAt;
+  // Library "City Guard" (Bastion): farm militia summon is on cooldown until this time.
+  @Column(name="city_guard_ready_at") private Instant cityGuardReadyAt;
   // NOTE: optimistic @Version removed — the per-read sync() + 5s background tick
   // both write cities, so version checks lost frequent races (500s on build/train).
   // Last-write-wins is acceptable here; the DB 'version' column is left unused.

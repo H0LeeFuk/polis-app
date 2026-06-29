@@ -66,9 +66,9 @@ public class SettleService {
 
     long owned = cities.countByPlayerId(playerId);
     int pending = movements.findByPlayerIdAndPhaseAndResolvedFalse(playerId, MovementPhase.SETTLE).size();
-    // max cities = player level (cap 20). Reach the next level by earning Culture at a Temple.
+    // max cities = player level (cap 20). Reach the next level by earning Influence via Rituals at an Altar.
     if (owned + pending >= GameRules.maxCities(p.getLevel()))
-      throw new IllegalStateException("All city slots used — earn Culture at a Temple to reach the next level");
+      throw new IllegalStateException("All city slots used — perform Rituals at an Altar to grow your Influence and reach the next level");
 
     long secs = travel.seconds(from.getIslandId(), islandId, TravelTimeService.DEFAULT_MINUTES_PER_TILE);
     if (from.getRace() != null) secs = (long)(secs * from.getRace().travelMult);
@@ -196,7 +196,7 @@ public class SettleService {
     long owned = cities.countByPlayerId(playerId);
     int pending = movements.findByPlayerIdAndPhaseAndResolvedFalse(playerId, MovementPhase.SETTLE).size();
     boolean capReached = owned + pending >= GameRules.citySlots(me.getLevel());
-    String blockReason = capReached ? "City limit reached — level up to settle more"
+    String blockReason = capReached ? "City limit reached — perform Rituals at an Altar to grow Influence and level up"
         : !heroAvail ? "No idle hero available to settle" : null;
 
     Map<Integer,City> occupied = new HashMap<>();

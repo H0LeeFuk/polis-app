@@ -98,8 +98,10 @@ export default function SpyPanel({ cityId, onClose, onChanged }: {
                     </div>
                     <div>
                       <h4>Buildings</h4>
-                      {r.buildings && Object.entries(r.buildings).filter(([, l]) => l > 0)
-                        .map(([t, l]) => <div key={t}>{titleCase(t)} <b>Lv {l}</b></div>)}
+                      {r.buildings && Object.entries(r.buildings).filter(([, l]) => l > 0).length
+                        ? Object.entries(r.buildings).filter(([, l]) => l > 0)
+                            .map(([t, l]) => <div key={t}>{titleCase(t)} <b>Lv {l}</b></div>)
+                        : <span className="muted">Undeveloped</span>}
                     </div>
                   </div>
                 </div>

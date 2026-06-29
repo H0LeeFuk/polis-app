@@ -61,7 +61,7 @@ export interface FoundingStatus {
 /** Rich movement view from /api/cities/{id}/movements and /api/players/me/movements. */
 export interface Movement {
   id: number;
-  type: "ATTACK" | "RETURN" | "COLONY" | "SUPPORT" | "SETTLE" | "TRADE";
+  type: "ATTACK" | "RETURN" | "COLONY" | "SUPPORT" | "SETTLE" | "TRADE" | "SPY";
   status: "TRAVELLING" | "RETURNING" | "SETTLING" | "PENDING";
   originCityId: number | null;
   originCity: string;
@@ -357,22 +357,45 @@ export interface SpyAlertDto {
   id: number; spyingPlayerName: string; targetCityName: string; caughtAt: string;
 }
 
-// --- bandit camp ---
-export interface BanditCamp {
-  islandId: number; currentLevel: number; maxLevel: number;
-  status: "ACTIVE" | "DEFEATED"; respawnAt: string | null;
-  defenderTroops?: Record<string, number>;
-  rewardType?: "RESOURCES" | "TROOPS" | "MIXED";
-  rewardPayload?: Record<string, number>;
-  description?: string;
+// --- bandit tower (account-wide 100-level PvE climb) ---
+export interface BanditTowerReward {
+  headline: string;
+  resources: Record<string, number>;
+  troops: Record<string, number>;
+  itemRarity: string | null;
 }
-/** Bandit raids are dispatched as a troop movement; the outcome arrives later as a Battle Report. */
-export interface BanditAttackResult {
-  ok: boolean;
-  status: "DISPATCHED";
-  movementId: number;
-  travelSeconds: number;
-  arriveAt: string;
+export interface BanditTowerState {
+  currentLevel: number;
+  highestCleared: number;
+  maxLevel: number;
+  complete: boolean;
+  isMilestone?: boolean;
+  resistedElement?: string;
+  defendersFull?: Record<string, number>;
+  defendersRemaining?: Record<string, number>;
+  reward?: BanditTowerReward;
+  nextMilestone?: BanditTowerReward & { level: number };
+}
+export interface BanditTowerLevelRow {
+  level: number;
+  status: "CLEARED" | "CURRENT" | "LOCKED";
+  isMilestone: boolean;
+  resistedElement: string;
+  reward: BanditTowerReward;
+}
+export interface BanditTowerAttackResult {
+  level: number;
+  outcome: "CLEARED" | "REPELLED";
+  troopsLost: Record<string, number>;
+  defendersDefeated: Record<string, number>;
+  defendersRemaining: Record<string, number>;
+  cleared: boolean;
+  reward?: { resources?: Record<string, number>; troops?: Record<string, number>;
+    item?: { name: string; rarity: string; slot: string; buffs: Record<string, number> } };
+  heroXp?: number;
+  towerComplete?: boolean;
+  currentLevel: number;
+  highestCleared: number;
 }
 
 // --- island boss (resource islands) ---

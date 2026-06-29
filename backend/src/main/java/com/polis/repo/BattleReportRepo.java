@@ -18,11 +18,15 @@ public interface BattleReportRepo extends JpaRepository<BattleReport, Long> {
           or (r.defenderPlayerId = :me and r.defenderDeleted = false))
         and (:outcome is null or r.outcome = :outcome)
         and (:cityId is null or r.attackerCityId = :cityId or r.defenderCityId = :cityId)
+        and (:role is null
+             or (:role = 'ATTACKER' and r.attackerPlayerId = :me)
+             or (:role = 'DEFENDER' and r.defenderPlayerId = :me))
         and (:read is null or (case when r.attackerPlayerId = :me then r.attackerRead else r.defenderRead end) = :read)
       order by r.foughtAt desc, r.id desc
       """)
   Page<BattleReport> search(@Param("me") Long me, @Param("outcome") BattleOutcome outcome,
-                            @Param("cityId") Long cityId, @Param("read") Boolean read, Pageable pageable);
+                            @Param("cityId") Long cityId, @Param("role") String role,
+                            @Param("read") Boolean read, Pageable pageable);
 
   @Query("""
       select count(r) from BattleReport r

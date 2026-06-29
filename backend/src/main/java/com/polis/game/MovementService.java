@@ -25,13 +25,37 @@ public class MovementService {
   private final HeroRepo heroes;
   private final TradeConvoyRepo tradeConvoys;
   private final CombatEngine combat;
+  private final SpyMissionRepo spyMissions;
+  private final ReinforcementRepo reinforcements;
+
+  /** Distinct id space for spy missions surfaced as movements (kept well clear of convoy/movement ids). */
+  private static final long SPY_ID_BASE = 2_000_000_000L;
 
   public MovementService(MovementRepo movements, CityRepo cities, PlayerRepo players,
                          IslandRepo islands, TravelTimeService travel, HeroRepo heroes,
-                         TradeConvoyRepo tradeConvoys, CombatEngine combat){
+                         TradeConvoyRepo tradeConvoys, CombatEngine combat, SpyMissionRepo spyMissions,
+                         ReinforcementRepo reinforcements){
     this.movements = movements; this.cities = cities; this.players = players;
     this.islands = islands; this.travel = travel; this.heroes = heroes; this.tradeConvoys = tradeConvoys;
-    this.combat = combat;
+    this.combat = combat; this.spyMissions = spyMissions; this.reinforcements = reinforcements;
+  }
+
+  /** Troops stationed (as reinforcements) at one of the player's cities — who sent them and what. */
+  @Transactional(readOnly = true)
+  public List<Map<String,Object>> cityReinforcements(Long playerId, Long cityId){
+    City city = cities.findById(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
+    if (!Objects.equals(city.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
+    List<Map<String,Object>> out = new ArrayList<>();
+    for (Reinforcement r : reinforcements.findByHostCityId(cityId)){
+      if (r.getUnits() == null || r.getUnits().isEmpty()) continue;
+      Map<String,Object> m = new LinkedHashMap<>();
+      m.put("ownerPlayerId", r.getOwnerPlayerId());
+      m.put("owner", ownerName(r.getOwnerPlayerId(), new HashMap<>()));
+      m.put("mine", Objects.equals(r.getOwnerPlayerId(), playerId));
+      m.put("units", r.getUnits());
+      out.add(m);
+    }
+    return out;
   }
 
   /** Preview the travel time for an attack without creating a movement. */
@@ -87,6 +111,11 @@ public class MovementService {
       if (Objects.equals(cv.getOriginCityId(), cityId) || Objects.equals(cv.getDestinationCityId(), cityId))
         out.put(-cv.getId(), convoyDto(cv, nameCache));
 
+    // spy missions in flight FROM this city (silent — only the spying player ever sees them)
+    for (SpyMission sm : spyMissions.findBySpyingPlayerIdAndStatus(playerId, SpyMission.Status.IN_PROGRESS))
+      if (Objects.equals(sm.getOriginCityId(), cityId))
+        out.put(-(SPY_ID_BASE + sm.getId()), spyDto(sm, nameCache));
+
     return new ArrayList<>(out.values());
   }
 
@@ -113,6 +142,10 @@ public class MovementService {
     for (TradeConvoy cv : tradeConvoys.findByBuyerPlayerIdAndStatusIn(playerId,
         List.of(ConvoyStatus.PENDING, ConvoyStatus.IN_TRANSIT)))
       dtos.put(-cv.getId(), convoyDto(cv, nameCache));
+
+    // the player's in-flight spy missions (only the spy's owner sees them)
+    for (SpyMission sm : spyMissions.findBySpyingPlayerIdAndStatus(playerId, SpyMission.Status.IN_PROGRESS))
+      dtos.put(-(SPY_ID_BASE + sm.getId()), spyDto(sm, nameCache));
 
     List<MovementDTO> list = new ArrayList<>(dtos.values());
 
@@ -192,6 +225,18 @@ public class MovementService {
         units, loot,
         m.getDepartAt() == null ? null : m.getDepartAt().toString(),
         m.getArriveAt() == null ? null : m.getArriveAt().toString());
+  }
+
+  /** In-flight spy mission as a MovementDTO (type SPY) for the movements feed. Composition stays hidden. */
+  private MovementDTO spyDto(SpyMission sm, Map<Long,String> nameCache){
+    return new MovementDTO(
+        -(SPY_ID_BASE + sm.getId()), "SPY", "TRAVELLING",
+        sm.getOriginCityId(), cityName(sm.getOriginCityId(), nameCache),
+        sm.getTargetCityId(), cityName(sm.getTargetCityId(), nameCache),
+        null, true, false, false,
+        null, null,
+        sm.getStartedAt() == null ? null : sm.getStartedAt().toString(),
+        sm.getResolvesAt() == null ? null : sm.getResolvesAt().toString());
   }
 
   /** Trade convoy as a MovementDTO (negative id to stay distinct from troop-movement ids). */

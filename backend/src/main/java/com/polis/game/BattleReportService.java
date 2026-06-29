@@ -173,8 +173,14 @@ public class BattleReportService {
 
   @Transactional(readOnly = true)
   public Map<String,Object> list(Long me, BattleOutcome outcome, Boolean read, Long cityId, int page, int size){
+    return list(me, outcome, read, cityId, null, page, size);
+  }
+
+  /** As {@link #list} but also filterable by the viewer's role: "ATTACKER" | "DEFENDER" | null. */
+  @Transactional(readOnly = true)
+  public Map<String,Object> list(Long me, BattleOutcome outcome, Boolean read, Long cityId, String role, int page, int size){
     Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(100, Math.max(1, size)));
-    Page<BattleReport> result = reports.search(me, outcome, cityId, read, pageable);
+    Page<BattleReport> result = reports.search(me, outcome, cityId, role, read, pageable);
 
     List<BattleReportSummaryDTO> content = new ArrayList<>();
     for (BattleReport r : result.getContent()) content.add(toSummary(r, me));

@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { getWorld, getIslandSlots, doAttack, sendMessage, getWorldState, getColossi, launchSpy } from "../api";
+import { getWorld, getIslandSlots, doAttack, doSupport, sendMessage, getWorldState, getColossi, launchSpy } from "../api";
 import type { WorldData, WorldIsland, WorldCity, UnitDto, Hero, IslandSlots, WonderDto, ColossusDto } from "../types";
 import { TravelPreview, HeroPicker } from "../movements";
 import { ResourceIslandModal } from "./NodePanel";
 import { WonderModal } from "./WondersPanel";
 import { FoundCityModal } from "./FoundCity";
-import BanditCampModal from "./BanditCampModal";
 import ColossusPanel from "./ColossusPanel";
 
 const fmt = (n: number) => n >= 10000 ? (n / 1000).toFixed(1) + "k" : Math.floor(n).toString();
@@ -26,7 +25,6 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
   const [slots, setSlots] = useState<IslandSlots | null>(null);
   const [foundSlot, setFoundSlot] = useState<{ islandId: number; islandName: string; slotIndex: number } | null>(null);
   const [nodeIsland, setNodeIsland] = useState<WorldIsland | null>(null);
-  const [banditIsland, setBanditIsland] = useState<WorldIsland | null>(null);
   const [wonders, setWonders] = useState<WonderDto[]>([]);
   const [wonderSel, setWonderSel] = useState<WonderDto | null>(null);
   const [colossi, setColossi] = useState<ColossusDto[]>([]);
@@ -36,6 +34,8 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
   const [raidTarget, setRaidTarget] = useState<WorldCity | null>(null);
   const [raidCounts, setRaidCounts] = useState<Record<string, number>>({});
   const [raidHeroId, setRaidHeroId] = useState<number | null>(null);
+  const [supportTarget, setSupportTarget] = useState<WorldCity | null>(null);
+  const [supportCounts, setSupportCounts] = useState<Record<string, number>>({});
   const [msgTo, setMsgTo] = useState<{ id: number; name: string } | null>(null);
   const [msgBody, setMsgBody] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
@@ -135,6 +135,14 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
     act(() => doAttack(activeCityId, raidTarget.id, units, raidHeroId));
     setRaidTarget(null); setSelCity(null);
   }
+  function openSupport(c: WorldCity) { setSupportCounts({}); setSupportTarget(c); }
+  function sendSupport() {
+    if (!supportTarget) return;
+    const units = Object.fromEntries(Object.entries(supportCounts).filter(([, n]) => n > 0));
+    if (Object.keys(units).length === 0) { setErr("Select at least one unit to send"); return; }
+    act(() => doSupport(activeCityId, supportTarget.id, units));
+    setSupportTarget(null); setSelCity(null);
+  }
   // heroes that can join: unlocked + idle in the city we attack from
   const heroesHere = heroes.filter(h => h.unlocked && h.state === "IDLE" && h.stationedCityId === activeCityId);
   async function doSendMessage() {
@@ -161,8 +169,6 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
 
   const owner = worldPlayer(selCity?.playerId ?? null);
   const ownedCities = selCity ? playerCities(selCity.playerId) : [];
-  // bandit camp shows on a single island only — the player's first (home) island
-  const homeIslandId = data.islands.find(i => !i.resource && i.cities.some(c => c.faction === "self"))?.id;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
@@ -216,9 +222,6 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                 onClick={() => { if (!wasDragged()) openIsland(isl); }} title={`${isl.name} — ${free} free plot${free === 1 ? "" : "s"}`}>
                 <div className="island-land" style={{ borderRadius: blobRadius(isl.id) }}>
                   {mine && <span className="island-star">★</span>}
-                  {/* bandit camp — only on your first (home) island, so just one flag */}
-                  {isl.id === homeIslandId && <button className="bandit-camp-ico" title="Bandit Camp"
-                    onClick={(e) => { e.stopPropagation(); if (!wasDragged()) setBanditIsland(isl); }}>🏴‍☠️</button>}
                   {/* one marker per empty plot so every free city slot is visible on the map */}
                   {Array.from({ length: SLOTS_PER_ISLAND }).map((_, slot) => {
                     if (isl.cities.some(c => c.slot === slot)) return null;
@@ -268,12 +271,6 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
           onClose={() => setColossusSel(null)} onChanged={() => { load(); onChanged(); }} setErr={setErr} />
       )}
 
-      {/* bandit camp */}
-      {banditIsland && (
-        <BanditCampModal islandId={banditIsland.id} activeCityId={activeCityId}
-          cityOnIsland={banditIsland.cities.some(c => c.id === activeCityId)} myUnits={myUnits}
-          onClose={() => setBanditIsland(null)} onChanged={() => { load(); onChanged(); }} setErr={setErr} />
-      )}
 
       {/* wonder island → capture / invest */}
       {wonderSel && (
@@ -375,9 +372,13 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                             <button className="btn" onClick={() => openRaid(c)}>⚔ Attack</button>
                             <button className="btn ghost" title="Send a spy from your selected city"
                               onClick={async () => { setSpyNote("");
-                                try { const r = await launchSpy(activeCityId, c.id); setSpyNote(`🕵 Spy en route to ${c.name} — resolves ${r.resolvesAt ? "in ~" + Math.max(1, Math.round((new Date(r.resolvesAt).getTime() - Date.now())/60000)) + "m" : "soon"}. Check Spy Reports.`); }
+                                try { const r = await launchSpy(activeCityId, c.id); setSpyNote(`🕵 Spy en route to ${c.name} — resolves ${r.resolvesAt ? "in ~" + Math.max(1, Math.round((new Date(r.resolvesAt).getTime() - Date.now())/60000)) + "m" : "soon"}. Check Spy Reports.`); onChanged(); }
                                 catch (e: any) { setSpyNote(e.message); } }}>🕵 Spy</button>
-                          </>}</td>
+                          </>}
+                          {(c.faction === "ally" || (c.faction === "self" && c.id !== activeCityId)) && (
+                            <button className="btn ghost" title="Send troops to defend this city — they stay to protect it"
+                              onClick={() => openSupport(c)}>🤝 Support</button>
+                          )}</td>
                         </tr>
                       );
                     })}
@@ -419,6 +420,39 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                     <HeroPicker heroes={heroesHere} value={raidHeroId} onChange={setRaidHeroId} />
                     <TravelPreview originCityId={activeCityId} targetCityId={raidTarget.id} units={raidCounts} heroId={raidHeroId} />
                     <button className="btn" onClick={sendRaid}>⚔ Send attack</button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* support troop picker — reinforce a friendly city */}
+      {supportTarget && (
+        <div className="modal-backdrop" onClick={() => setSupportTarget(null)}>
+          <div className="modal-window" onClick={e => e.stopPropagation()} style={{ width: "min(460px,100%)" }}>
+            <div className="modal-header">
+              <h2>🤝 Support {supportTarget.name}</h2>
+              <button className="modal-close" onClick={() => setSupportTarget(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="popup-panel">
+                {myUnits.length === 0 ? (
+                  <p className="muted">No troops in your active city. Train some in the Barracks or Harbor first.</p>
+                ) : (
+                  <>
+                    <p className="muted">Send troops from your active city to defend <b>{supportTarget.name}</b>. They march there and
+                      stay stationed, fighting for it when it is attacked.</p>
+                    {myUnits.map(u => (
+                      <div key={u.type} className="raid-row">
+                        <span>{titleCase(u.type)} <small className="muted">({u.count} available)</small></span>
+                        <input type="number" min={0} max={u.count} value={supportCounts[u.type] || 0}
+                          onChange={e => setSupportCounts({ ...supportCounts, [u.type]: Math.max(0, Math.min(u.count, +e.target.value)) })} />
+                      </div>
+                    ))}
+                    <TravelPreview originCityId={activeCityId} targetCityId={supportTarget.id} units={supportCounts} />
+                    <button className="btn" onClick={sendSupport}>🤝 Send support</button>
                   </>
                 )}
               </div>

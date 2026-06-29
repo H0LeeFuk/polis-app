@@ -20,9 +20,27 @@ public class LibraryService {
   private final CityRepo cities;
   private final BuildingRepo buildings;
   private final CityLibraryResearchRepo research;
+  private final UnitRepo unitRepo;
 
-  public LibraryService(CityRepo cities, BuildingRepo buildings, CityLibraryResearchRepo research){
-    this.cities = cities; this.buildings = buildings; this.research = research;
+  public LibraryService(CityRepo cities, BuildingRepo buildings, CityLibraryResearchRepo research, UnitRepo unitRepo){
+    this.cities = cities; this.buildings = buildings; this.research = research; this.unitRepo = unitRepo;
+  }
+
+  /** Bastion "City Guard": summon a batch of weak MILITIA into the garrison, on a 5h cooldown. */
+  @Transactional
+  public Map<String,Object> callGuard(Long playerId, Long cityId){
+    City c = ownedSynced(playerId, cityId);
+    if (!effects(cityId).has("cityGuard")) throw new IllegalStateException("Requires the Library research: City Guard");
+    Instant now = Instant.now();
+    if (c.getCityGuardReadyAt()!=null && c.getCityGuardReadyAt().isAfter(now))
+      throw new IllegalStateException("The City Guard is still resting");
+    int batch = 40;
+    CityUnit cu = unitRepo.findByCityId(cityId).stream()
+        .filter(x->x.getType().equalsIgnoreCase("MILITIA")).findFirst()
+        .orElseGet(()->new CityUnit(cityId, "MILITIA", 0));
+    cu.setCount(cu.getCount()+batch); unitRepo.save(cu);
+    c.setCityGuardReadyAt(now.plusSeconds(5*3600)); cities.save(c);
+    return Map.of("ok", true, "summoned", batch, "readyAt", c.getCityGuardReadyAt().toString());
   }
 
   /** Accumulated, multiplier-ready effects of a city's completed Library research. */
@@ -30,8 +48,10 @@ public class LibraryService {
                            double defFireMult, double defWindMult, double defEarthMult, double defWaterMult,
                            double travelMult, double prodMult, double lootMult, double trainTimeMult,
                            double navalTrainTimeMult,
+                           double storageMult, double specialProdMult, double buildTimeMult,
+                           double lootStolenMult, double lootProtectFrac, double siegeWallMult,
                            Set<String> flags){
-    public static LibEffects none(){ return new LibEffects(1,1,1,1,1,1,1,1,1,1,1,Set.of()); }
+    public static LibEffects none(){ return new LibEffects(1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,0,1, Set.of()); }
     public boolean has(String f){ return flags.contains(f); }
     public double defElementMult(com.polis.domain.Element e){
       return switch (e){ case FIRE -> defFireMult; case WIND -> defWindMult; case EARTH -> defEarthMult; case WATER -> defWaterMult; };
@@ -67,6 +87,7 @@ public class LibraryService {
   public LibEffects effects(Long cityId){
     settle(cityId, Instant.now());
     double attack=0, defense=0, dFire=0, dWind=0, dEarth=0, dWater=0, travel=0, prod=0, loot=0, train=0, navalTrain=0;
+    double storage=0, specialProd=0, build=0, lootStolen=0, lootProtect=0, siegeWall=0;
     Set<String> flags = new HashSet<>();
     for (CityLibraryResearch cr : research.findByCityId(cityId)){
       if (cr.getStatus()!=CityLibraryResearch.Status.COMPLETED) continue;
@@ -82,7 +103,13 @@ public class LibraryService {
           case "defWater" -> dWater += e.getValue();
           case "travel", "navalTravel", "cityTravel" -> travel += e.getValue();
           case "production" -> prod += e.getValue();
+          case "specialProd" -> specialProd += e.getValue();
           case "loot" -> loot += e.getValue();
+          case "lootStolen" -> lootStolen += e.getValue();
+          case "lootProtect" -> lootProtect += e.getValue();
+          case "storage" -> storage += e.getValue();
+          case "buildTime" -> build += e.getValue();
+          case "siegeWall" -> siegeWall += e.getValue();
           case "trainTime" -> train += e.getValue();
           case "navalTrainSpeed" -> navalTrain += e.getValue();
           default -> {}
@@ -91,7 +118,8 @@ public class LibraryService {
       flags.addAll(def.flags());
     }
     return new LibEffects(1+attack, 1+defense, 1+dFire, 1+dWind, 1+dEarth, 1+dWater,
-        Math.max(0.2,1-travel), 1+prod, 1+loot, Math.max(0.2,1-train), Math.max(0.2,1-navalTrain), flags);
+        Math.max(0.2,1-travel), 1+prod, 1+loot, Math.max(0.2,1-train), Math.max(0.2,1-navalTrain),
+        1+storage, 1+specialProd, Math.max(0.2,1-build), 1+lootStolen, Math.min(0.9,lootProtect), 1+siegeWall, flags);
   }
 
   // --- point economy ---------------------------------------------------------
@@ -99,13 +127,14 @@ public class LibraryService {
   private int effectiveCost(City c, LibraryTree.Research def){
     int cost = def.pointCost();
     Race race = c.getRace();
-    if (race==Race.GIANTS && def.branch()==LibraryBranch.WAR && def.tier()==1) cost -= 1;
-    if (race==Race.FAIRIES && def.branch()==LibraryBranch.LORE && def.tier()==1) cost -= 1;
-    if (race==Race.NEWTS && def.id().equals("tidecraft")) cost -= 1;
+    // Each race gets its signature unit one point cheaper (tier-1 nodes already cost 1 → no effect there).
+    if (race==Race.GIANTS  && def.id().equals("warden"))   cost -= 1;   // stone brutes → Bastion tank
+    if (race==Race.FAIRIES && def.id().equals("outrider")) cost -= 1;   // swift folk → Wild Hunt skirmisher
+    if (race==Race.NEWTS   && def.id().equals("raider"))   cost -= 1;   // sea raiders → Warpath raider
     return Math.max(1, cost);
   }
   private int effectiveMinLevel(City c, LibraryTree.Research def){
-    if (c.getRace()==Race.NEWTS && def.id().equals("tidecraft")) return Math.max(0, def.minLibraryLevel()-1);
+    if (c.getRace()==Race.NEWTS && def.id().equals("raider")) return Math.max(0, def.minLibraryLevel()-1);
     return def.minLibraryLevel();
   }
   private int effectiveDuration(City c, LibraryTree.Research def){
@@ -238,6 +267,10 @@ public class LibraryService {
     out.put("race", c.getRace()==null?null:c.getRace().name());
     out.put("siegeEnabled", fx.has("siege"));
     out.put("dominionEnabled", fx.has("dominion"));
+    out.put("cityGuardEnabled", fx.has("cityGuard"));
+    out.put("cityGuardReadyAt", c.getCityGuardReadyAt()==null?null:c.getCityGuardReadyAt().toString());
+    out.put("blitzEnabled", fx.has("blitz"));
+    out.put("blitzReadyAt", c.getBlitzReadyAt()==null?null:c.getBlitzReadyAt().toString());
     out.put("lines", lines);
     return out;
   }
@@ -246,9 +279,9 @@ public class LibraryService {
     if (r==null) return null;
     return switch (r){
       case HUMANS -> null;
-      case GIANTS -> "Giant might — War tier-1 researches cost 1 less point";
-      case FAIRIES -> "Fairy wit — Lore & Dominion tier-1 researches cost 1 less point";
-      case NEWTS -> "Newt mastery — Tidecraft costs 1 less and unlocks a level earlier";
+      case GIANTS -> "Giant might — the Warden costs 1 less point";
+      case FAIRIES -> "Fairy wit — the Outrider costs 1 less point";
+      case NEWTS -> "Newt cunning — the Raider costs 1 less and unlocks a level earlier";
     };
   }
 

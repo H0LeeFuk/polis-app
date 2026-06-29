@@ -16,6 +16,12 @@ public class BuildService {
   private static final int BUILD_QUEUE_MAX = 5;
   private static final int UNIT_QUEUE_MAX  = 8;
 
+  /** Shared units unlocked by a Library research flag (the branch "new unit" researches).
+   *  MILITIA maps to a flag no research ever grants → it can only enter a city via City Guard summon. */
+  private static final Map<String,String> UNIT_UNLOCK = Map.of(
+      "RAIDER", "unlockRaider", "WARDEN", "unlockWarden", "OUTRIDER", "unlockOutrider",
+      "MILITIA", "__summon_only");
+
   private final CityService cityService;
   private final CityRepo cities;
   private final BuildingRepo buildings;
@@ -78,7 +84,9 @@ public class BuildService {
     if (type.pop > 0 && cityService.maxPop(cityId, hasResearch(cityId, ResearchType.BOUNTY)) - cityService.popUsed(cityId) < type.pop)
       throw new IllegalStateException("Not enough free population — upgrade the Farm");
     pay(c, cost[0], cost[1], cost[2]); cities.save(c);
-    int secs = GameRules.buildSeconds(type, lv, cityService.level(cityId, BuildingType.SENATE));
+    // Senate speed-up, then Library "Master Builders" construction-time reduction.
+    int secs = (int)Math.max(3, GameRules.buildSeconds(type, lv, cityService.level(cityId, BuildingType.SENATE))
+        * library.effects(cityId).buildTimeMult());
     BuildJob job = new BuildJob(); job.setBuildingType(type); job.setToLevel(lv+1);
     enqueue(c, job, QueueType.BUILDING, secs);
   }
@@ -93,9 +101,13 @@ public class BuildService {
       throw new IllegalStateException("This city's " + c.getRace().displayName + " barracks cannot train " + type.getName());
     if (type.getResearchRequired() != null && !hasResearch(cityId, ResearchType.valueOf(type.getResearchRequired())))
       throw new IllegalStateException("Requires research: " + type.getResearchRequired());
-    // Library siege gate: siege engines need the Siegecraft research
+    // Library siege gate: siege engines need the Breach Engines research
     if (type.isSiege() && !library.effects(cityId).has("siege"))
-      throw new IllegalStateException("Requires the Library research: Siegecraft");
+      throw new IllegalStateException("Requires the Library research: Breach Engines");
+    // Library unit gates: the three shared units each need their branch's unlock research
+    String unlockFlag = UNIT_UNLOCK.get(type.getName().toUpperCase());
+    if (unlockFlag != null && !library.effects(cityId).has(unlockFlag))
+      throw new IllegalStateException("Requires the Library research that unlocks the " + type.getName());
     // elite units cost a special resource — only the city race's own special is available
     ResourceType special = (type.getCostSpecial() > 0 && c.getRace() != null) ? c.getRace().specialResource : null;
     QueueType from = type.getFromQueue();
@@ -223,7 +235,14 @@ public class BuildService {
     deductGarrison(cityId, army);
     long secs = travel.travelTime(cityId, targetCityId, army).getSeconds();
     if (src.getRace()!=null) secs = (long)(secs * src.getRace().travelMult);          // race march pace
-    secs = (long)(secs * library.effects(cityId).travelMult());                       // Library: Wayfinding etc.
+    LibraryService.LibEffects libFx = library.effects(cityId);
+    secs = (long)(secs * libFx.travelMult());                                         // Library speed: Forced March / Quickstep / Wind Gait
+    // Blitz: −30% travel for the next attack, then on a 6h cooldown.
+    if (libFx.has("blitz") && (src.getBlitzReadyAt()==null || !src.getBlitzReadyAt().isAfter(Instant.now()))){
+      secs = (long)(secs * 0.70);
+      src.setBlitzReadyAt(Instant.now().plusSeconds(6*3600));
+      cities.save(src);
+    }
     if (hero != null) secs = (long)(secs * heroes.travelMult(hero));                  // Cunning / Forced March
     Movement m = new Movement();
     m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
@@ -235,6 +254,36 @@ public class BuildService {
     if (tgt.getPlayerId() != null && !Objects.equals(tgt.getPlayerId(), playerId))
       missions.record(playerId, MissionObjectiveType.ATTACK_PLAYER, 1);
     return saved;
+  }
+
+  /**
+   * Send troops to defend a friendly city (your own or an alliance member's). The troops march like
+   * an army (travel time, transport across water) and, on arrival, are stationed at the target as a
+   * Reinforcement that fights for it when raided. They do NOT come home on their own.
+   */
+  @Transactional
+  public Movement support(Long playerId, Long cityId, Long targetCityId, Map<String,Integer> army){
+    City src = owned(playerId, cityId);
+    City tgt = cities.findById(targetCityId).orElseThrow(() -> new IllegalArgumentException("Target not found"));
+    if (Objects.equals(tgt.getId(), src.getId())) throw new IllegalStateException("Pick a different city to support");
+    if (army.isEmpty()) throw new IllegalArgumentException("Select at least one unit to send");
+    // friendly only: your own city, or a city owned by an alliance member
+    boolean own = Objects.equals(tgt.getPlayerId(), playerId);
+    Player me = players.findById(playerId).orElseThrow();
+    boolean ally = !own && me.getAllianceId() != null && tgt.getPlayerId() != null
+        && players.findById(tgt.getPlayerId()).map(p -> Objects.equals(p.getAllianceId(), me.getAllianceId())).orElse(false);
+    if (!own && !ally) throw new IllegalStateException("You can only support your own cities or alliance members");
+    // LAND troops still need transport to cross open water (the ships travel and stay too)
+    travel.requireTransport(army, src.getIslandId(), tgt.getIslandId(), 0);
+    deductGarrison(cityId, army);
+    long secs = travel.travelTime(cityId, targetCityId, army).getSeconds();
+    if (src.getRace() != null) secs = (long)(secs * src.getRace().travelMult);
+    secs = (long)(secs * library.effects(cityId).travelMult());
+    Movement m = new Movement();
+    m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
+    m.setTargetCityId(targetCityId); m.setPhase(MovementPhase.SUPPORT);
+    m.setUnits(new HashMap<>(army)); m.setArriveAt(Instant.now().plusSeconds(Math.max(5, secs)));
+    return movements.save(m);
   }
 
   /** Removes troops from a city garrison, validating each stack has enough. Shared by raids and node moves. */

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getCityMovements, previewAttack } from "./api";
+import { getCityMovements, previewAttack, getReinforcements } from "./api";
 import type { Movement, AttackPreview, Hero } from "./types";
 
 // ---- formatting helpers (all countdowns computed client-side from arriveAt) ----
@@ -14,6 +14,8 @@ export const UNIT_GLYPH: Record<string, string> = {
   SPRITE: "✨", PIXIE_ARCHER: "🧚", GLIMMER_GUARD: "🛡", MOTH_RIDER: "🦋", DRAGONFLY_SKIFF: "🪰",
   // Newts
   MUDLING: "🦎", NEWT_SPEAR: "🔱", SNAPPER: "🐊", TIDE_RAIDER: "🌊", LEVIATHAN: "🐉",
+  // Library-unlocked shared units + City Guard militia
+  RAIDER: "🪓", WARDEN: "🏰", OUTRIDER: "🦅", MILITIA: "🧑‍🌾",
 };
 const glyph = (t: string) => UNIT_GLYPH[t?.toUpperCase()] ?? "⚔";
 
@@ -54,6 +56,11 @@ export const UNIT_DEX: Record<string, UnitDex> = {
   TIDE_RAIDER:     { element: null, atk: 120, defFire: 40, defWind: 35, defEarth: 45, defWater: 65, speed: 12, carry: 300, pop: 3 },
   SNAPPER:         { element: null, atk: 140, defFire: 45, defWind: 40, defEarth: 50, defWater: 70, speed: 14, carry: 250, pop: 4 },
   LEVIATHAN:       { element: null, atk: 300, defFire: 60, defWind: 50, defEarth: 65, defWater: 92, speed: 12, carry: 400, pop: 10 },
+  // Library-unlocked shared units (trainable by any race once researched) + summon-only City Guard militia
+  RAIDER:          { element: null, atk: 70,  defFire: 30, defWind: 30, defEarth: 25, defWater: 25, speed: 12, carry: 60,  pop: 1 },
+  WARDEN:          { element: null, atk: 30,  defFire: 75, defWind: 70, defEarth: 95, defWater: 80, speed: 22, carry: 20,  pop: 1 },
+  OUTRIDER:        { element: null, atk: 90,  defFire: 30, defWind: 52, defEarth: 28, defWater: 34, speed: 10, carry: 120, pop: 3 },
+  MILITIA:         { element: null, atk: 10,  defFire: 35, defWind: 35, defEarth: 35, defWater: 35, speed: 30, carry: 0,   pop: 0 },
 };
 export const ELEMENT_GLYPH: Record<string, string> = { FIRE: "🔥", WIND: "🌬", EARTH: "🌍", WATER: "💧" };
 const titleCaseU = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
@@ -144,8 +151,9 @@ export function troopSummary(units: Record<string, number> | null): { glyph: str
 }
 
 /** Classify a movement relative to a city/player for colour + label. */
-export function moveKind(m: Movement): "incoming" | "return" | "attack" | "colony" | "support" | "settle" | "trade" {
+export function moveKind(m: Movement): "incoming" | "return" | "attack" | "colony" | "support" | "settle" | "trade" | "spy" {
   if (m.type === "TRADE") return "trade";
+  if (m.type === "SPY") return "spy";
   if (m.hostile) return "incoming";
   if (m.type === "RETURN") return "return";
   if (m.type === "COLONY") return "colony";
@@ -161,6 +169,7 @@ const KIND_META: Record<string, { cls: string; icon: string; label: string }> = 
   colony:   { cls: "mv-colony",   icon: "🚢", label: "Colony ship" },
   settle:   { cls: "mv-colony",   icon: "🏛", label: "Founding a city" },
   support:  { cls: "mv-support",  icon: "🤝", label: "Support" },
+  spy:      { cls: "mv-spy",      icon: "🕵", label: "Spy mission" },
   trade:    { cls: "mv-trade",    icon: "🚚", label: "Trade convoy" },
 };
 
@@ -255,26 +264,32 @@ function fmtDuration(s: number): string {
 
 type CityTab = "outgoing" | "incoming" | "returning";
 
-export function CityMovementsPanel({ cityId, now, onExpand }: {
+export function CityMovementsPanel({ cityId, now, onExpand, reloadKey }: {
   cityId: number; now: number;
   onAttackAgain?: (targetCityId: number, targetCityName: string) => void;
   onExpand?: () => void;
+  /** bump to force an immediate reload (e.g. right after dispatching an attack/support) */
+  reloadKey?: number;
 }) {
   const [moves, setMoves] = useState<Movement[] | null>(null);
+  const [reinf, setReinf] = useState<{ owner: string; mine: boolean; units: Record<string, number> }[]>([]);
   const [tab, setTab] = useState<CityTab>("outgoing");
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    const load = () => getCityMovements(cityId).then(m => { if (alive) setMoves(m); }).catch(() => {});
+    const load = () => {
+      getCityMovements(cityId).then(m => { if (alive) setMoves(m); }).catch(() => {});
+      getReinforcements(cityId).then(r => { if (alive) setReinf(r); }).catch(() => {});
+    };
     load();
     const t = window.setInterval(load, 30000); // auto-refresh per spec
     return () => { alive = false; window.clearInterval(t); };
-  }, [cityId]);
+  }, [cityId, reloadKey]);
 
   const all = moves ?? [];
   // armies/convoys leaving this city; armies marching home; hostile armies inbound
-  const outgoing = all.filter(m => !m.hostile && (m.type === "ATTACK" || m.type === "COLONY" || m.type === "SETTLE" || m.type === "TRADE"));
+  const outgoing = all.filter(m => !m.hostile && (m.type === "ATTACK" || m.type === "COLONY" || m.type === "SETTLE" || m.type === "TRADE" || m.type === "SUPPORT" || m.type === "SPY"));
   const returning = all.filter(m => !m.hostile && m.type === "RETURN");
   const incoming = all.filter(m => m.hostile);
   const activeCount = all.length;
@@ -308,6 +323,17 @@ export function CityMovementsPanel({ cityId, now, onExpand }: {
               ? <EmptyMovements />
               : shown.map(m => <MovementRow key={m.id} m={m} now={now} />)}
           </div>
+          {reinf.length > 0 && (
+            <div className="cm-reinf">
+              <div className="cm-reinf-head">🤝 Stationed support</div>
+              {reinf.map((r, i) => (
+                <div key={i} className="cm-reinf-row">
+                  <span className="mv-label">{r.mine ? "Your troops" : r.owner}</span>
+                  <span className="mv-troops">{troopSummary(r.units).map(t => <span key={t.type} title={t.type}>{t.glyph}{t.n}</span>)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
