@@ -1,6 +1,6 @@
 package com.polis.game;
 
-import com.polis.domain.AttackType;
+import com.polis.domain.Element;
 import com.polis.domain.Hero;
 import com.polis.domain.HeroItem;
 import com.polis.repo.HeroItemRepo;
@@ -62,10 +62,9 @@ public class HeroEquipmentService {
   }
 
   public double attackPct(Hero h){ return sum(h, "ATTACK_PCT"); }
-  public double defensePct(Hero h){ return sum(h, "DEFENSE_PCT"); }                 // all-type defence
-  public double defenseSharpPct(Hero h){ return sum(h, "DEFENSE_SHARP_PCT"); }      // extra vs sharp
-  public double defenseBluntPct(Hero h){ return sum(h, "DEFENSE_BLUNT_PCT"); }
-  public double defenseDistancePct(Hero h){ return sum(h, "DEFENSE_DISTANCE_PCT"); }
+  public double defensePct(Hero h){ return sum(h, "DEFENSE_PCT"); }                 // all-element defence
+  /** Extra defence vs a single element (DEFENSE_FIRE_PCT / _WIND_PCT / _EARTH_PCT / _WATER_PCT). */
+  public double defenseElementPct(Hero h, Element e){ return sum(h, "DEFENSE_" + e.name() + "_PCT"); }
   public double travelPct(Hero h){ return sum(h, "TRAVEL_TIME_PCT"); }
   public double navalTravelPct(Hero h){ return sum(h, "NAVAL_TRAVEL_TIME_PCT"); }
   public double lootPct(Hero h){ return sum(h, "LOOT_PCT"); }
@@ -94,8 +93,8 @@ public class HeroEquipmentService {
     return v instanceof Number ? ((Number) v).doubleValue() : 0.0;
   }
 
-  /** Fraction of the defender's defence (of {@code against}) this hero's army ignores, capped. */
-  public double armorPen(Hero h, AttackType against){
+  /** Fraction of the defender's defence (of element {@code against}) this hero's army ignores, capped. */
+  public double armorPen(Hero h, Element against){
     double s = 0;
     for (Map<String,Object> e : effectsOf(h, "ARMOR_PEN_PCT")){
       Map<String,Object> p = params(e);

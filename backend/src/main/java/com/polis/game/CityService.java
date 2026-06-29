@@ -23,11 +23,13 @@ public class CityService {
   private final UnitCatalog catalog;
   private final MissionService missions;
   private final LibraryService library;
+  private final MovementRepo movements;
 
   public CityService(CityRepo cities, BuildingRepo buildings, UnitRepo units, JobRepo jobs,
-                     UnitCatalog catalog, MissionService missions, LibraryService library){
+                     UnitCatalog catalog, MissionService missions, LibraryService library,
+                     MovementRepo movements){
     this.cities=cities; this.buildings=buildings; this.units=units; this.jobs=jobs; this.catalog=catalog;
-    this.missions=missions; this.library=library;
+    this.missions=missions; this.library=library; this.movements=movements;
   }
 
   public Map<BuildingType,Integer> levels(Long cityId){
@@ -50,6 +52,13 @@ public class CityService {
     int used = 0;
     for (CityBuilding b : buildings.findByCityId(cityId)) used += b.getLevel()*b.getType().pop;
     for (CityUnit u : units.findByCityId(cityId)) used += u.getCount()*catalog.get(u.getType()).getPopulationCost();
+    // troops marching from this city still belong to it — count them so population is steady while
+    // an army is away (it only changes on recruit, upgrade, or losses), not when you send an attack.
+    for (Movement m : movements.findBySourceCityIdAndResolvedFalse(cityId))
+      if (m.getUnits() != null)
+        for (var e : m.getUnits().entrySet())
+          if (e.getValue() != null && e.getValue() > 0)
+            used += e.getValue() * catalog.get(e.getKey()).getPopulationCost();
     return used;
   }
 
@@ -67,18 +76,22 @@ public class CityService {
       double prod = (c.getRace()!=null ? c.getRace().prodMult : 1.0) * library.effects(c.getId()).prodMult();
       c.setWood(Math.min(cap,  c.getWood()  + GameRules.prodPerHour(lv.get(BuildingType.TIMBER))*prod/3600.0*elapsed));
       c.setStone(Math.min(cap, c.getStone() + GameRules.prodPerHour(lv.get(BuildingType.QUARRY))*prod/3600.0*elapsed));
-      c.setSilver(Math.min(cap,c.getSilver()+ GameRules.prodPerHour(lv.get(BuildingType.MINE))*prod/3600.0*elapsed));
-      int temple = lv.get(BuildingType.TEMPLE);
-      if (temple>0)
-        c.setFavor(Math.min(GameRules.favorCap(temple), c.getFavor()+GameRules.favorPerHour(temple)/3600.0*elapsed));
+      c.setWheat(Math.min(cap, c.getWheat() + GameRules.prodPerHour(lv.get(BuildingType.MINE))*prod/3600.0*elapsed));
+      // special resource: the EXTRACTOR yields the city RACE's special (Coal/Iron/Crystals/Pearls)
+      int extractor = lv.get(BuildingType.EXTRACTOR);
+      if (extractor>0 && c.getRace()!=null){
+        ResourceType sp = c.getRace().specialResource;
+        c.set(sp, Math.min(cap, c.get(sp) + GameRules.prodPerHour(extractor)*prod/3600.0*elapsed));
+      }
       c.setLastTickAt(now);
     }
     // TEST MODE: keep player cities topped up with resources for free testing.
     if (c.getPlayerId()!=null){
       double TEST = 1_000_000_000d;
-      if (c.getWood()<TEST)   c.setWood(TEST);
-      if (c.getStone()<TEST)  c.setStone(TEST);
-      if (c.getSilver()<TEST) c.setSilver(TEST);
+      if (c.getWood()<TEST)  c.setWood(TEST);
+      if (c.getStone()<TEST) c.setStone(TEST);
+      if (c.getWheat()<TEST) c.setWheat(TEST);
+      if (c.getRace()!=null && c.get(c.getRace().specialResource)<TEST) c.set(c.getRace().specialResource, TEST);
     }
     if (c.getPlayerId()!=null) c.setPoints(GameRules.cityPoints(levels(c.getId())));
     return cities.save(c);
@@ -114,6 +127,25 @@ public class CityService {
         }
       }
     }
+  }
+
+  /**
+   * Complete one job immediately (gold rush), even mid-queue: apply its effect, drop it, and
+   * re-sequence the rest. Used when a queued job has no same-building predecessor blocking it.
+   */
+  @Transactional
+  public void forceComplete(City c, BuildJob j){
+    cities.findByIdForUpdate(c.getId());
+    applyJob(c, j);
+    QueueType qt = j.getQueueType();
+    jobs.delete(j);
+    List<BuildJob> q = jobs.findByCityIdAndQueueTypeOrderByPositionAsc(c.getId(), qt);
+    Instant now = Instant.now();
+    for (int i = 0; i < q.size(); i++){
+      BuildJob b = q.get(i); b.setPosition(i);
+      if (i == 0 && b.getFinishAt() == null){ b.setStartedAt(now); b.setFinishAt(now.plusSeconds(b.getTotalSeconds())); }
+    }
+    jobs.saveAll(q);
   }
 
   private void applyJob(City c, BuildJob j){

@@ -166,14 +166,15 @@ public class BanditCampService {
     Race atkRace = src != null ? src.getRace() : null;
     LibraryService.LibEffects atkLib = src != null ? library.effects(src.getId()) : LibraryService.LibEffects.none();
     CombatEngine.Mods mods = new CombatEngine.Mods(
-        (atkRace != null ? atkRace.attackMult : 1.0) * atkLib.attackMult(), 1.0, 1.0, 1.0);
+        (atkRace != null ? atkRace.attackMult : 1.0) * atkLib.attackMult(), 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+    Element atkElement = atkRace != null ? atkRace.element : Element.FIRE;
 
     Map<String,Integer> defenders = new LinkedHashMap<>(lv.getDefenderTroops());
-    CombatEngine.Result r = combat.resolve(sent, defenders, mods);
+    CombatEngine.Result r = combat.resolve(sent, atkElement, defenders, mods);
     boolean win = r.outcome() == BattleOutcome.VICTORY;
 
     Map<String,Long> resourcesStolen = new LinkedHashMap<>();
-    resourcesStolen.put("WOOD",0L); resourcesStolen.put("STONE",0L); resourcesStolen.put("SILVER",0L);
+    resourcesStolen.put("WOOD",0L); resourcesStolen.put("STONE",0L); resourcesStolen.put("WHEAT",0L);
     Map<String,Long> loot = null;
     Map<String,Integer> returning = new LinkedHashMap<>(r.attackerSurvived());
 
@@ -185,7 +186,7 @@ public class BanditCampService {
         switch (e.getKey().toLowerCase()){
           case "wood"   -> resourcesStolen.merge("WOOD", amt, Long::sum);
           case "stone"  -> resourcesStolen.merge("STONE", amt, Long::sum);
-          case "silver" -> resourcesStolen.merge("SILVER", amt, Long::sum);
+          case "silver", "wheat" -> resourcesStolen.merge("WHEAT", amt, Long::sum);
           default       -> returning.merge(e.getKey(), (int) amt, Integer::sum);
         }
       }
@@ -206,7 +207,8 @@ public class BanditCampService {
     reports.createNodeReport(m, new BattleResult(r.outcome(),
         sent, r.attackerLost(), r.attackerSurvived(),
         defenders, r.defenderLost(), r.defenderSurvived(),
-        resourcesStolen, r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage()),
+        resourcesStolen, r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage(),
+        r.attackByElement(), r.defenseByElement()),
         null, "🏴‍☠️ Bandit Camp · Lvl " + foughtLevel, null);
 
     marchHome(m, returning, loot, now);

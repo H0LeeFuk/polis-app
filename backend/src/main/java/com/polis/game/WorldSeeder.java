@@ -88,7 +88,7 @@ public class WorldSeeder implements ApplicationRunner {
     c.setName(name); c.setPoints(points); c.setPower(power);
     // NPCs and barbarians get a race too, for variety on the map (drives their defence flavour).
     Race[] r = Race.values(); c.setRace(r[Math.floorMod(name.hashCode()+slot, r.length)]);
-    c.setWood(power*3); c.setStone(power*3); c.setSilver(power*2);
+    c.setWood(power*3); c.setStone(power*3); c.setWheat(power*2);
     return c;
   }
   private int[] freeSlot(List<Island> isls, Set<String> taken, Random rnd){

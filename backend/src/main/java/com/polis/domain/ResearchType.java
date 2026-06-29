@@ -8,6 +8,6 @@ public enum ResearchType {
   MINES   (3, 600, 800, 400),
   CATAPULT(4, 900, 900, 900);
 
-  public final int req, costWood, costStone, costSilver;
-  ResearchType(int req,int w,int s,int si){ this.req=req; this.costWood=w; this.costStone=s; this.costSilver=si; }
+  public final int req, costWood, costStone, costWheat;
+  ResearchType(int req,int w,int s,int wh){ this.req=req; this.costWood=w; this.costStone=s; this.costWheat=wh; }
 }

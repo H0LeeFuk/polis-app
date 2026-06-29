@@ -10,4 +10,6 @@ public interface PlayerRepo extends JpaRepository<Player, Long> {
   boolean existsByUsername(String username);
   boolean existsByEmail(String email);
   List<Player> findByWorldId(Long worldId);
+  List<Player> findByAllianceId(Long allianceId);
+  Optional<Player> findByUsernameIgnoreCase(String username);
 }

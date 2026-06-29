@@ -23,11 +23,13 @@ public class MovementService {
   private final IslandRepo islands;
   private final TravelTimeService travel;
   private final HeroRepo heroes;
+  private final TradeConvoyRepo tradeConvoys;
 
   public MovementService(MovementRepo movements, CityRepo cities, PlayerRepo players,
-                         IslandRepo islands, TravelTimeService travel, HeroRepo heroes){
+                         IslandRepo islands, TravelTimeService travel, HeroRepo heroes,
+                         TradeConvoyRepo tradeConvoys){
     this.movements = movements; this.cities = cities; this.players = players;
-    this.islands = islands; this.travel = travel; this.heroes = heroes;
+    this.islands = islands; this.travel = travel; this.heroes = heroes; this.tradeConvoys = tradeConvoys;
   }
 
   /** Preview the travel time for an attack without creating a movement. */
@@ -75,6 +77,12 @@ public class MovementService {
       if (m.getPhase() == MovementPhase.OUT && !Objects.equals(m.getPlayerId(), playerId))
         out.put(m.getId(), toDto(m, playerId, nameCache, islNameCache, ownerCache));
 
+    // trade convoys touching this city (leaving from it or delivering to it)
+    for (TradeConvoy cv : tradeConvoys.findByBuyerPlayerIdAndStatusIn(playerId,
+        List.of(ConvoyStatus.PENDING, ConvoyStatus.IN_TRANSIT)))
+      if (Objects.equals(cv.getOriginCityId(), cityId) || Objects.equals(cv.getDestinationCityId(), cityId))
+        out.put(-cv.getId(), convoyDto(cv, nameCache));
+
     return new ArrayList<>(out.values());
   }
 
@@ -96,6 +104,11 @@ public class MovementService {
       for (Movement m : movements.findByTargetCityIdInAndResolvedFalse(myCityIds))
         if (m.getPhase() == MovementPhase.OUT && !Objects.equals(m.getPlayerId(), playerId))
           dtos.put(m.getId(), toDto(m, playerId, nameCache, islNameCache, ownerCache));
+
+    // the player's in-flight + queued trade convoys
+    for (TradeConvoy cv : tradeConvoys.findByBuyerPlayerIdAndStatusIn(playerId,
+        List.of(ConvoyStatus.PENDING, ConvoyStatus.IN_TRANSIT)))
+      dtos.put(-cv.getId(), convoyDto(cv, nameCache));
 
     List<MovementDTO> list = new ArrayList<>(dtos.values());
 
@@ -175,6 +188,19 @@ public class MovementService {
         units, loot,
         m.getDepartAt() == null ? null : m.getDepartAt().toString(),
         m.getArriveAt() == null ? null : m.getArriveAt().toString());
+  }
+
+  /** Trade convoy as a MovementDTO (negative id to stay distinct from troop-movement ids). */
+  private MovementDTO convoyDto(TradeConvoy cv, Map<Long,String> nameCache){
+    String status = cv.getStatus() == ConvoyStatus.PENDING ? "PENDING" : "TRAVELLING";
+    return new MovementDTO(
+        -cv.getId(), "TRADE", status,
+        cv.getOriginCityId(), cityName(cv.getOriginCityId(), nameCache),
+        cv.getDestinationCityId(), cityName(cv.getDestinationCityId(), nameCache),
+        null, true, false, true,
+        null, cv.getCargo(),
+        cv.getDepartAt() == null ? null : cv.getDepartAt().toString(),
+        cv.getArriveAt() == null ? null : cv.getArriveAt().toString());
   }
 
   private String cityName(Long id, Map<Long,String> cache){

@@ -12,8 +12,8 @@ public class Alliance {
   private String name;
   @Column(name="leader_id") private Long leaderId;
   // shared treasury fed by held resource nodes; officers distribute to members
-  @Column(name="treasury_wood")   private long treasuryWood = 0;
-  @Column(name="treasury_stone")  private long treasuryStone = 0;
-  @Column(name="treasury_silver") private long treasurySilver = 0;
+  @Column(name="treasury_wood")  private long treasuryWood = 0;
+  @Column(name="treasury_stone") private long treasuryStone = 0;
+  @Column(name="treasury_wheat") private long treasuryWheat = 0;
   private Instant createdAt = Instant.now();
 }

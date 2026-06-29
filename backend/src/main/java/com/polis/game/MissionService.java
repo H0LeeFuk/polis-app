@@ -144,7 +144,7 @@ public class MissionService {
       switch (e.getKey().toLowerCase()){
         case "wood"   -> { if (capital!=null) capital.setWood(capital.getWood()+amt); }
         case "stone"  -> { if (capital!=null) capital.setStone(capital.getStone()+amt); }
-        case "silver" -> { if (capital!=null) capital.setSilver(capital.getSilver()+amt); }
+        case "silver", "wheat" -> { if (capital!=null) capital.setWheat(capital.getWheat()+amt); }
         case "heroxp" -> heroXp += amt;
         default -> {}
       }

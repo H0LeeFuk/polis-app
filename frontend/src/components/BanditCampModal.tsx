@@ -3,7 +3,7 @@ import { getBanditCamp, attackBanditCamp } from "../api";
 import type { BanditCamp, BanditAttackResult, UnitDto } from "../types";
 import { UNIT_GLYPH, UNIT_DEX } from "../movements";
 
-const RES_GLYPH: Record<string, string> = { wood: "🪵", stone: "🪨", silver: "🪙" };
+const RES_GLYPH: Record<string, string> = { wood: "🪵", stone: "🪨", wheat: "🌾", silver: "🌾" };
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 const glyph = (t: string) => UNIT_GLYPH[t?.toUpperCase()] ?? "⚔";
 const rewardGlyph = (k: string) => RES_GLYPH[k.toLowerCase()] ?? glyph(k);

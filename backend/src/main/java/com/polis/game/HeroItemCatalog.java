@@ -47,14 +47,14 @@ public final class HeroItemCatalog {
     new Entry("War Axe",             Slot.WEAPON, Rarity.RARE,      buffs("ATTACK_PCT",7,"LOOT_PCT",5), none()),
     new Entry("Singing Elven Bow",   Slot.WEAPON, Rarity.RARE,      buffs("ATTACK_PCT",10), none()),
     new Entry("Crusher's Maul",      Slot.WEAPON, Rarity.EPIC,      buffs("ATTACK_PCT",12),
-        fx(effect("ARMOR_PEN_PCT", p("type","BLUNT","value",0.05)))),
+        fx(effect("ARMOR_PEN_PCT", p("type","EARTH","value",0.05)))),
     new Entry("Trident of Tides",    Slot.WEAPON, Rarity.EPIC,      buffs("ATTACK_PCT",12,"NAVAL_TRAVEL_TIME_PCT",15), none()),
     new Entry("Fangs of the War-God",Slot.WEAPON, Rarity.LEGENDARY, buffs("ATTACK_PCT",23,"LOOT_PCT",20),
         fx(effect("FIRST_STRIKE", p("value",0.15)))),
 
     // 🛡 Armor
     new Entry("Scuffed Cuirass",     Slot.ARMOR,  Rarity.COMMON,    buffs("DEFENSE_PCT",3), none()),
-    new Entry("Runed Shield",        Slot.ARMOR,  Rarity.RARE,      buffs("DEFENSE_SHARP_PCT",8), none()),
+    new Entry("Runed Shield",        Slot.ARMOR,  Rarity.RARE,      buffs("DEFENSE_EARTH_PCT",8), none()),
     new Entry("Bark Mantle",         Slot.ARMOR,  Rarity.RARE,      buffs("DEFENSE_PCT",6,"LOSS_REDUCTION_PCT",5), none()),
     new Entry("Bastion Aegis",       Slot.ARMOR,  Rarity.EPIC,      buffs("DEFENSE_PCT",12),
         fx(effect("CITY_DEFENSE_BONUS_PCT", p("value",0.10)))),

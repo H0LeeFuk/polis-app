@@ -3,8 +3,8 @@ import { getHeroInventory } from "../api";
 import type { HeroItemDto, ItemSlot, ItemRarity } from "../types";
 
 const BUFF_LABEL: Record<string, string> = {
-  ATTACK_PCT: "Attack", DEFENSE_PCT: "Defense", DEFENSE_SHARP_PCT: "Sharp def", DEFENSE_BLUNT_PCT: "Blunt def",
-  DEFENSE_DISTANCE_PCT: "Distance def", TRAVEL_TIME_PCT: "Travel time", NAVAL_TRAVEL_TIME_PCT: "Naval speed",
+  ATTACK_PCT: "Attack", DEFENSE_PCT: "Defense", DEFENSE_FIRE_PCT: "Fire def", DEFENSE_WIND_PCT: "Wind def",
+  DEFENSE_EARTH_PCT: "Earth def", DEFENSE_WATER_PCT: "Water def", TRAVEL_TIME_PCT: "Travel time", NAVAL_TRAVEL_TIME_PCT: "Naval speed",
   LOOT_PCT: "Loot", DROP_CHANCE_PCT: "Drop chance", HERO_XP_PCT: "Hero XP", SKILL_COOLDOWN_PCT: "Skill cooldown",
   WOUND_RECOVERY_PCT: "Wound recovery", LOSS_REDUCTION_PCT: "Losses",
 };

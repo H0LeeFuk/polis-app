@@ -30,6 +30,8 @@ public record BattleReportDTO(
     int attackerTotalAttackPower,
     int defenderTotalDefencePower,
     int siegeDamage,
+    Map<String,Integer> attackByElement,
+    Map<String,Integer> defenseByElement,
 
     // hero participation — heroName null => no hero took part
     String heroName,

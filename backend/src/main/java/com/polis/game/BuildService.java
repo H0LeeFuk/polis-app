@@ -44,8 +44,8 @@ public class BuildService {
     if (!Objects.equals(c.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
     return cityService.sync(c);
   }
-  private boolean afford(City c, long w, long s, long si){ return c.getWood()>=w && c.getStone()>=s && c.getSilver()>=si; }
-  private void pay(City c, long w, long s, long si){ c.setWood(c.getWood()-w); c.setStone(c.getStone()-s); c.setSilver(c.getSilver()-si); }
+  private boolean afford(City c, long w, long s, long wh){ return c.getWood()>=w && c.getStone()>=s && c.getWheat()>=wh; }
+  private void pay(City c, long w, long s, long wh){ c.setWood(c.getWood()-w); c.setStone(c.getStone()-s); c.setWheat(c.getWheat()-wh); }
 
   private void enqueue(City c, BuildJob job, QueueType qt, int totalSeconds){
     int pos = (int) jobs.countByCityIdAndQueueType(c.getId(), qt);
@@ -88,8 +88,10 @@ public class BuildService {
     if (type.getResearchRequired() != null && !hasResearch(cityId, ResearchType.valueOf(type.getResearchRequired())))
       throw new IllegalStateException("Requires research: " + type.getResearchRequired());
     // Library siege gate: siege engines need the Siegecraft research
-    if (type.getAttackType()==AttackType.SIEGE && !library.effects(cityId).has("siege"))
+    if (type.isSiege() && !library.effects(cityId).has("siege"))
       throw new IllegalStateException("Requires the Library research: Siegecraft");
+    // elite units cost a special resource — only the city race's own special is available
+    ResourceType special = (type.getCostSpecial() > 0 && c.getRace() != null) ? c.getRace().specialResource : null;
     QueueType from = type.getFromQueue();
     int fromLevel = cityService.level(cityId, from==QueueType.HARBOR ? BuildingType.HARBOR : BuildingType.BARRACKS);
     if (fromLevel <= 0) throw new IllegalStateException("Build the " + from + " first");
@@ -100,10 +102,14 @@ public class BuildService {
     int byRes = (int) Math.min(Math.min(
         type.getCostWood() >0 ? (long)(c.getWood()/type.getCostWood())   : Long.MAX_VALUE,
         type.getCostStone()>0 ? (long)(c.getStone()/type.getCostStone()) : Long.MAX_VALUE),
-        type.getCostSilver()>0? (long)(c.getSilver()/type.getCostSilver()): Long.MAX_VALUE);
+        type.getCostWheat()>0 ? (long)(c.getWheat()/type.getCostWheat()) : Long.MAX_VALUE);
+    if (special != null && type.getCostSpecial() > 0)
+      byRes = (int) Math.min(byRes, (long)(c.get(special)/type.getCostSpecial()));
     count = Math.min(count, byRes);
     if (count <= 0) throw new IllegalStateException("Not enough population or resources");
-    pay(c, (long)type.getCostWood()*count, (long)type.getCostStone()*count, (long)type.getCostSilver()*count); cities.save(c);
+    pay(c, (long)type.getCostWood()*count, (long)type.getCostStone()*count, (long)type.getCostWheat()*count);
+    if (special != null) c.add(special, -(long)type.getCostSpecial()*count);
+    cities.save(c);
     int total = (int)(GameRules.unitSeconds(type, fromLevel) * count * library.effects(cityId).trainTimeMult());
     BuildJob job = new BuildJob(); job.setUnitType(type.getName()); job.setBatch(count);
     enqueue(c, job, from, total);
@@ -116,9 +122,9 @@ public class BuildService {
       throw new IllegalStateException("Library level too low (needs " + type.req + ")");
     if (hasResearch(cityId, type)) throw new IllegalStateException("Already researched");
     double rm = c.getRace()!=null ? c.getRace().researchCostMult : 1.0;   // HUMANS research discount
-    long cw=Math.round(type.costWood*rm), cs=Math.round(type.costStone*rm), csv=Math.round(type.costSilver*rm);
-    if (!afford(c, cw, cs, csv)) throw new IllegalStateException("Not enough resources");
-    pay(c, cw, cs, csv); cities.save(c);
+    long cw=Math.round(type.costWood*rm), cs=Math.round(type.costStone*rm), cwh=Math.round(type.costWheat*rm);
+    if (!afford(c, cw, cs, cwh)) throw new IllegalStateException("Not enough resources");
+    pay(c, cw, cs, cwh); cities.save(c);
     research.save(new CityResearch(cityId, type));
     missions.record(playerId, MissionObjectiveType.RESEARCH_COMPLETE, 1);
   }
@@ -131,12 +137,13 @@ public class BuildService {
     City c = cities.findById(cityId).orElseThrow();
     if (j.getQueueType()==QueueType.BUILDING){
       long[] r = GameRules.buildCost(j.getBuildingType(), j.getToLevel()-1);
-      c.setWood(c.getWood()+r[0]); c.setStone(c.getStone()+r[1]); c.setSilver(c.getSilver()+r[2]);
+      c.setWood(c.getWood()+r[0]); c.setStone(c.getStone()+r[1]); c.setWheat(c.getWheat()+r[2]);
     } else {
       UnitType u=catalog.get(j.getUnitType());
       c.setWood(c.getWood()+(long)u.getCostWood()*j.getBatch());
       c.setStone(c.getStone()+(long)u.getCostStone()*j.getBatch());
-      c.setSilver(c.getSilver()+(long)u.getCostSilver()*j.getBatch());
+      c.setWheat(c.getWheat()+(long)u.getCostWheat()*j.getBatch());
+      if (u.getCostSpecial()>0 && c.getRace()!=null) c.add(c.getRace().specialResource, (long)u.getCostSpecial()*j.getBatch());
     }
     cities.save(c);
     QueueType qt=j.getQueueType(); jobs.delete(j);
@@ -156,15 +163,24 @@ public class BuildService {
     if (!Objects.equals(c.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
     BuildJob j = jobs.findById(jobId).orElseThrow(() -> new IllegalArgumentException("Job not found"));
     if (!Objects.equals(j.getCityId(), cityId)) throw new IllegalStateException("Wrong city");
-    if (j.getPosition() != 0) throw new IllegalStateException("Only the active job can be rushed");
+    // A job can be rushed only if no EARLIER job in the same queue targets the same building/unit —
+    // e.g. you may gold a Barracks upgrade while the Farm is upgrading, but not Farm→21 before Farm→20.
+    String key = jobKey(j);
+    for (BuildJob other : jobs.findByCityIdAndQueueTypeOrderByPositionAsc(cityId, j.getQueueType()))
+      if (other.getPosition() < j.getPosition() && key.equals(jobKey(other)))
+        throw new IllegalStateException("Finish the earlier " + key + " upgrade first");
     Instant now = Instant.now();
     long rem = j.getFinishAt()==null ? j.getTotalSeconds() : Math.max(0, Duration.between(now, j.getFinishAt()).getSeconds());
     int cost = rushCost(rem);
     Player p = players.findById(playerId).orElseThrow();
     if (p.getGold() < cost) throw new IllegalStateException("Not enough gold (need " + cost + ")");
     p.setGold(p.getGold() - cost); players.save(p);
-    j.setFinishAt(now); jobs.save(j);
-    cityService.finalizeJobs(c, now);
+    cityService.forceComplete(c, j);
+  }
+
+  /** Identity of what a job produces — used to block rushing past a same-target predecessor. */
+  private String jobKey(BuildJob j){
+    return j.getQueueType()==QueueType.BUILDING ? j.getBuildingType().name() : j.getUnitType();
   }
 
   @Transactional
@@ -179,7 +195,8 @@ public class BuildService {
     City src = owned(playerId, cityId);
     City tgt = cities.findById(targetCityId).orElseThrow(() -> new IllegalArgumentException("Target not found"));
     if (Objects.equals(tgt.getPlayerId(), playerId)) throw new IllegalStateException("Cannot attack your own city");
-    if (army.isEmpty()) throw new IllegalArgumentException("Select at least one unit");
+    // an army OR a lone hero may march — but never an empty order
+    if (army.isEmpty() && heroId == null) throw new IllegalArgumentException("Select at least one unit or a hero");
     // LAND troops — and a land (non-flying/swimming) hero — can't cross open water without transport ships
     Hero hero = heroId != null ? heroes.requireOwned(playerId, heroId) : null;
     int heroLoad = hero != null ? travel.heroLandLoad(hero.getRace()) : 0;

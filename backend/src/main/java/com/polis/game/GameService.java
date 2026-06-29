@@ -90,14 +90,20 @@ public class GameService {
       QueueType from = u.getFromQueue();
       Map<String,Object> t=new LinkedHashMap<>();
       t.put("type",u.getName()); t.put("from",from.name()); t.put("kind",u.getKind().name());
-      t.put("attackType",u.getAttackType().name());
+      // attack element: explicit for elites, else the city race's element; siege has none
+      t.put("siege", u.isSiege());
+      t.put("attackElement", u.isSiege() ? null : (u.getAttackElement()!=null ? u.getAttackElement().name() : cityRace.element.name()));
       t.put("atk",u.getAttack());
-      t.put("defBlunt",u.getDefenseBlunt()); t.put("defSharp",u.getDefenseSharp()); t.put("defDistance",u.getDefenseDistance());
+      t.put("defFire",u.getDefenseFire()); t.put("defWind",u.getDefenseWind());
+      t.put("defEarth",u.getDefenseEarth()); t.put("defWater",u.getDefenseWater());
       t.put("speed",u.getSpeedMinutesPerTile()); t.put("pop",u.getPopulationCost()); t.put("carry",u.getCarryCapacity());
       t.put("movementClass",u.getMovementClass().name());
       t.put("transportCapacity",u.getTransportCapacity());
       t.put("requiresTransport",u.isRequiresTransport());
-      t.put("cost",List.of(u.getCostWood(),u.getCostStone(),u.getCostSilver()));
+      t.put("cost",List.of(u.getCostWood(),u.getCostStone(),u.getCostWheat()));
+      t.put("elite", u.isElite());
+      t.put("costSpecial", u.getCostSpecial());
+      t.put("specialResource", u.isElite() ? cityRace.specialResource.name() : null);
       t.put("seconds",GameRules.unitSeconds(u, lv.get(from==QueueType.HARBOR?BuildingType.HARBOR:BuildingType.BARRACKS)));
       boolean unlocked = u.getResearchRequired()==null || done.contains(ResearchType.valueOf(u.getResearchRequired()));
       t.put("unlocked", unlocked);
@@ -108,7 +114,7 @@ public class GameService {
     for (ResearchType r : ResearchType.values()){
       Map<String,Object> m=new LinkedHashMap<>();
       m.put("type",r.name()); m.put("req",r.req); m.put("done",done.contains(r));
-      m.put("cost",List.of(r.costWood,r.costStone,r.costSilver));
+      m.put("cost",List.of(r.costWood,r.costStone,r.costWheat));
       rsr.add(m);
     }
 
@@ -142,13 +148,21 @@ public class GameService {
     m.put("island",islName.get(String.valueOf(c.getIslandId()))); m.put("points",c.getPoints());
     m.put("race", c.getRace()==null ? null : c.getRace().dto());
     long cap=GameRules.storeCap(lv.get(BuildingType.WAREHOUSE));
+    Race rRace = c.getRace()==null ? Race.HUMANS : c.getRace();
+    ResourceType special = rRace.specialResource;
     Map<String,Object> res=new LinkedHashMap<>();
-    res.put("wood",(long)c.getWood()); res.put("stone",(long)c.getStone()); res.put("silver",(long)c.getSilver());
-    res.put("capacity",cap); res.put("favor",(long)c.getFavor());
+    res.put("wood",(long)c.getWood()); res.put("stone",(long)c.getStone()); res.put("wheat",(long)c.getWheat());
+    res.put("capacity",cap);
+    res.put("special",(long)c.get(special)); res.put("specialResource",special.name());
     res.put("woodProd",(long)GameRules.prodPerHour(lv.get(BuildingType.TIMBER)));
     res.put("stoneProd",(long)GameRules.prodPerHour(lv.get(BuildingType.QUARRY)));
-    res.put("silverProd",(long)GameRules.prodPerHour(lv.get(BuildingType.MINE)));
-    res.put("favorProd",(long)GameRules.favorPerHour(lv.get(BuildingType.TEMPLE)));
+    res.put("wheatProd",(long)GameRules.prodPerHour(lv.get(BuildingType.MINE)));
+    res.put("specialProd",(long)GameRules.prodPerHour(lv.get(BuildingType.EXTRACTOR)));
+    // any looted/traded special resources of other races the city is currently holding
+    Map<String,Object> extra=new LinkedHashMap<>();
+    for (ResourceType rt : ResourceType.values())
+      if (rt.isSpecial() && rt!=special && c.get(rt)>0) extra.put(rt.name(),(long)c.get(rt));
+    res.put("otherSpecials", extra);
     m.put("resources",res);
     m.put("pop", cityService.popUsed(id)); m.put("maxPop", cityService.maxPop(id, bounty));
     m.put("buildings",bld); m.put("queues",queues); m.put("units",us);
@@ -162,17 +176,16 @@ public class GameService {
     return switch (t){
       case TIMBER    -> "Wood "   + (long)GameRules.prodPerHour(l) + "/h → " + (long)GameRules.prodPerHour(n) + "/h";
       case QUARRY    -> "Stone "  + (long)GameRules.prodPerHour(l) + "/h → " + (long)GameRules.prodPerHour(n) + "/h";
-      case MINE      -> "Silver " + (long)GameRules.prodPerHour(l) + "/h → " + (long)GameRules.prodPerHour(n) + "/h";
+      case MINE      -> "Wheat " + (long)GameRules.prodPerHour(l) + "/h → " + (long)GameRules.prodPerHour(n) + "/h";
+      case EXTRACTOR -> "Special resource " + (long)GameRules.prodPerHour(l) + "/h → " + (long)GameRules.prodPerHour(n) + "/h";
       case FARM      -> "Population cap " + GameRules.farmPop(l) + " → " + GameRules.farmPop(n);
-      case TEMPLE    -> "Favor " + (long)GameRules.favorPerHour(l) + "/h → " + (long)GameRules.favorPerHour(n)
-                        + "/h (cap " + GameRules.favorCap(l) + " → " + GameRules.favorCap(n) + ")";
       case SENATE    -> "Build speed +" + senatePct(l) + "% → +" + senatePct(n) + "% faster construction";
       case BARRACKS  -> "Training +" + trainPct(l) + "% → +" + trainPct(n) + "% faster";
       case HARBOR    -> "Ship training +" + trainPct(l) + "% → +" + trainPct(n) + "% faster";
       case WAREHOUSE -> "Raises resource storage capacity";
       case LIBRARY   -> "Research speed +" + libPct(l) + "% → +" + libPct(n) + "% (unlocks research up to level " + n + ")";
       case WALL      -> "Strengthens the city's defences";
-      case AGORA     -> "Expands trade and civic capacity";
+      case MARKET    -> "Bigger trade convoys, more at once, faster delivery";
     };
   }
   private static int senatePct(int level){ return (int)Math.round(Math.min(0.6, level * 0.04) * 100); }

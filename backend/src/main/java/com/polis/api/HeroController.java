@@ -42,6 +42,18 @@ public class HeroController {
     return heroes.dto(heroes.station(me(), heroId, r.cityId()));
   }
 
+  /** Assign a hero to a city — it marches there (~1h) and is usable for attacks once it arrives. */
+  @PostMapping("/heroes/{heroId}/assign")
+  public Map<String,Object> assign(@PathVariable Long heroId, @RequestBody StationRequest r){
+    return heroes.dto(heroes.assign(me(), heroId, r.cityId()));
+  }
+
+  /** Remove a hero from its city (must be idle) so it can be assigned elsewhere. */
+  @PostMapping("/heroes/{heroId}/deassign")
+  public Map<String,Object> deassign(@PathVariable Long heroId){
+    return heroes.dto(heroes.deassign(me(), heroId));
+  }
+
   @PostMapping("/heroes/{heroId}/arm-skill")
   public Map<String,Object> armSkill(@PathVariable Long heroId, @RequestBody ArmSkillRequest r){
     return heroes.dto(heroes.armSkill(me(), heroId, r.skillId()));

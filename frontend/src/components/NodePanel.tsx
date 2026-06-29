@@ -4,8 +4,8 @@ import type { ResourceNode, UnitDto, Hero, IslandBoss, BossAttackResult } from "
 import { UNIT_GLYPH, HeroPicker } from "../movements";
 
 const RACE_ICON: Record<string, string> = { HUMANS: "🏛", GIANTS: "🗿", FAIRIES: "🧚", NEWTS: "🦎" };
-const NODE_GLYPH: Record<string, string> = { SACRED_GROVE: "🌳", MARBLE_QUARRY: "⛏", SILVER_VEIN: "⛰" };
-const RES_GLYPH: Record<string, string> = { WOOD: "🪵", STONE: "🪨", SILVER: "🪙" };
+const NODE_GLYPH: Record<string, string> = { SACRED_GROVE: "🌳", MARBLE_QUARRY: "⛏", WHEAT_FIELD: "🌾" };
+const RES_GLYPH: Record<string, string> = { WOOD: "🪵", STONE: "🪨", WHEAT: "🌾" };
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 const glyph = (t: string) => UNIT_GLYPH[t?.toUpperCase()] ?? "⚔";
 
@@ -104,7 +104,7 @@ function BossFightModal({ islandId, bossName, ctx, onClose, onDone }: {
             <div className={"boss-result " + (result.outcome === "WIN" ? "win" : "loss")}>
               <h3>{result.outcome === "WIN" ? "Victory!" : "Defeated"}</h3>
               {result.reward && (
-                <p>Loot: {result.reward.wood}🪵 {result.reward.stone}🪨 {result.reward.silver}🪙
+                <p>Loot: {result.reward.wood}🪵 {result.reward.stone}🪨 {result.reward.wheat}🌾
                   {result.reward.relic && <> · <b>{result.reward.relic.rarity} {result.reward.relic.name}</b> 🎁</>}
                   {result.heroXp ? ` · +${result.heroXp} hero XP` : ""}</p>
               )}

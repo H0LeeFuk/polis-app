@@ -2,7 +2,7 @@ import type {
   GameState, WorldData, RankRow, InboxMsg, Movement, AttackPreview, PlayerMovements,
   BattleReport, BattleReportPage, BattleOutcome, Hero, ResourceNode, HeroItemDto,
   BanditCamp, BanditAttackResult, IslandSlots, FoundingStatus, MissionsData, IslandBoss, BossAttackResult,
-  LibraryData,
+  LibraryData, TradeMarket, BuyPreview, TradeConvoyDto, AllianceView,
 } from "./types";
 
 const TOKEN_KEY = "polis_token";
@@ -29,6 +29,7 @@ export const login = (username: string, password: string) =>
 export const getState = (cityId?: number) =>
   api<GameState>(`/api/game/state${cityId ? `?cityId=${cityId}` : ""}`);
 export const getWorld = () => api<WorldData>("/api/world");
+export const getServerTime = () => api<{ epochMillis: number }>("/api/game/time");
 export const getRankings = (type: string) => api<RankRow[]>(`/api/rankings?type=${type}`);
 export const getInbox = () => api<InboxMsg[]>("/api/messages");
 export const sendMessage = (toPlayerId: number, body: string) =>
@@ -95,6 +96,10 @@ export const setHeroAttributes = (heroId: number, leadership: number, cunning: n
   api<Hero>(`/api/players/me/heroes/${heroId}/attributes`, { method: "POST", body: JSON.stringify({ leadership, cunning, valor }) });
 export const stationHero = (heroId: number, cityId: number) =>
   api<Hero>(`/api/players/me/heroes/${heroId}/station`, { method: "POST", body: JSON.stringify({ cityId }) });
+export const assignHero = (heroId: number, cityId: number) =>
+  api<Hero>(`/api/players/me/heroes/${heroId}/assign`, { method: "POST", body: JSON.stringify({ cityId }) });
+export const deassignHero = (heroId: number) =>
+  api<Hero>(`/api/players/me/heroes/${heroId}/deassign`, { method: "POST" });
 export const armHeroSkill = (heroId: number, skillId: string) =>
   api<Hero>(`/api/players/me/heroes/${heroId}/arm-skill`, { method: "POST", body: JSON.stringify({ skillId }) });
 export const getHeroInventory = () => api<HeroItemDto[]>("/api/players/me/inventory");
@@ -109,6 +114,20 @@ export const startLibraryResearch = (cityId: number, researchId: string) =>
   api<{ ok: boolean }>(`/api/cities/${cityId}/library/research`, { method: "POST", body: JSON.stringify({ researchId }) });
 export const respecLibrary = (cityId: number) =>
   api<{ ok: boolean }>(`/api/cities/${cityId}/library/respec`, { method: "POST" });
+
+// --- trade / marketplace + convoy logistics ---
+export const getTradeMarket = (cityId: number) => api<TradeMarket>(`/api/cities/${cityId}/trade`);
+export const tradeBuyPreview = (cityId: number, resourceType: string, bundles: number, maxPricePerBundle: number, deliveryCityId: number) =>
+  api<BuyPreview>(`/api/cities/${cityId}/trade/buy/preview?resourceType=${resourceType}&bundles=${bundles}&maxPricePerBundle=${maxPricePerBundle}&deliveryCityId=${deliveryCityId}`);
+export const tradeBuy = (cityId: number, body: { resourceType: string; bundles: number; maxPricePerBundle: number; deliveryCityId: number }) =>
+  api<{ ok: boolean; filledBundles: number; totalGold: number; convoyCount: number; gold: number }>(
+    `/api/cities/${cityId}/trade/buy`, { method: "POST", body: JSON.stringify(body) });
+export const tradeSell = (cityId: number, body: { resourceType: string; bundles: number; pricePerBundle: number }) =>
+  api<{ ok: boolean; listingId: number; escrowedUnits: number }>(
+    `/api/cities/${cityId}/trade/sell`, { method: "POST", body: JSON.stringify(body) });
+export const cancelTradeListing = (cityId: number, listingId: number) =>
+  api<{ ok: boolean }>(`/api/cities/${cityId}/trade/listings/${listingId}/cancel`, { method: "POST" });
+export const getTradeDeliveries = () => api<TradeConvoyDto[]>("/api/players/me/trade-deliveries");
 
 // --- missions ---
 export const getMissions = () => api<MissionsData>("/api/players/me/missions");
@@ -138,6 +157,15 @@ export const attackBanditCamp = (islandId: number, cityId: number, troops: Recor
 // --- alliances ---
 export const createAlliance = (tag: string, name: string) =>
   api<{ id: number; tag: string; name: string }>("/api/alliances", { method: "POST", body: JSON.stringify({ tag, name }) });
+export const getMyAlliance = () => api<AllianceView>("/api/alliances/me");
+export const inviteToAlliance = (username: string) =>
+  api<{ ok: boolean }>("/api/alliances/invite", { method: "POST", body: JSON.stringify({ username }) });
+export const acceptAllianceInvite = (allianceId: number) =>
+  api<{ ok: boolean }>(`/api/alliances/invites/${allianceId}/accept`, { method: "POST" });
+export const declineAllianceInvite = (allianceId: number) =>
+  api<{ ok: boolean }>(`/api/alliances/invites/${allianceId}/decline`, { method: "POST" });
+export const postAllianceForum = (body: string) =>
+  api<{ ok: boolean }>("/api/alliances/forum", { method: "POST", body: JSON.stringify({ body }) });
 
 // --- island boss ---
 export const getIslandBoss = (islandId: number) => api<IslandBoss>(`/api/islands/${islandId}/boss`);

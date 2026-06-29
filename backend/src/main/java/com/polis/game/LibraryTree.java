@@ -48,9 +48,10 @@ public final class LibraryTree {
     // 🛡 WARDS
     r("runed_shields",LibraryBranch.WARDS,1,"Runed Shields","+5% defense (all)",2,D1,2,List.of(),false,e("defense",0.05)),
     r("far_seers",  LibraryBranch.WARDS,1,"Far-Seers","Reveal incoming attack composition",2,D1,3,List.of(),false,e(),"farSeers"),
-    r("shield_wall",LibraryBranch.WARDS,2,"Shield Wall","+12% sharp defense",4,D2,0,List.of("runed_shields"),false,e("defSharp",0.12)),
-    r("living_walls",LibraryBranch.WARDS,2,"Living Walls","+10% blunt defense",4,D2,0,List.of("runed_shields"),false,e("defBlunt",0.10)),
-    r("warded_heights",LibraryBranch.WARDS,2,"Warded Heights","+12% distance defense",4,D2,0,List.of("far_seers"),false,e("defDistance",0.12)),
+    r("stone_bulwark",LibraryBranch.WARDS,2,"Stone Bulwark","+12% Earth defense",4,D2,0,List.of("runed_shields"),false,e("defEarth",0.12)),
+    r("ember_wards",LibraryBranch.WARDS,2,"Ember Wards","+12% Fire defense",4,D2,0,List.of("runed_shields"),false,e("defFire",0.12)),
+    r("gale_wards",LibraryBranch.WARDS,2,"Gale Wards","+12% Wind defense",4,D2,0,List.of("far_seers"),false,e("defWind",0.12)),
+    r("tide_wards",LibraryBranch.WARDS,2,"Tide Wards","+12% Water defense",4,D2,0,List.of("far_seers"),false,e("defWater",0.12)),
     r("aegis_ward", LibraryBranch.WARDS,3,"Aegis Ward","+15% defense (all)",8,D3,10,List.of(),true,e("defense",0.15)),
     r("everguard",  LibraryBranch.WARDS,3,"Everguard","Defenders recover part of losses",10,D3,14,List.of("aegis_ward"),false,e(),"recover"),
     // 📜 LORE & DOMINION

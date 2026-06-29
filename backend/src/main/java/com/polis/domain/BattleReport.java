@@ -55,6 +55,12 @@ public class BattleReport {
   @Column(name="defender_defence_power") private int defenderTotalDefencePower;
   @Column(name="siege_damage") private int siegeDamage;
 
+  // PART 1: combat composition by element (FIRE/WIND/EARTH/WATER) for both sides
+  @JdbcTypeCode(SqlTypes.JSON) @Column(name="attack_by_element", columnDefinition="json")
+  private Map<String,Integer> attackByElement = new HashMap<>();
+  @JdbcTypeCode(SqlTypes.JSON) @Column(name="defense_by_element", columnDefinition="json")
+  private Map<String,Integer> defenseByElement = new HashMap<>();
+
   // hero participation (null hero_name => the hero did not take part)
   @Column(name="hero_name") private String heroName;
   @Column(name="hero_level") private int heroLevel;

@@ -64,6 +64,8 @@ public class BattleReportService {
     r.setAttackerTotalAttackPower(res.attackerAttackPower());
     r.setDefenderTotalDefencePower(res.defenderDefencePower());
     r.setSiegeDamage(res.siegeDamage());
+    r.setAttackByElement(res.attackByElement()==null?new HashMap<>():new HashMap<>(res.attackByElement()));
+    r.setDefenseByElement(res.defenseByElement()==null?new HashMap<>():new HashMap<>(res.defenseByElement()));
 
     if (hero != null){
       r.setHeroName(hero.name());
@@ -105,6 +107,8 @@ public class BattleReportService {
     r.setAttackerTotalAttackPower(res.attackerAttackPower());
     r.setDefenderTotalDefencePower(res.defenderDefencePower());
     r.setSiegeDamage(res.siegeDamage());
+    r.setAttackByElement(res.attackByElement()==null?new HashMap<>():new HashMap<>(res.attackByElement()));
+    r.setDefenseByElement(res.defenseByElement()==null?new HashMap<>():new HashMap<>(res.defenseByElement()));
     if (hero != null){
       r.setHeroName(hero.name()); r.setHeroLevel(hero.level());
       r.setHeroAttackBonusPct(hero.attackBonusPct()); r.setHeroLossReductionPct(hero.lossReductionPct());
@@ -143,6 +147,8 @@ public class BattleReportService {
     r.setAttackerTotalAttackPower(res.attackerAttackPower());
     r.setDefenderTotalDefencePower(res.defenderDefencePower());
     r.setSiegeDamage(res.siegeDamage());
+    r.setAttackByElement(res.attackByElement()==null?new HashMap<>():new HashMap<>(res.attackByElement()));
+    r.setDefenseByElement(res.defenseByElement()==null?new HashMap<>():new HashMap<>(res.defenseByElement()));
     if (hero != null){
       r.setHeroName(hero.name()); r.setHeroLevel(hero.level());
       r.setHeroAttackBonusPct(hero.attackBonusPct()); r.setHeroLossReductionPct(hero.lossReductionPct());
@@ -244,7 +250,7 @@ public class BattleReportService {
         r.getAttackerTroopsSent(), r.getAttackerTroopsLost(), r.getAttackerTroopsSurvived(),
         r.getDefenderTroopsPresent(), r.getDefenderTroopsLost(), r.getDefenderTroopsSurvived(),
         r.getResourcesStolen(), r.getAttackerTotalAttackPower(), r.getDefenderTotalDefencePower(),
-        r.getSiegeDamage(),
+        r.getSiegeDamage(), r.getAttackByElement(), r.getDefenseByElement(),
         r.getHeroName(), r.getHeroLevel(), r.getHeroAttackBonusPct(), r.getHeroLossReductionPct(),
         r.getHeroSkillUsed(), r.getHeroXpGained(), r.getHeroLeveledTo(), r.isHeroWounded(),
         unread(r, attacker));

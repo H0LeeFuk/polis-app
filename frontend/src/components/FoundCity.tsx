@@ -60,12 +60,20 @@ export function FoundingBanner({ founding, now, onChoose }: {
       <span className="fb-ico">🏛</span>
       {awaiting ? (
         <>
-          <span>Your hero has arrived at <b>{founding.islandName}</b> — choose a race to found the city.</span>
-          <button className="btn" onClick={onChoose}>Choose a race</button>
+          <div className="fb-text">
+            <span className="fb-title">Your hero has reached {founding.islandName}</span>
+            <span className="fb-sub">Choose a race to found your first city and begin your reign.</span>
+          </div>
+          <div className="fb-races">
+            {RACES.map(r => <span key={r.id} className="fb-race" title={r.name}>{r.icon}</span>)}
+          </div>
+          <button className="btn" onClick={onChoose}>Choose a race →</button>
         </>
       ) : (
-        <span>Hero marching to found a city on <b>{founding.islandName}</b>
-          {founding.arriveAt && <> — arrives in <b>{fmtEta(founding.arriveAt, now)}</b></>}.</span>
+        <div className="fb-text">
+          <span className="fb-sub">Hero marching to found a city on <b>{founding.islandName}</b>
+            {founding.arriveAt && <> — arrives in <b>{fmtEta(founding.arriveAt, now)}</b></>}.</span>
+        </div>
       )}
     </div>
   );

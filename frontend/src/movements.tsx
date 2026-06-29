@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getCityMovements, previewAttack } from "./api";
 import type { Movement, AttackPreview, Hero } from "./types";
-import { CityReportsList } from "./components/BattleReports";
 
 // ---- formatting helpers (all countdowns computed client-side from arriveAt) ----
 
@@ -18,18 +17,24 @@ export const UNIT_GLYPH: Record<string, string> = {
 };
 const glyph = (t: string) => UNIT_GLYPH[t?.toUpperCase()] ?? "⚔";
 
-export type UnitAttackType = "BLUNT" | "SHARP" | "DISTANCE" | "SIEGE";
-export interface UnitDex { attackType: UnitAttackType; atk: number; defBlunt: number; defSharp: number; defDistance: number; speed: number; carry: number; pop: number; }
+export type ElementType = "FIRE" | "WIND" | "EARTH" | "WATER";
+export interface UnitDex { element: ElementType | null; siege?: boolean; atk: number; defFire: number; defWind: number; defEarth: number; defWater: number; speed: number; carry: number; pop: number; }
 /** Client-side mirror of the seeded unit_types catalog, for stat tooltips (display only). */
 export const UNIT_DEX: Record<string, UnitDex> = {
-  HOPLITE:   { attackType: "BLUNT",    atk: 16,  defBlunt: 80, defSharp: 50, defDistance: 40, speed: 30, carry: 10, pop: 1 },
-  SWORDSMAN: { attackType: "BLUNT",    atk: 55,  defBlunt: 45, defSharp: 25, defDistance: 20, speed: 22, carry: 20, pop: 1 },
-  SPEARMAN:  { attackType: "SHARP",    atk: 50,  defBlunt: 30, defSharp: 75, defDistance: 35, speed: 22, carry: 25, pop: 1 },
-  ARCHER:    { attackType: "DISTANCE", atk: 60,  defBlunt: 25, defSharp: 40, defDistance: 70, speed: 18, carry: 30, pop: 1 },
-  HORSEMAN:  { attackType: "SHARP",    atk: 110, defBlunt: 30, defSharp: 25, defDistance: 35, speed: 12, carry: 80, pop: 4 },
-  CATAPULT:  { attackType: "SIEGE",    atk: 200, defBlunt: 20, defSharp: 20, defDistance: 20, speed: 60, carry: 30, pop: 8 },
+  // shared roster — element is the attacking city's race element (null here)
+  HOPLITE:   { element: null, atk: 16,  defFire: 60, defWind: 55, defEarth: 75, defWater: 50, speed: 30, carry: 10, pop: 1 },
+  SWORDSMAN: { element: null, atk: 55,  defFire: 35, defWind: 30, defEarth: 40, defWater: 28, speed: 22, carry: 20, pop: 1 },
+  SPEARMAN:  { element: null, atk: 50,  defFire: 55, defWind: 45, defEarth: 40, defWater: 45, speed: 22, carry: 25, pop: 1 },
+  ARCHER:    { element: null, atk: 60,  defFire: 40, defWind: 60, defEarth: 35, defWater: 45, speed: 18, carry: 30, pop: 1 },
+  HORSEMAN:  { element: null, atk: 110, defFire: 35, defWind: 35, defEarth: 30, defWater: 30, speed: 12, carry: 80, pop: 4 },
+  CATAPULT:  { element: null, siege: true, atk: 200, defFire: 20, defWind: 20, defEarth: 20, defWater: 20, speed: 60, carry: 30, pop: 8 },
+  // race elite units
+  FLAME_LEGION:    { element: "FIRE",  atk: 150, defFire: 90, defWind: 70, defEarth: 60, defWater: 45, speed: 20, carry: 40, pop: 3 },
+  EARTHSHAKER:     { element: "EARTH", atk: 170, defFire: 60, defWind: 55, defEarth: 95, defWater: 70, speed: 26, carry: 50, pop: 4 },
+  STORMCALLER:     { element: "WIND",  atk: 175, defFire: 55, defWind: 95, defEarth: 45, defWater: 65, speed: 14, carry: 35, pop: 3 },
+  LEVIATHAN_RIDER: { element: "WATER", atk: 165, defFire: 60, defWind: 50, defEarth: 65, defWater: 95, speed: 18, carry: 60, pop: 4 },
 };
-export const ATTACK_GLYPH: Record<string, string> = { BLUNT: "🔨", SHARP: "🗡", DISTANCE: "🏹", SIEGE: "💥" };
+export const ELEMENT_GLYPH: Record<string, string> = { FIRE: "🔥", WIND: "🌬", EARTH: "🌍", WATER: "💧" };
 const titleCaseU = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 export const HERO_GLYPH = (h: { heroKey?: string }) => h.heroKey === "TITANIA" ? "🧚" : "🛡";
@@ -68,11 +73,12 @@ export function UnitTooltip({ type, children }: { type: string; children: React.
       {d && (
         <span className="unit-tip-card">
           <span className="utc-head">{glyph(type)} {titleCaseU(type)}</span>
-          <span className="utc-row"><span>{ATTACK_GLYPH[d.attackType]} Attack ({titleCaseU(d.attackType)})</span><b>{d.atk}</b></span>
+          <span className="utc-row"><span>{d.siege ? "💥 Siege" : d.element ? `${ELEMENT_GLYPH[d.element]} ${titleCaseU(d.element)}` : "⚔ City element"} attack</span><b>{d.atk}</b></span>
           <span className="utc-def">
-            <span title="Blunt defence">🔨 {d.defBlunt}</span>
-            <span title="Sharp defence">🗡 {d.defSharp}</span>
-            <span title="Distance defence">🏹 {d.defDistance}</span>
+            <span title="Fire defence">🔥 {d.defFire}</span>
+            <span title="Wind defence">🌬 {d.defWind}</span>
+            <span title="Earth defence">🌍 {d.defEarth}</span>
+            <span title="Water defence">💧 {d.defWater}</span>
           </span>
           <span className="utc-row"><span>🐢 Speed</span><b>{d.speed} min/tile</b></span>
           <span className="utc-row"><span>🎒 Carry</span><b>{d.carry}</b></span>
@@ -117,7 +123,8 @@ export function troopSummary(units: Record<string, number> | null): { glyph: str
 }
 
 /** Classify a movement relative to a city/player for colour + label. */
-export function moveKind(m: Movement): "incoming" | "return" | "attack" | "colony" | "support" | "settle" {
+export function moveKind(m: Movement): "incoming" | "return" | "attack" | "colony" | "support" | "settle" | "trade" {
+  if (m.type === "TRADE") return "trade";
   if (m.hostile) return "incoming";
   if (m.type === "RETURN") return "return";
   if (m.type === "COLONY") return "colony";
@@ -133,6 +140,12 @@ const KIND_META: Record<string, { cls: string; icon: string; label: string }> = 
   colony:   { cls: "mv-colony",   icon: "🚢", label: "Colony ship" },
   settle:   { cls: "mv-colony",   icon: "🏛", label: "Founding a city" },
   support:  { cls: "mv-support",  icon: "🤝", label: "Support" },
+  trade:    { cls: "mv-trade",    icon: "🚚", label: "Trade convoy" },
+};
+
+const RES_GLYPH: Record<string, string> = {
+  WOOD: "🪵", STONE: "🪨", WHEAT: "🌾",
+  COAL: "⬛", CRYSTALS: "💎", IRON: "⛓", PEARLS: "🫧",
 };
 export const kindMeta = (m: Movement) => KIND_META[moveKind(m)];
 
@@ -212,11 +225,12 @@ function fmtDuration(s: number): string {
 // AREA 2 — City movements panel (inside the city view)
 // ============================================================================
 
-type CityTab = "outgoing" | "incoming" | "returning" | "reports";
+type CityTab = "outgoing" | "incoming" | "returning";
 
-export function CityMovementsPanel({ cityId, now, onAttackAgain }: {
+export function CityMovementsPanel({ cityId, now, onExpand }: {
   cityId: number; now: number;
   onAttackAgain?: (targetCityId: number, targetCityName: string) => void;
+  onExpand?: () => void;
 }) {
   const [moves, setMoves] = useState<Movement[] | null>(null);
   const [tab, setTab] = useState<CityTab>("outgoing");
@@ -231,8 +245,8 @@ export function CityMovementsPanel({ cityId, now, onAttackAgain }: {
   }, [cityId]);
 
   const all = moves ?? [];
-  // armies leaving this city; armies marching home; hostile armies inbound
-  const outgoing = all.filter(m => !m.hostile && (m.type === "ATTACK" || m.type === "COLONY" || m.type === "SETTLE"));
+  // armies/convoys leaving this city; armies marching home; hostile armies inbound
+  const outgoing = all.filter(m => !m.hostile && (m.type === "ATTACK" || m.type === "COLONY" || m.type === "SETTLE" || m.type === "TRADE"));
   const returning = all.filter(m => !m.hostile && m.type === "RETURN");
   const incoming = all.filter(m => m.hostile);
   const activeCount = all.length;
@@ -241,16 +255,18 @@ export function CityMovementsPanel({ cityId, now, onAttackAgain }: {
     { id: "outgoing", label: "Outgoing", n: outgoing.length },
     { id: "incoming", label: "Incoming", n: incoming.length },
     { id: "returning", label: "Returning", n: returning.length },
-    { id: "reports", label: "Reports", n: 0 },
   ];
   const shown = tab === "outgoing" ? outgoing : tab === "incoming" ? incoming : returning;
 
   return (
-    <div className={"city-moves" + (open ? "" : " collapsed")}>
-      <button className="cm-head" onClick={() => setOpen(o => !o)}>
-        <span>🪖 Movements{activeCount > 0 ? ` · ${activeCount}` : ""}</span>
-        <span className={"cm-chevron" + (incoming.length ? " threat" : "")}>{open ? "▾" : "▸"}</span>
-      </button>
+    <div className={"city-moves side-card" + (open ? "" : " collapsed")}>
+      <div className="cm-head">
+        <button className="cm-head-btn" onClick={() => setOpen(o => !o)}>
+          <span>🪖 Movements{activeCount > 0 ? ` · ${activeCount}` : ""}</span>
+          <span className={"cm-chevron" + (incoming.length ? " threat" : "")}>{open ? "▾" : "▸"}</span>
+        </button>
+        {onExpand && <button className="cm-expand" title="Empire overview" onClick={onExpand}>⤢</button>}
+      </div>
       {open && (
         <>
           <div className="cm-tabs">
@@ -260,11 +276,9 @@ export function CityMovementsPanel({ cityId, now, onAttackAgain }: {
             ))}
           </div>
           <div className="cm-list">
-            {tab === "reports"
-              ? <CityReportsList cityId={cityId} onAttackAgain={onAttackAgain} />
-              : shown.length === 0
-                ? <EmptyMovements />
-                : shown.map(m => <MovementRow key={m.id} m={m} now={now} />)}
+            {shown.length === 0
+              ? <EmptyMovements />
+              : shown.map(m => <MovementRow key={m.id} m={m} now={now} />)}
           </div>
         </>
       )}
@@ -274,6 +288,28 @@ export function CityMovementsPanel({ cityId, now, onAttackAgain }: {
 
 function MovementRow({ m, now }: { m: Movement; now: number }) {
   const meta = kindMeta(m);
+
+  // trade convoy: cargo lives in `loot`; PENDING convoys haven't departed yet
+  if (m.type === "TRADE") {
+    const cargo = m.loot ? Object.entries(m.loot).filter(([, v]) => v > 0) : [];
+    const pending = m.status === "PENDING";
+    const pct = pending ? 0 : progressPct(m.departAt, m.arriveAt, now);
+    return (
+      <div className={"mv-row " + meta.cls}>
+        <div className="mv-top">
+          <span className="mv-icon">{meta.icon}</span>
+          <span className="mv-route">{m.originCity} → <b>{m.targetCity}</b></span>
+          <span className="mv-eta">{pending ? "queued" : fmtEta(m.arriveAt, now)}</span>
+        </div>
+        <div className="mv-sub">
+          <span className="mv-label">{pending ? "Waiting for a convoy slot" : meta.label}</span>
+          <span className="mv-troops">{cargo.map(([k, v]) => <span key={k} title={titleCase(k)}>{RES_GLYPH[k] ?? "📦"}{Math.round(v)}</span>)}</span>
+        </div>
+        {!pending && <div className="mv-bar"><i className={meta.cls} style={{ width: pct + "%" }} /></div>}
+      </div>
+    );
+  }
+
   const pct = progressPct(m.departAt, m.arriveAt, now);
   const troops = troopSummary(m.units);
   const lootEntries = m.loot ? Object.entries(m.loot).filter(([, v]) => v > 0) : [];

@@ -95,6 +95,38 @@ public class HeroService {
     return heroes.save(h);
   }
 
+  /** Time a hero spends marching to its newly-assigned city before it can act. */
+  static final long ASSIGN_SECONDS = 3600;
+
+  /**
+   * Assign a hero to one of the player's cities. Unlike {@link #station}, the hero is unavailable
+   * (MARCHING) for {@link #ASSIGN_SECONDS} — it arrives and becomes usable for attacks afterwards.
+   */
+  @Transactional
+  public Hero assign(Long playerId, Long heroId, Long cityId){
+    Hero h = requireOwned(playerId, heroId);
+    if (!h.isUnlocked()) throw new IllegalStateException("That hero is not unlocked yet");
+    if (h.getState() != HeroState.IDLE) throw new IllegalStateException("The hero is busy right now");
+    if (h.getStationedCityId() != null) throw new IllegalStateException("Deassign the hero from its current city first");
+    City c = cities.findById(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
+    if (!Objects.equals(c.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
+    h.setStationedCityId(cityId);
+    h.setActiveMovementId(null);
+    h.setState(HeroState.MARCHING);
+    h.setWoundedUntil(Instant.now().plusSeconds(ASSIGN_SECONDS));   // reused as "available at"
+    return heroes.save(h);
+  }
+
+  /** Remove a hero from its city so it can be reassigned elsewhere. Only while idle. */
+  @Transactional
+  public Hero deassign(Long playerId, Long heroId){
+    Hero h = requireOwned(playerId, heroId);
+    if (h.getState() != HeroState.IDLE) throw new IllegalStateException("The hero is busy right now");
+    if (h.getStationedCityId() == null) throw new IllegalStateException("The hero isn't assigned to a city");
+    h.setStationedCityId(null);
+    return heroes.save(h);
+  }
+
   /** Mark a hero as marching with an army; validated at dispatch. */
   @Transactional
   public Hero sendHero(Long playerId, Long heroId, Long originCityId, Long movementId){
@@ -119,6 +151,10 @@ public class HeroService {
   @Transactional
   public void recoverHealed(Instant now){
     for (Hero h : heroes.findByStateAndWoundedUntilLessThanEqual(HeroState.WOUNDED, now)){
+      h.setState(HeroState.IDLE); h.setWoundedUntil(null); heroes.save(h);
+    }
+    // heroes that finished marching to a newly-assigned city (woundedUntil reused as their ETA)
+    for (Hero h : heroes.findByStateAndWoundedUntilLessThanEqual(HeroState.MARCHING, now)){
       h.setState(HeroState.IDLE); h.setWoundedUntil(null); heroes.save(h);
     }
   }
@@ -166,15 +202,19 @@ public class HeroService {
     if (HeroSkill.CHARGE.name().equals(h.getArmedSkill())) attackMult += 0.25;
     double lossMult = Math.max(0.1, (1 - VALOR_LOSS_STEP * h.getAttrValor()) * (1 - equipment.lossReductionPct(h)));
     if (HeroSkill.WAR_CRY.name().equals(h.getArmedSkill())) lossMult *= 0.5;
-    return new CombatEngine.Mods(attackMult, 1, 1, lossMult);
+    return new CombatEngine.Mods(attackMult, 1, 1, 1, 1, 1, lossMult);
   }
 
   public CombatEngine.Mods defenseMods(Hero h){
     double defMult = 1 + LEADERSHIP_STEP * h.getAttrLeadership() + equipment.defensePct(h);
     if (h.getRace() == Race.FAIRIES) defMult *= FAIRY_DEFENSE_MULT;   // Titania defends fragilely
-    double sharpMult = HeroSkill.PHALANX.name().equals(h.getArmedSkill()) ? 1.30 : 1.0;
-    sharpMult += equipment.defenseSharpPct(h);
-    return new CombatEngine.Mods(1, defMult, sharpMult, 1);
+    // per-element extra defence from items; PHALANX now braces EARTH (Bulwark stance)
+    double fire  = 1 + equipment.defenseElementPct(h, Element.FIRE);
+    double wind  = 1 + equipment.defenseElementPct(h, Element.WIND);
+    double earth = (1 + equipment.defenseElementPct(h, Element.EARTH))
+        * (HeroSkill.PHALANX.name().equals(h.getArmedSkill()) ? 1.30 : 1.0);
+    double water = 1 + equipment.defenseElementPct(h, Element.WATER);
+    return new CombatEngine.Mods(1, defMult, fire, wind, earth, water, 1);
   }
 
   public double lootMult(Hero h){
@@ -188,6 +228,9 @@ public class HeroService {
     return Math.max(0.2, m);
   }
 
+  /** Flat anti-troop attack the hero adds to its army (also lets a lone hero fight). Scales with level. */
+  public double baseAttack(Hero h){ return 30 + h.getLevel() * 12.0; }
+
   public int attackBonusPct(Hero h){ return (int)Math.round((offenseMods(h).attackMult() - 1) * 100); }
   public int lossReductionPct(Hero h){ return (int)Math.round((1 - offenseMods(h).attackerLossMult()) * 100); }
 
@@ -195,9 +238,10 @@ public class HeroService {
   /** Discrete combat effects (armour pen, first strike, safe round) for a hero leading an army. */
   public CombatEngine.CombatFx combatFx(Hero h){
     return new CombatEngine.CombatFx(
-        equipment.armorPen(h, AttackType.BLUNT),
-        equipment.armorPen(h, AttackType.SHARP),
-        equipment.armorPen(h, AttackType.DISTANCE),
+        equipment.armorPen(h, Element.FIRE),
+        equipment.armorPen(h, Element.WIND),
+        equipment.armorPen(h, Element.EARTH),
+        equipment.armorPen(h, Element.WATER),
         equipment.firstStrikePct(h),
         equipment.extraSafeRound(h));
   }

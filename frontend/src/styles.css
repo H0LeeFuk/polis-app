@@ -794,3 +794,227 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
 .transport-panel .tp-line{display:flex;justify-content:space-between;gap:8px}
 .transport-panel .tp-warn{color:var(--bad);margin-top:4px}
 @media(max-width:760px){.lib-tree{grid-template-columns:1fr}}
+
+/* ============================================================ */
+/* Three-column game shell (nav · map · info)                   */
+/* ============================================================ */
+.game-shell{flex:1;min-height:0;display:grid;grid-template-columns:208px minmax(0,1fr) 312px;gap:12px;padding-top:12px;overflow:hidden}
+.game-shell.no-info{grid-template-columns:208px minmax(0,1fr)}
+
+/* left nav rail */
+.side-nav{display:flex;flex-direction:column;gap:3px;overflow:auto;padding-right:2px}
+.nav-group{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+  opacity:.85;margin:12px 8px 4px;display:flex;align-items:center;gap:6px}
+.nav-group:first-child{margin-top:2px}
+.nav-group::before{content:"◆";font-size:8px;color:var(--gold-deep)}
+.nav-item{position:relative;display:flex;align-items:center;gap:11px;background:rgba(26,19,14,0.55);border:1px solid transparent;
+  border-radius:11px;padding:10px 13px;color:var(--ivory);font-family:'Cinzel',serif;font-size:13.5px;font-weight:600;
+  letter-spacing:.04em;text-align:left;transition:background .12s,border-color .12s,color .12s}
+.nav-item:hover{background:rgba(42,30,22,0.95);border-color:var(--gold-deep);color:var(--gold)}
+.nav-ico{font-size:16px;width:20px;text-align:center;flex:0 0 auto}
+.nav-lbl{flex:1;text-transform:uppercase;font-size:12.5px}
+.nav-pip{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--gold);color:var(--slip);
+  font-family:'Cinzel';font-weight:700;font-size:11px;line-height:20px;text-align:center}
+.nav-pip.hostile{background:var(--bad);color:#fff}
+.nav-foot{margin-top:auto;padding:12px 10px 4px;font-size:11px;color:var(--ivory-dim);font-family:'Cinzel',serif;
+  border-top:1px solid #2a1f15}
+.server-clock{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:6px 10px;margin-bottom:4px;
+  background:rgba(20,14,10,0.6);border:1px solid #2a1f15;border-radius:9px;font-family:'Cinzel',serif}
+.sc-clock-day{font-size:11px;color:var(--ivory-dim);letter-spacing:.04em}
+.sc-clock-time{font-size:14px;font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums}
+
+/* centre stage */
+.stage{min-width:0;display:flex;flex-direction:column;border:1px solid #3a2a1d;border-radius:14px;overflow:hidden;background:#17100bcc}
+.stage-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;
+  border-bottom:1px solid #3a2a1d;background:rgba(15,10,7,0.5)}
+.map-tabs{display:flex;gap:6px}
+.map-tab{background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory-dim);padding:7px 15px;border-radius:9px;
+  font-family:'Cinzel',serif;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.map-tab:hover{background:#2c1f16;color:var(--gold)}
+.map-tab.active{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+.map-loc{font-family:'Cinzel',serif;font-size:13px;color:var(--gold);background:rgba(20,14,10,0.7);
+  border:1px solid var(--gold-deep);border-radius:10px;padding:6px 13px;white-space:nowrap}
+.stage-body{position:relative;flex:1;min-height:0;overflow:hidden}
+
+/* right info column */
+.side-info{display:flex;flex-direction:column;gap:12px;overflow:auto;padding-left:2px}
+.side-card{background:rgba(20,14,10,0.82);border:1px solid rgba(218,160,83,0.4);border-radius:14px;padding:12px 14px}
+.sc-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.sc-title{font-family:'Cinzel',serif;color:var(--gold);font-size:15px;font-weight:700;letter-spacing:.04em;
+  display:flex;align-items:center;gap:6px}
+.sc-sub{font-size:11px;color:var(--ivory-dim);font-family:'Cinzel',serif;letter-spacing:.06em;text-transform:uppercase}
+
+/* troops card (now static inside the info column) */
+.troops-panel{position:static;transform:none;width:auto;max-height:none;overflow:visible}
+.tp-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #2a1f15;font-size:13px}
+.tp-row:last-child{border-bottom:none}
+.tp-row.locked{opacity:.5}
+.tp-ico{font-size:18px;width:22px;text-align:center;flex:0 0 auto}
+.tp-main{flex:1;display:flex;flex-direction:column;line-height:1.2;min-width:0}
+.tp-name{color:var(--ivory);font-weight:600}
+.tp-role{color:var(--ivory-dim);font-size:10.5px}
+.tp-count{font-family:'Cinzel';font-weight:700;color:var(--gold);font-size:16px}
+
+/* movements card (now static inside the info column) */
+.city-moves{position:static;transform:none;right:auto;bottom:auto;width:auto;max-height:none;
+  background:rgba(20,14,10,0.82);border-color:rgba(218,160,83,0.4)}
+.cm-head{padding:0 0 8px;gap:8px}
+.cm-head-btn{flex:1;display:flex;justify-content:space-between;align-items:center;background:none;border:none;
+  color:var(--gold);font-family:'Cinzel';font-size:15px;font-weight:700;cursor:pointer;padding:0}
+.cm-expand{background:none;border:1px solid var(--gold-deep);color:var(--ivory-dim);border-radius:8px;
+  width:26px;height:26px;cursor:pointer;font-size:13px;flex:0 0 auto}
+.cm-expand:hover{color:var(--gold);border-color:var(--gold)}
+.cm-tabs{padding:0 0 8px}
+.cm-list{padding:0;max-height:240px}
+
+/* hero card */
+.hero-card{display:flex;flex-direction:column;gap:10px}
+.hero-card .hc-top{display:flex;align-items:center;gap:11px}
+.hc-portrait{position:relative;flex:0 0 auto;width:54px;height:54px;border-radius:12px;
+  background:radial-gradient(#e8d8b0,#c8a24e);display:flex;align-items:center;justify-content:center;font-size:28px;
+  border:2px solid var(--gold-deep)}
+.hc-lv{position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);background:#1c130e;border:1px solid var(--gold);
+  color:var(--gold);font-family:'Cinzel';font-weight:700;font-size:9px;padding:1px 6px;border-radius:999px;white-space:nowrap}
+.hc-id{flex:1;min-width:0}
+.hc-name{font-family:'Cinzel',serif;font-weight:700;font-size:15px;color:var(--ivory);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hc-title{font-size:11px}
+.hc-stat-row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ivory-dim);margin-bottom:3px}
+.hc-bar{height:7px;background:#2a1f15;border-radius:4px;overflow:hidden}
+.hc-bar > i{display:block;height:100%;background:linear-gradient(90deg,#d8ad53,#f2c94c)}
+.hero-card.empty{gap:8px}
+
+/* bottom action toolbar (centre stage) */
+.city-action-bar{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:9;display:flex;gap:8px;
+  padding:8px 10px;background:rgba(20,14,10,0.78);border:1px solid rgba(218,160,83,0.4);border-radius:16px;
+  box-shadow:0 6px 20px rgba(0,0,0,0.4)}
+.cab-btn{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:74px;background:#1c130e;
+  border:1px solid var(--gold-deep);color:var(--ivory);border-radius:11px;padding:9px 10px;
+  font-family:'Cinzel',serif;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.cab-btn:hover{background:#2c1f16;color:var(--gold)}
+.cab-btn:disabled{opacity:.4;cursor:default;color:var(--ivory-dim)}
+.cab-btn:disabled:hover{background:#1c130e;color:var(--ivory-dim)}
+.cab-ico{font-size:20px}
+.cab-btn.gold{background:linear-gradient(180deg,#e8c25f,#caa23f);color:var(--slip);border-color:#b8860b}
+.cab-btn.gold:hover{background:linear-gradient(180deg,#f2cf6e,#d8ad53);color:var(--slip)}
+/* construction queue sits at the very bottom; action toolbar floats above it */
+.city-build-bar{bottom:14px}
+
+/* enriched founding banner */
+.founding-banner{margin:8px 0 0;padding:12px 18px;gap:14px;
+  background:linear-gradient(180deg,rgba(122,90,34,0.32),rgba(40,28,12,0.55));border-radius:14px}
+.founding-banner .fb-ico{font-size:26px;width:46px;height:46px;display:flex;align-items:center;justify-content:center;
+  background:rgba(20,14,10,0.6);border:1px solid var(--gold-deep);border-radius:12px;flex:0 0 auto}
+.fb-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fb-title{font-family:'Cinzel',serif;font-weight:700;font-size:16px;color:var(--gold);letter-spacing:.05em;text-transform:uppercase}
+.fb-sub{font-size:13px;color:var(--ivory)}
+.fb-races{display:flex;gap:6px;margin-left:auto;flex:0 0 auto}
+.fb-race{width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:18px;
+  background:rgba(20,14,10,0.6);border:1px solid var(--gold-deep);border-radius:10px}
+.founding-banner .btn{margin-left:0;flex:0 0 auto;padding:9px 16px;font-family:'Cinzel',serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;background:linear-gradient(180deg,#e8c25f,#caa23f);color:var(--slip);border-color:#b8860b}
+
+/* quest bar (next mission nudge) */
+.quest-bar{display:flex;align-items:center;gap:12px;margin:8px 0 0;padding:8px 16px;
+  background:rgba(28,20,14,0.7);border:1px solid #3a2a1d;border-radius:12px;font-size:14px}
+.quest-flag{font-size:15px;color:var(--gold)}
+.quest-label{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ivory-dim)}
+.quest-text{color:var(--ivory);font-weight:600}
+.quest-link{margin-left:auto;background:none;border:none;color:var(--gold);font-family:'Cinzel',serif;font-size:13px;
+  font-weight:600;cursor:pointer;text-decoration:underline}
+.quest-x{background:none;border:none;color:var(--ivory-dim);font-size:15px;cursor:pointer}
+.quest-x:hover{color:var(--ivory)}
+
+@media(max-width:1080px){
+  .game-shell{grid-template-columns:64px minmax(0,1fr) 260px}
+  .game-shell.no-info{grid-template-columns:64px minmax(0,1fr)}
+  .nav-lbl,.nav-group span,.nav-foot{display:none}
+  .nav-item{justify-content:center;padding:11px 0}
+  .nav-ico{width:auto}
+}
+
+/* ============================================================ */
+/* Trade / marketplace + convoy logistics                       */
+/* ============================================================ */
+.toast.note{background:#10301aee;border-color:#5b9a3a;color:#d8f0c8}
+
+/* trade convoy in the movements panels */
+.mv-row.mv-trade{border-left-color:#caa23f}
+.mv-bar > i.mv-trade{background:#caa23f}
+
+.trade-window{width:min(880px,100%);max-height:min(88vh,760px)}
+.trade-cap{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 20px;border-bottom:1px solid rgba(255,255,255,0.07);
+  font-size:13px;color:var(--ivory)}
+.trade-cap b{color:var(--gold);font-family:'Cinzel',serif}
+.trade-cap .trade-gold{margin-left:auto;color:var(--gold);font-weight:700}
+.trade-cap small{flex-basis:100%}
+.trade-tabs{display:flex;gap:6px;padding:12px 20px 0}
+.trade-tab{background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory-dim);padding:7px 14px;border-radius:9px 9px 0 0;
+  font-family:'Cinzel',serif;font-size:13px;font-weight:600}
+.trade-tab.active{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+.trade-err{margin:10px 20px 0;background:#3a1a12;border:1px solid var(--bad);color:#f0b6a0;padding:7px 10px;border-radius:8px;
+  font-size:12.5px;cursor:pointer}
+
+.trade-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.trade-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.trade-col.solo{max-width:460px}
+.trade-h{margin:4px 0 2px;font-family:'Cinzel',serif;color:var(--gold);font-size:14px}
+@media(max-width:680px){.trade-grid{grid-template-columns:1fr}}
+
+.res-chips{display:flex;gap:6px}
+.res-chip{flex:1;background:#241a10;border:1px solid var(--gold-deep);color:var(--ivory);border-radius:10px;padding:8px;
+  font-family:'Cinzel',serif;font-size:13px}
+.res-chip.sel{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+
+.book{display:flex;flex-direction:column;border:1px solid #2a1f15;border-radius:10px;overflow:hidden}
+.book-row{display:grid;grid-template-columns:1fr .7fr 1fr 1.3fr;gap:8px;padding:7px 10px;font-size:12.5px;border-bottom:1px solid #2a1f15;align-items:center}
+.book-row:last-child{border-bottom:none}
+.book-head{background:rgba(255,255,255,0.04);color:var(--ivory-dim);font-family:'Cinzel',serif;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.book-row.mine{background:rgba(216,173,83,0.08)}
+.book-price{color:var(--gold);font-weight:700}
+.book-seller{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.trade-field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--ivory-dim)}
+.trade-field input,.trade-field select{background:#0f0a07;border:1px solid #4a3625;border-radius:8px;color:var(--ivory);
+  padding:8px 10px;font-family:'Spectral',serif;font-size:14px}
+
+.delivery-panel{display:flex;flex-direction:column;gap:5px;background:rgba(47,109,109,0.10);border:1px solid rgba(218,160,83,0.3);
+  border-radius:12px;padding:11px 13px}
+.dp-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--ivory-dim)}
+.dp-row b{color:var(--ivory)}
+.dp-row b.lack{color:var(--bad)}
+.dp-per{display:flex;flex-direction:column;gap:3px;border-top:1px dashed #3a2a1d;padding-top:5px;margin-top:3px}
+.dp-per-row{display:flex;justify-content:space-between;font-size:12px}
+.dp-note{font-size:12px;color:var(--gold);background:rgba(218,160,83,0.10);border-radius:8px;padding:5px 8px}
+
+.my-listings{display:flex;flex-direction:column;gap:8px}
+.ml-row{display:grid;grid-template-columns:1.2fr .8fr 1fr 1fr auto;gap:10px;align-items:center;padding:9px 11px;
+  border:1px solid #2a1f15;border-radius:10px;font-size:13px}
+.ml-res{font-weight:600;color:var(--ivory)}
+.ml-row .btn{width:auto;padding:5px 12px}
+
+.convoy-list{display:flex;flex-direction:column;gap:9px}
+.convoy-row{border:1px solid #3a2a1d;border-left:3px solid #caa23f;border-radius:10px;padding:9px 11px;background:rgba(0,0,0,0.2)}
+.convoy-row.pending{border-left-color:var(--ivory-dim);opacity:.85}
+.cv-top{display:flex;justify-content:space-between;align-items:center}
+.cv-route{color:var(--ivory)}.cv-route b{color:var(--gold)}
+.cv-eta{font-family:'Cinzel',serif;font-weight:700;color:var(--ivory)}
+.cv-sub{display:flex;justify-content:space-between;align-items:center;margin-top:3px;font-size:12px}
+.cv-cargo{display:flex;gap:8px;color:var(--ivory);font-weight:600}
+.cv-bar{height:5px;background:#2a1f15;border-radius:4px;overflow:hidden;margin-top:6px}
+.cv-bar > i{display:block;height:100%;background:#caa23f}
+
+/* alliance popup */
+.ally-section{display:flex;flex-direction:column;gap:6px}
+.ally-sub{font-family:'Cinzel',serif;color:var(--gold);font-size:13px;letter-spacing:.04em}
+.ally-members{display:flex;flex-direction:column;gap:2px}
+.ally-member{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border:1px solid #2a1f15;border-radius:8px}
+.ally-input{flex:1;background:#0f0a07;border:1px solid #4a3625;border-radius:8px;color:var(--ivory);padding:8px 10px;font-family:'Spectral',serif}
+.ally-invites{display:flex;flex-direction:column;gap:6px;border:1px solid var(--gold-deep);border-radius:10px;padding:10px;background:rgba(216,173,83,0.06)}
+.ally-invite{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px}
+.ally-forum-post{display:flex;flex-direction:column;gap:6px}
+.ally-forum-post .btn{align-self:flex-end;width:auto;padding:6px 16px}
+.ally-forum{display:flex;flex-direction:column;gap:8px;max-height:240px;overflow:auto}
+.ally-forum-row{border:1px solid #2a1f15;border-radius:10px;padding:8px 11px;font-size:13px}
+.ally-forum-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px}
+.slot-current{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--gold-deep);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:rgba(216,173,83,0.06)}
+.slot-choices{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}

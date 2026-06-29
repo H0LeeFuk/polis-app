@@ -15,4 +15,10 @@ public class GameController {
   public Map<String,Object> state(@RequestParam(required=false) Long cityId){
     return game.state(SecurityConfig.currentPlayerId(), cityId);
   }
+
+  /** Authoritative server clock — the client aligns its display to this (UTC epoch millis). */
+  @GetMapping("/time")
+  public Map<String,Object> time(){
+    return Map.of("epochMillis", System.currentTimeMillis());
+  }
 }

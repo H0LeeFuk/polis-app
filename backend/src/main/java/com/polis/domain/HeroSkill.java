@@ -6,7 +6,7 @@ package com.polis.domain;
  */
 public enum HeroSkill {
   CHARGE(5, 12),        // +25% attack power on the next offensive battle
-  PHALANX(10, 12),      // +30% SHARP defence on the next defence of its city
+  PHALANX(10, 12),      // +30% EARTH defence on the next defence of its city (Bulwark stance)
   FORCED_MARCH(15, 24), // next movement ignores 40% of travel time
   WAR_CRY(20, 24);      // no losses in the 1st round of the next fight
 

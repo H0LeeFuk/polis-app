@@ -35,12 +35,14 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
 
   function centerOnMyCity() {
     if (!data || !scroller.current) return;
-    const mine = data.islands.find(i => i.cities.some(c => c.faction === "self"));
+    // center on the island holding the currently SELECTED city, not just any of mine
+    const mine = data.islands.find(i => i.cities.some(c => c.id === activeCityId))
+      ?? data.islands.find(i => i.cities.some(c => c.faction === "self"));
     if (!mine) return;
     scroller.current.scrollLeft = mine.px + PAD_X - scroller.current.clientWidth / 2;
     scroller.current.scrollTop = mine.py + PAD_Y - scroller.current.clientHeight / 2;
   }
-  useEffect(() => { if (data) setTimeout(centerOnMyCity, 30); }, [data]);
+  useEffect(() => { if (data) setTimeout(centerOnMyCity, 30); }, [data, activeCityId]);
 
   if (!data) return <p className="muted">Charting the seas…</p>;
 
@@ -65,7 +67,8 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
   function sendRaid() {
     if (!raidTarget) return;
     const units = Object.fromEntries(Object.entries(raidCounts).filter(([, n]) => n > 0));
-    if (Object.keys(units).length === 0) { setErr("Select at least one unit"); return; }
+    // a lone hero may attack on its own — only block a truly empty order
+    if (Object.keys(units).length === 0 && raidHeroId == null) { setErr("Select at least one unit or a hero"); return; }
     act(() => doAttack(activeCityId, raidTarget.id, units, raidHeroId));
     setRaidTarget(null); setSelCity(null);
   }
@@ -95,6 +98,8 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
 
   const owner = worldPlayer(selCity?.playerId ?? null);
   const ownedCities = selCity ? playerCities(selCity.playerId) : [];
+  // bandit camp shows on a single island only — the player's first (home) island
+  const homeIslandId = data.islands.find(i => !i.resource && i.cities.some(c => c.faction === "self"))?.id;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
@@ -124,8 +129,8 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                 onClick={() => { if (!wasDragged()) openIsland(isl); }} title={`${isl.name} — ${free} free plot${free === 1 ? "" : "s"}`}>
                 <div className="island-land" style={{ borderRadius: blobRadius(isl.id) }}>
                   {mine && <span className="island-star">★</span>}
-                  {/* bandit camp — only on your home island */}
-                  {mine && <button className="bandit-camp-ico" title="Bandit Camp"
+                  {/* bandit camp — only on your first (home) island, so just one flag */}
+                  {isl.id === homeIslandId && <button className="bandit-camp-ico" title="Bandit Camp"
                     onClick={(e) => { e.stopPropagation(); if (!wasDragged()) setBanditIsland(isl); }}>🏴‍☠️</button>}
                   {/* one marker per empty plot so every free city slot is visible on the map */}
                   {Array.from({ length: SLOTS_PER_ISLAND }).map((_, slot) => {

@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-  getHeroes, setHeroAttributes, stationHero, armHeroSkill,
+  getHeroes, setHeroAttributes, armHeroSkill,
   getHeroInventory, equipHeroItem, unequipHeroSlot, getMissions,
 } from "../api";
 import type { Hero, HeroSkillDto, HeroItemDto, CitySummary } from "../types";
 
 const BUFF_LABEL: Record<string, string> = {
-  ATTACK_PCT: "Attack", DEFENSE_PCT: "Defense", DEFENSE_SHARP_PCT: "Sharp def", DEFENSE_BLUNT_PCT: "Blunt def",
-  DEFENSE_DISTANCE_PCT: "Distance def", TRAVEL_TIME_PCT: "Travel time", NAVAL_TRAVEL_TIME_PCT: "Naval speed",
+  ATTACK_PCT: "Attack", DEFENSE_PCT: "Defense", DEFENSE_FIRE_PCT: "Fire def", DEFENSE_WIND_PCT: "Wind def",
+  DEFENSE_EARTH_PCT: "Earth def", DEFENSE_WATER_PCT: "Water def", TRAVEL_TIME_PCT: "Travel time", NAVAL_TRAVEL_TIME_PCT: "Naval speed",
   LOOT_PCT: "Loot", DROP_CHANCE_PCT: "Drop chance", HERO_XP_PCT: "Hero XP", SKILL_COOLDOWN_PCT: "Skill cooldown",
   WOUND_RECOVERY_PCT: "Wound recovery", LOSS_REDUCTION_PCT: "Losses",
 };
@@ -21,7 +21,7 @@ const ATTRS = ["leadership", "cunning", "valor"] as const;
 type Attr = typeof ATTRS[number];
 const SKILL_DESC: Record<string, string> = {
   CHARGE: "+25% attack power on your next offensive battle.",
-  PHALANX: "+30% SHARP defence on the next defence of its city.",
+  PHALANX: "+30% EARTH defence on the next defence of its city.",
   FORCED_MARCH: "Your next movement ignores 40% of travel time.",
   WAR_CRY: "Your troops take no losses in the first round of the next fight.",
 };
@@ -68,7 +68,7 @@ export default function HeroPanel({ cities, onClose, onChanged, focusHeroKey }: 
           {loading ? <p className="muted" style={{ padding: 24 }}>Summoning your heroes…</p>
             : !active ? <p className="muted" style={{ padding: 24 }}>No heroes.</p>
               : !active.unlocked ? <LockedHero hero={active} starter={starter} />
-                : <HeroDashboard hero={active} cities={cities} onChanged={afterChange} />}
+                : <HeroDashboard hero={active} onChanged={afterChange} />}
         </div>
       </div>
     </div>
@@ -120,13 +120,17 @@ function Allocator({ pool, value, onChange }: {
   );
 }
 
-function HeroDashboard({ hero, cities, onChanged }: {
-  hero: Hero; cities: CitySummary[]; onChanged: (h: Hero) => void;
+function HeroDashboard({ hero, onChanged }: {
+  hero: Hero; onChanged: (h: Hero) => void;
 }) {
   const [alloc, setAlloc] = useState<Record<Attr, number>>({ leadership: 0, cunning: 0, valor: 0 });
   const [err, setErr] = useState("");
+  const [pickSlot, setPickSlot] = useState<string | null>(null);
+  const [inv, setInv] = useState<HeroItemDto[]>([]);
   const [, force] = useState(0);
   useEffect(() => { const t = setInterval(() => force(x => x + 1), 1000); return () => clearInterval(t); }, []);
+  // reload the shared relic inventory whenever this hero changes (equip/unequip updates it)
+  useEffect(() => { getHeroInventory().then(setInv).catch(() => setInv([])); }, [hero]);
 
   const spent = ATTRS.reduce((a, k) => a + alloc[k], 0);
   const xpPct = Math.min(100, Math.round((hero.currentXp / Math.max(1, hero.xpToNextLevel)) * 100));
@@ -184,52 +188,64 @@ function HeroDashboard({ hero, cities, onChanged }: {
       <div className="hero-equip-slots">
         {EQUIP_SLOTS.map(slot => {
           const it = hero.equipment[slot];
-          return <div className={"hero-slot" + (it ? " filled rar-" + it.rarity.toLowerCase() : "")} key={slot}
-            title={it ? "Click to unequip" : ""}
-            onClick={() => it && act(() => unequipHeroSlot(hero.id, slot.toUpperCase()))}>
+          return <button className={"hero-slot" + (it ? " filled rar-" + it.rarity.toLowerCase() : "")} key={slot}
+            title={it ? "Click to change or unequip" : "Click to equip an item"}
+            onClick={() => setPickSlot(slot)}>
             <span className="hero-slot-name">{slot}</span>
-            <span>{it ? it.name : `— no ${slot} —`}</span>
+            <span>{it ? it.name : "— empty —"}</span>
             {it && <small className="muted">{Object.entries(it.buffs).map(([b, v]) => `+${v}% ${BUFF_LABEL[b] ?? b}`).join(", ")}</small>}
             {it?.effectLabels?.map((lbl, i) => <small className="hero-slot-fx" key={i}>✦ {lbl}</small>)}
-          </div>;
+          </button>;
         })}
       </div>
-      <HeroInventory onEquip={(id) => act(() => equipHeroItem(hero.id, id))} reloadKey={hero} heroName={hero.name} />
-      <p className="muted" style={{ fontSize: 12 }}>Items are account-wide and can be on only one hero at a time; any hero equips any item.</p>
 
-      <div className="br-section-label">Station</div>
-      <div className="hero-station">
-        <select value={hero.stationedCityId ?? ""} disabled={hero.state !== "IDLE"}
-          onChange={e => act(() => stationHero(hero.id, Number(e.target.value)))}>
-          {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        {hero.state !== "IDLE" && <span className="muted">Available only while idle.</span>}
-      </div>
+      {pickSlot && <SlotPicker slot={pickSlot} hero={hero} items={inv} onClose={() => setPickSlot(null)}
+        onEquip={(id) => { act(() => equipHeroItem(hero.id, id)); setPickSlot(null); }}
+        onUnequip={() => { act(() => unequipHeroSlot(hero.id, pickSlot.toUpperCase())); setPickSlot(null); }} />}
 
       {err && <div className="hero-inline-err">{err}</div>}
     </div>
   );
 }
 
-function HeroInventory({ onEquip, reloadKey, heroName }: { onEquip: (id: number) => void; reloadKey: unknown; heroName: string }) {
-  const [items, setItems] = useState<HeroItemDto[]>([]);
-  useEffect(() => { getHeroInventory().then(setItems).catch(() => setItems([])); }, [reloadKey]);
-  // items not currently on THIS hero — free ones can be equipped, ones on the other hero are noted
-  const usable = items.filter(i => i.equippedOn !== heroName);
-  if (usable.length === 0) return <p className="muted" style={{ fontSize: 12 }}>No spare items — defeat island bosses to find more.</p>;
+/** Pick an item for one equipment slot — lists the slot's items, equip/unequip from here. */
+function SlotPicker({ slot, hero, items, onEquip, onUnequip, onClose }: {
+  slot: string; hero: Hero; items: HeroItemDto[];
+  onEquip: (id: number) => void; onUnequip: () => void; onClose: () => void;
+}) {
+  const equipped = hero.equipment[slot as keyof Hero["equipment"]];
+  const choices = items.filter(i => i.slot === slot.toUpperCase() && !i.equipped);
   return (
-    <div className="hero-inventory">
-      {usable.map(it => (
-        <div className={"hero-item rar-" + it.rarity.toLowerCase() + (it.seen ? "" : " unseen")} key={it.id}>
-          <div className="hero-item-head"><b>{it.name}</b>{!it.seen && <span className="hero-item-new">NEW</span>}</div>
-          <small className="muted">{it.slot} · {it.rarity}</small>
-          <small>{Object.entries(it.buffs).map(([b, v]) => `+${v}% ${BUFF_LABEL[b] ?? b}`).join(", ")}</small>
-          {it.effectLabels?.map((lbl, i) => <small className="hero-slot-fx" key={i}>✦ {lbl}</small>)}
-          {it.equippedOn
-            ? <span className="muted" style={{ fontSize: 11 }}>Equipped on {it.equippedOn}</span>
-            : <button className="btn ghost" onClick={() => onEquip(it.id)}>Equip</button>}
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-window" onClick={e => e.stopPropagation()} style={{ width: "min(460px,100%)" }}>
+        <div className="modal-header">
+          <h2>{slot.charAt(0).toUpperCase() + slot.slice(1)}</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-      ))}
+        <div className="modal-body">
+          {equipped && (
+            <div className="slot-current">
+              <div><b>{equipped.name}</b> <small className="muted">· equipped</small>
+                <div><small className="muted">{Object.entries(equipped.buffs).map(([b, v]) => `+${v}% ${BUFF_LABEL[b] ?? b}`).join(", ")}</small></div>
+              </div>
+              <button className="btn ghost danger" onClick={onUnequip}>Unequip</button>
+            </div>
+          )}
+          <div className="slot-choices">
+            {choices.length === 0
+              ? <p className="muted">No {slot} items available — defeat island bosses to find more.</p>
+              : choices.map(it => (
+                <div className={"hero-item rar-" + it.rarity.toLowerCase() + (it.seen ? "" : " unseen")} key={it.id}>
+                  <div className="hero-item-head"><b>{it.name}</b>{!it.seen && <span className="hero-item-new">NEW</span>}</div>
+                  <small className="muted">{it.rarity}</small>
+                  <small>{Object.entries(it.buffs).map(([b, v]) => `+${v}% ${BUFF_LABEL[b] ?? b}`).join(", ")}</small>
+                  {it.effectLabels?.map((lbl, i) => <small className="hero-slot-fx" key={i}>✦ {lbl}</small>)}
+                  <button className="btn" onClick={() => onEquip(it.id)}>Equip</button>
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

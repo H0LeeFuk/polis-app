@@ -7,8 +7,13 @@ import type {
 } from "../types";
 import { UNIT_GLYPH } from "../movements";
 
-const RES_GLYPH: Record<string, string> = { WOOD: "🪵", STONE: "🪨", SILVER: "🪙" };
-const RES_ORDER = ["WOOD", "STONE", "SILVER"];
+const RES_GLYPH: Record<string, string> = {
+  WOOD: "🪵", STONE: "🪨", WHEAT: "🌾",
+  COAL: "⬛", CRYSTALS: "💎", IRON: "⛓", PEARLS: "🫧",
+};
+const RES_ORDER = ["WOOD", "STONE", "WHEAT", "COAL", "CRYSTALS", "IRON", "PEARLS"];
+const ELEMENT_GLYPH: Record<string, string> = { FIRE: "🔥", WIND: "🌬", EARTH: "🌍", WATER: "💧" };
+const ELEMENT_ORDER = ["FIRE", "WIND", "EARTH", "WATER"];
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 const glyph = (t: string) => UNIT_GLYPH[t] ?? "⚔";
 const sumVals = (m: Record<string, number> | null | undefined) =>
@@ -181,10 +186,24 @@ export function ReportDetail({ report, onClose, onDeleted, onAttackAgain }: {
         <span>Defence Power: <b>{report.defenderTotalDefencePower.toLocaleString()}</b></span>
       </div>
 
+      {(report.attackByElement || report.defenseByElement) && (
+        <>
+          <div className="br-section-label">By element</div>
+          <div className="br-elements">
+            {ELEMENT_ORDER.filter(e => (report.attackByElement?.[e] ?? 0) > 0 || (report.defenseByElement?.[e] ?? 0) > 0).map(e => (
+              <div className="br-elem-row" key={e}>
+                <span>{ELEMENT_GLYPH[e]} {titleCase(e)}</span>
+                <span className="muted">⚔ {report.attackByElement?.[e] ?? 0} · 🛡 {report.defenseByElement?.[e] ?? 0}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="br-section-label">Plunder</div>
       {report.outcome === "VICTORY" && stolenTotal > 0 ? (
         <div className="br-plunder-box">
-          {RES_ORDER.map(k => (
+          {RES_ORDER.filter(k => (report.resourcesStolen[k] ?? 0) > 0).map(k => (
             <div className="br-plunder-row" key={k}>
               <span>{RES_GLYPH[k]} {titleCase(k)}</span><b>{report.resourcesStolen[k] ?? 0}</b>
             </div>

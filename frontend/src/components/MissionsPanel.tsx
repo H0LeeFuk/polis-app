@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getMissions, claimMission } from "../api";
 import type { Mission, MissionsData } from "../types";
 
-const REWARD_GLYPH: Record<string, string> = { wood: "🪵", stone: "🪨", silver: "🪙", heroXp: "✨" };
+const REWARD_GLYPH: Record<string, string> = { wood: "🪵", stone: "🪨", wheat: "🌾", silver: "🌾", heroXp: "✨" };
 const rewardText = (r: Record<string, number>) =>
   Object.entries(r).map(([k, v]) => `${REWARD_GLYPH[k] ?? ""}${v} ${k === "heroXp" ? "XP" : k}`).join(" · ");
 

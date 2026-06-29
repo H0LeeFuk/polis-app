@@ -130,18 +130,20 @@ public class IslandBossService {
         throw new IllegalStateException("That hero must be idle in this city");
       atkMult *= heroService.offenseMods(hero).attackMult();
     }
-    CombatEngine.Mods mods = new CombatEngine.Mods(atkMult, 1, 1, 1);
+    CombatEngine.Mods mods = new CombatEngine.Mods(atkMult, 1, 1, 1, 1, 1, 1);
     CombatEngine.CombatFx fx = hero != null ? heroService.combatFx(hero) : CombatEngine.CombatFx.none();
+    Element atkElement = city.getRace() != null ? city.getRace().element : Element.FIRE;
     // defenders computed live from the boss level so difficulty tuning applies to all bosses
     Map<String,Integer> defendersSnapshot = defendersFor(b.getLevel());
-    CombatEngine.Result r = combat.resolve(sent, defendersSnapshot, mods, fx);
+    double bossHeroAtk = hero != null ? heroService.baseAttack(hero) : 0;
+    CombatEngine.Result r = combat.resolve(sent, atkElement, defendersSnapshot, mods, fx, bossHeroAtk);
     boolean win = r.outcome() == BattleOutcome.VICTORY;
 
     deductLosses(cityId, r.attackerLost());
 
     // resources the city gains on a win — also shown on the battle report
     Map<String,Long> resourcesStolen = new LinkedHashMap<>();
-    resourcesStolen.put("WOOD", 0L); resourcesStolen.put("STONE", 0L); resourcesStolen.put("SILVER", 0L);
+    resourcesStolen.put("WOOD", 0L); resourcesStolen.put("STONE", 0L); resourcesStolen.put("WHEAT", 0L);
     if (win){ long amt = RESOURCE_PER_LEVEL * b.getLevel(); resourcesStolen.replaceAll((k,v) -> amt); }
 
     Map<String,Object> out = new LinkedHashMap<>();
@@ -173,7 +175,8 @@ public class IslandBossService {
         null, win ? 30 * b.getLevel() : 0, null, false);
     BattleResult res = new BattleResult(r.outcome(), sent, r.attackerLost(), r.attackerSurvived(),
         defendersSnapshot, r.defenderLost(), r.defenderSurvived(), resourcesStolen,
-        r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage());
+        r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage(),
+        r.attackByElement(), r.defenseByElement());
     reports.createPveReport(city.getWorldId(), playerId, cityId,
         "👹 " + b.getName() + " · Lv " + b.getLevel(), res, hp);
 
@@ -194,10 +197,10 @@ public class IslandBossService {
     long amt = RESOURCE_PER_LEVEL * level;
     city.setWood(Math.min(cap, city.getWood() + amt));
     city.setStone(Math.min(cap, city.getStone() + amt));
-    city.setSilver(Math.min(cap, city.getSilver() + amt));
+    city.setWheat(Math.min(cap, city.getWheat() + amt));
     cities.save(city);
     Map<String,Object> g = new LinkedHashMap<>();
-    g.put("wood", amt); g.put("stone", amt); g.put("silver", amt);
+    g.put("wood", amt); g.put("stone", amt); g.put("wheat", amt);
     return g;
   }
 }

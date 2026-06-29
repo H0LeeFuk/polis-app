@@ -26,11 +26,15 @@ public class LibraryService {
   }
 
   /** Accumulated, multiplier-ready effects of a city's completed Library research. */
-  public record LibEffects(double attackMult, double defenseMult, double sharpDefenseMult,
+  public record LibEffects(double attackMult, double defenseMult,
+                           double defFireMult, double defWindMult, double defEarthMult, double defWaterMult,
                            double travelMult, double prodMult, double lootMult, double trainTimeMult,
                            Set<String> flags){
-    public static LibEffects none(){ return new LibEffects(1,1,1,1,1,1,1,Set.of()); }
+    public static LibEffects none(){ return new LibEffects(1,1,1,1,1,1,1,1,1,1,Set.of()); }
     public boolean has(String f){ return flags.contains(f); }
+    public double defElementMult(com.polis.domain.Element e){
+      return switch (e){ case FIRE -> defFireMult; case WIND -> defWindMult; case EARTH -> defEarthMult; case WATER -> defWaterMult; };
+    }
   }
 
   public int libraryLevel(Long cityId){
@@ -61,7 +65,7 @@ public class LibraryService {
   @Transactional
   public LibEffects effects(Long cityId){
     settle(cityId, Instant.now());
-    double attack=0, defense=0, sharp=0, travel=0, prod=0, loot=0, train=0;
+    double attack=0, defense=0, dFire=0, dWind=0, dEarth=0, dWater=0, travel=0, prod=0, loot=0, train=0;
     Set<String> flags = new HashSet<>();
     for (CityLibraryResearch cr : research.findByCityId(cityId)){
       if (cr.getStatus()!=CityLibraryResearch.Status.COMPLETED) continue;
@@ -71,8 +75,10 @@ public class LibraryService {
         switch (e.getKey()){
           case "attack" -> attack += e.getValue();
           case "defense" -> defense += e.getValue();
-          case "defSharp" -> sharp += e.getValue();
-          case "defBlunt", "defDistance" -> defense += e.getValue();  // engine pools these into general defence
+          case "defFire"  -> dFire  += e.getValue();
+          case "defWind"  -> dWind  += e.getValue();
+          case "defEarth" -> dEarth += e.getValue();
+          case "defWater" -> dWater += e.getValue();
           case "travel", "navalTravel", "cityTravel" -> travel += e.getValue();
           case "production" -> prod += e.getValue();
           case "loot" -> loot += e.getValue();
@@ -82,8 +88,8 @@ public class LibraryService {
       }
       flags.addAll(def.flags());
     }
-    return new LibEffects(1+attack, 1+defense, 1+sharp, Math.max(0.2,1-travel),
-        1+prod, 1+loot, Math.max(0.2,1-train), flags);
+    return new LibEffects(1+attack, 1+defense, 1+dFire, 1+dWind, 1+dEarth, 1+dWater,
+        Math.max(0.2,1-travel), 1+prod, 1+loot, Math.max(0.2,1-train), flags);
   }
 
   // --- point economy ---------------------------------------------------------
@@ -101,9 +107,8 @@ public class LibraryService {
     return def.minLibraryLevel();
   }
   private int effectiveDuration(City c, LibraryTree.Research def){
-    double race = c.getRace()==Race.HUMANS ? 0.90 : 1.0;          // Humans research faster
     double lib = 1 - librarySpeedBonus(libraryLevel(c.getId()));  // higher Library level → faster research
-    return (int)Math.max(5, def.durationSeconds()*race*lib);
+    return (int)Math.max(5, def.durationSeconds()*lib);
   }
 
   /** Research-time reduction from the Library building level: 3% per level, capped at 60%. */
@@ -161,9 +166,9 @@ public class LibraryService {
     int count = research.findByCityId(cityId).size();
     if (count == 0) throw new IllegalStateException("No research to reset");
     long cost = 200L * count;   // resource cost scales with researches refunded
-    if (c.getWood()<cost || c.getStone()<cost || c.getSilver()<cost)
+    if (c.getWood()<cost || c.getStone()<cost || c.getWheat()<cost)
       throw new IllegalStateException("Re-spec costs " + cost + " of each resource");
-    c.setWood(c.getWood()-cost); c.setStone(c.getStone()-cost); c.setSilver(c.getSilver()-cost);
+    c.setWood(c.getWood()-cost); c.setStone(c.getStone()-cost); c.setWheat(c.getWheat()-cost);
     cities.save(c);
     research.deleteByCityId(cityId);
   }
@@ -238,7 +243,7 @@ public class LibraryService {
   private String affinityText(Race r){
     if (r==null) return null;
     return switch (r){
-      case HUMANS -> "Human scholars — research 10% faster on all branches";
+      case HUMANS -> null;
       case GIANTS -> "Giant might — War tier-1 researches cost 1 less point";
       case FAIRIES -> "Fairy wit — Lore & Dominion tier-1 researches cost 1 less point";
       case NEWTS -> "Newt mastery — Tidecraft costs 1 less and unlocks a level earlier";

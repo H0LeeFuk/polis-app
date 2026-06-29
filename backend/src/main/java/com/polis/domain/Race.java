@@ -15,10 +15,11 @@ import java.util.Map;
  */
 public enum Race {
   // Races are pure cosmetic identity now — no passive bonuses. All multipliers are neutral (1.0).
-  HUMANS("Humans",  "Balanced and adaptable settlers of the Aegean.",  "🏛", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
-  GIANTS("Giants",  "Towering brutes who raise cities of stone.",       "🗿", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
-  FAIRIES("Fairies","Swift and graceful folk of the glades.",           "🧚", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
-  NEWTS("Newts",    "Amphibious raiders at home on the open sea.",      "🦎", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+  // Each race attacks with one ELEMENT and produces one SPECIAL resource (for its elite units).
+  HUMANS("Humans",  "Balanced and adaptable settlers of the Aegean.",  "🏛", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, Element.FIRE,  ResourceType.COAL),
+  GIANTS("Giants",  "Towering brutes who raise cities of stone.",       "🗿", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, Element.EARTH, ResourceType.IRON),
+  FAIRIES("Fairies","Swift and graceful folk of the glades.",           "🧚", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, Element.WIND,  ResourceType.CRYSTALS),
+  NEWTS("Newts",    "Amphibious raiders at home on the open sea.",      "🦎", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, Element.WATER, ResourceType.PEARLS);
 
   public final String displayName;
   public final String description;
@@ -35,13 +36,19 @@ public enum Race {
   public final double lootMult;
   /** Multiplier on Library research cost (<1 cheaper). */
   public final double researchCostMult;
+  /** The element every unit trained in this race's cities attacks with. */
+  public final Element element;
+  /** The special resource this race produces and spends on its elite units. */
+  public final ResourceType specialResource;
 
   Race(String displayName, String description, String icon,
        double prodMult, double attackMult, double defenseMult,
-       double travelMult, double lootMult, double researchCostMult){
+       double travelMult, double lootMult, double researchCostMult,
+       Element element, ResourceType specialResource){
     this.displayName = displayName; this.description = description; this.icon = icon;
     this.prodMult = prodMult; this.attackMult = attackMult; this.defenseMult = defenseMult;
     this.travelMult = travelMult; this.lootMult = lootMult; this.researchCostMult = researchCostMult;
+    this.element = element; this.specialResource = specialResource;
   }
 
   /** Races carry no passive bonuses — always empty. */
@@ -53,6 +60,8 @@ public enum Race {
     m.put("name", displayName);
     m.put("description", description);
     m.put("icon", icon);
+    m.put("element", element.name());
+    m.put("specialResource", specialResource.name());
     m.put("bonuses", bonusesPct());
     return m;
   }

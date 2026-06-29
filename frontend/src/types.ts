@@ -4,16 +4,23 @@ export interface PlayerDto {
   citySlots: number; ownedCities: number; totalPoints: number; gold: number; alliance?: string;
 }
 export interface CitySummary { id: number; name: string; points: number; capital: boolean; island: string; }
-export interface Resources { wood: number; stone: number; silver: number; capacity: number; favor: number; woodProd: number; stoneProd: number; silverProd: number; favorProd: number; }
+export type ResourceId = "WOOD" | "STONE" | "WHEAT" | "COAL" | "CRYSTALS" | "IRON" | "PEARLS";
+export interface Resources {
+  wood: number; stone: number; wheat: number; capacity: number;
+  special: number; specialResource: ResourceId;
+  woodProd: number; stoneProd: number; wheatProd: number; specialProd: number;
+  otherSpecials: Record<string, number>;
+}
 export interface BuildingDto { type: string; level: number; max: number; pop: number; cost: number[]; seconds: number; atMax: boolean; benefit?: string; }
 export interface QueueJob { id: number; position: number; totalSeconds: number; finishAt: string | null; label: string; toLevel?: number; batch?: number; }
 export interface UnitDto { type: string; count: number; }
-export type AttackType = "BLUNT" | "SHARP" | "DISTANCE" | "SIEGE";
+export type Element = "FIRE" | "WIND" | "EARTH" | "WATER";
 export type MovementClass = "LAND" | "FLYING" | "SWIMMING";
 export interface Trainable {
-  type: string; from: string; kind: string; attackType: AttackType;
-  atk: number; defBlunt: number; defSharp: number; defDistance: number;
+  type: string; from: string; kind: string; siege: boolean; attackElement: Element | null;
+  atk: number; defFire: number; defWind: number; defEarth: number; defWater: number;
   speed: number; pop: number; carry: number; cost: number[]; seconds: number; unlocked: boolean;
+  elite: boolean; costSpecial: number; specialResource: ResourceId | null;
   movementClass: MovementClass; transportCapacity: number; requiresTransport: boolean;
 }
 export interface ResearchDto { type: string; req: number; done: boolean; cost: number[]; }
@@ -24,6 +31,7 @@ export type RaceId = "HUMANS" | "GIANTS" | "FAIRIES" | "NEWTS";
 /** Seeded race config sent by the server (city detail, world slots). */
 export interface RaceInfo {
   id: RaceId; name: string; description: string; icon: string;
+  element?: Element; specialResource?: ResourceId;
   bonuses: Record<string, number>;   // signed percentages: production, attack, defense, travel, loot, researchSpeed
 }
 export interface IslandSlot {
@@ -50,8 +58,8 @@ export interface FoundingStatus {
 /** Rich movement view from /api/cities/{id}/movements and /api/players/me/movements. */
 export interface Movement {
   id: number;
-  type: "ATTACK" | "RETURN" | "COLONY" | "SUPPORT" | "SETTLE";
-  status: "TRAVELLING" | "RETURNING" | "SETTLING";
+  type: "ATTACK" | "RETURN" | "COLONY" | "SUPPORT" | "SETTLE" | "TRADE";
+  status: "TRAVELLING" | "RETURNING" | "SETTLING" | "PENDING";
   originCityId: number | null;
   originCity: string;
   targetCityId: number | null;
@@ -94,7 +102,47 @@ export interface WorldIsland { id: number; name: string; px: number; py: number;
 export interface WorldPlayer { id: number; name: string; level: number; combatPoints: number; }
 export interface WorldData { islands: WorldIsland[]; players: WorldPlayer[]; }
 export interface InboxMsg { id: number; from: string; body: string; sentAt: string; read: boolean; }
+
+// --- trade / marketplace + convoy logistics ---
+export interface MarketBookRow {
+  listingId: number; pricePerBundle: number; bundles: number; seller: string; mine: boolean;
+  sourceCityId: number; sourceCity: string; sourceIsland: string;
+}
+export interface MyListing { listingId: number; resourceType: string; bundles: number; pricePerBundle: number; sourceCity: string; }
+export interface TradeConvoyDto {
+  id: number; status: "PENDING" | "IN_TRANSIT" | "DELIVERED";
+  origin: string; destination: string; originCityId: number; destinationCityId: number;
+  cargo: Record<string, number>; departAt: string | null; arriveAt: string | null;
+}
+export interface DeliveryCity { id: number; name: string; island: string; }
+export interface TradeMarket {
+  cityId: number; cityName: string;
+  marketLevel: number; convoyCapacity: number; maxSimultaneousConvoys: number;
+  convoySpeedMinutesPerTile: number; bundleSize: number; gold: number;
+  deliveryCities: DeliveryCity[];
+  book: Record<string, MarketBookRow[]>;
+  myListings: MyListing[];
+  convoys: TradeConvoyDto[];
+}
+export interface BuyPreview {
+  filledBundles: number; requestedBundles: number; totalGold: number; affordable: boolean; gold: number;
+  marketLevel: number; convoyCapacity: number; maxSimultaneousConvoys: number;
+  convoyCount: number; totalDeliveryTime: number;
+  perConvoy: { sourceCity: string; units: number; convoys: number; etaSeconds: number }[];
+  splitReason: string | null;
+}
 export interface RankRow { name: string; value: number; sub: string; }
+
+// --- alliances ---
+export interface AllianceMember { id: number; name: string; level: number; leader: boolean; }
+export interface AllianceForumPostDto { id: number; author: string; body: string; at: string; }
+export interface AllianceInviteDto { allianceId: number; tag: string; name: string; invitedBy: string | null; }
+export interface AllianceView {
+  inAlliance: boolean;
+  id?: number; tag?: string; name?: string; isLeader?: boolean;
+  members?: AllianceMember[]; pendingInvites?: { name: string }[]; forum?: AllianceForumPostDto[];
+  invites?: AllianceInviteDto[];
+}
 
 // --- battle reports ---
 export type BattleOutcome = "VICTORY" | "DEFEAT" | "DRAW";
@@ -141,6 +189,8 @@ export interface BattleReport {
   attackerTotalAttackPower: number;
   defenderTotalDefencePower: number;
   siegeDamage: number;
+  attackByElement: Record<string, number>;
+  defenseByElement: Record<string, number>;
   heroName: string | null;
   heroLevel: number;
   heroAttackBonusPct: number;
@@ -216,10 +266,10 @@ export interface MissionsData { missions: Mission[]; starterDone: number; starte
 
 // --- resource nodes ---
 export type NodeStatus = "UNCLAIMED" | "CONTROLLED" | "CONTESTED";
-export type NodeType = "SACRED_GROVE" | "MARBLE_QUARRY" | "SILVER_VEIN";
+export type NodeType = "SACRED_GROVE" | "MARBLE_QUARRY" | "WHEAT_FIELD";
 export interface ResourceNode {
   id: number; islandId: number; islandName: string; x: number; y: number;
-  nodeType: NodeType; producedResource: "WOOD" | "STONE" | "SILVER";
+  nodeType: NodeType; producedResource: "WOOD" | "STONE" | "WHEAT";
   level: number; status: NodeStatus;
   controllingPlayerId: number | null; controllingPlayerName: string | null;
   controllingAllianceId: number | null; controllingAllianceName: string | null;

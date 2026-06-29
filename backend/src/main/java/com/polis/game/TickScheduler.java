@@ -30,17 +30,18 @@ public class TickScheduler {
   private final SettleService settleService;
   private final LibraryService library;
   private final BanditCampService banditCamps;
+  private final TradeService trade;
 
   public TickScheduler(CityService cityService, CityFactory cityFactory, CityRepo cities, UnitRepo units,
                        JobRepo jobs, MovementRepo movements, PlayerRepo players, BattleReportService reports,
                        CombatEngine combat, UnitCatalog catalog, HeroService heroService, HeroRepo heroRepo,
                        NodeService nodeService, ResourceNodeRepo resourceNodes, SettleService settleService,
-                       LibraryService library, BanditCampService banditCamps){
+                       LibraryService library, BanditCampService banditCamps, TradeService trade){
     this.cityService=cityService; this.cityFactory=cityFactory; this.cities=cities; this.units=units;
     this.jobs=jobs; this.movements=movements; this.players=players; this.reports=reports;
     this.combat=combat; this.catalog=catalog; this.heroService=heroService; this.heroRepo=heroRepo;
     this.nodeService=nodeService; this.resourceNodes=resourceNodes; this.settleService=settleService;
-    this.library=library; this.banditCamps=banditCamps;
+    this.library=library; this.banditCamps=banditCamps; this.trade=trade;
   }
 
   @Scheduled(fixedDelayString = "${polis.tick.interval-ms}")
@@ -78,6 +79,10 @@ public class TickScheduler {
 
     // foundings the player never completed: send the hero home, free the slot
     settleService.releaseAbandoned(now);
+
+    // trade logistics: deliver arrived convoys, then dispatch queued ones into freed slots
+    trade.deliverDue(now);
+    trade.dispatchPending(now);
   }
 
   private void resolveColony(Movement m){
@@ -113,10 +118,16 @@ public class TickScheduler {
     mods = new CombatEngine.Mods(
         mods.attackMult() * (atkRace!=null ? atkRace.attackMult : 1.0) * atkLib.attackMult(),
         mods.defenseMult() * (tgt.getRace()!=null ? tgt.getRace().defenseMult : 1.0) * defLib.defenseMult(),
-        mods.sharpDefenseMult() * defLib.sharpDefenseMult(), mods.attackerLossMult());
+        mods.defFireMult()  * defLib.defFireMult(),
+        mods.defWindMult()  * defLib.defWindMult(),
+        mods.defEarthMult() * defLib.defEarthMult(),
+        mods.defWaterMult() * defLib.defWaterMult(),
+        mods.attackerLossMult());
 
+    Element atkElement = atkRace != null ? atkRace.element : Element.FIRE;
     CombatEngine.CombatFx fx = attackerHero != null ? heroService.combatFx(attackerHero) : CombatEngine.CombatFx.none();
-    CombatEngine.Result r = combat.resolve(attackerSent, defenderPresent, mods, fx);
+    double heroAtk = attackerHero != null ? heroService.baseAttack(attackerHero) : 0;
+    CombatEngine.Result r = combat.resolve(attackerSent, atkElement, defenderPresent, mods, fx, heroAtk);
     BattleOutcome outcome = r.outcome();
 
     // apply defender casualties back to the garrison
@@ -135,21 +146,28 @@ public class TickScheduler {
       }
     }
 
-    // plunder: victory only — surviving attackers carry off resources up to their carry capacity
+    // plunder: victory only — surviving attackers carry off resources up to their carry capacity.
+    // Base resources are lootable from anyone; a special resource only from a city of its race.
     Map<String,Long> resourcesStolen = new LinkedHashMap<>();
-    resourcesStolen.put("WOOD",0L); resourcesStolen.put("STONE",0L); resourcesStolen.put("SILVER",0L);
+    resourcesStolen.put("WOOD",0L); resourcesStolen.put("STONE",0L); resourcesStolen.put("WHEAT",0L);
     Map<String,Long> loot = null;
     if (outcome == BattleOutcome.VICTORY){
       long carry = armyCarry(r.attackerSurvived());
       if (atkRace != null) carry = (long)(carry * atkRace.lootMult);                    // race loot bonus
       carry = (long)(carry * atkLib.lootMult());                                        // Library loot research
       if (attackerHero != null) carry = (long)(carry * heroService.lootMult(attackerHero)); // Cunning
-      long pool = (long)(tgt.getWood()+tgt.getStone()+tgt.getSilver());
+      // lootable pool: the three base resources + the target's OWN race special (race-locked source)
+      List<ResourceType> lootable = new ArrayList<>(List.of(ResourceType.WOOD, ResourceType.STONE, ResourceType.WHEAT));
+      if (tgt.getRace() != null) lootable.add(tgt.getRace().specialResource);
+      long pool = 0; for (ResourceType rt : lootable) pool += (long) tgt.get(rt);
       long want = Math.min(carry, pool);
       if (want > 0 && pool > 0){
-        long lw=(long)(want*tgt.getWood()/pool), ls=(long)(want*tgt.getStone()/pool), lv=(long)(want*tgt.getSilver()/pool);
-        tgt.setWood(tgt.getWood()-lw); tgt.setStone(tgt.getStone()-ls); tgt.setSilver(tgt.getSilver()-lv);
-        resourcesStolen.put("WOOD",lw); resourcesStolen.put("STONE",ls); resourcesStolen.put("SILVER",lv);
+        for (ResourceType rt : lootable){
+          long taken = (long)(want * tgt.get(rt) / pool);
+          if (taken <= 0) continue;
+          tgt.add(rt, -taken);
+          resourcesStolen.merge(rt.name(), taken, Long::sum);
+        }
         loot = new HashMap<>(resourcesStolen);
       }
     }
@@ -167,7 +185,8 @@ public class TickScheduler {
     reports.createReport(m, new BattleResult(outcome,
         attackerSent, r.attackerLost(), r.attackerSurvived(),
         defenderPresent, r.defenderLost(), r.defenderSurvived(),
-        resourcesStolen, r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage()), hp);
+        resourcesStolen, r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage(),
+        r.attackByElement(), r.defenseByElement()), hp);
 
     // the army (and any attacking hero) marches home unless wiped with no hero present
     if (r.attackerSurvived().isEmpty() && attackerHero == null) return;
@@ -193,7 +212,10 @@ public class TickScheduler {
     Hero attackerHero = heroRepo.findByActiveMovementId(m.getId()).orElse(null);
     CombatEngine.Mods mods = attackerHero != null ? heroService.offenseMods(attackerHero) : CombatEngine.Mods.none();
     CombatEngine.CombatFx fx = attackerHero != null ? heroService.combatFx(attackerHero) : CombatEngine.CombatFx.none();
-    CombatEngine.Result r = combat.resolve(attackerSent, defenderPresent, mods, fx);
+    City nSrc = cities.findById(m.getSourceCityId()).orElse(null);
+    Element nElement = nSrc!=null && nSrc.getRace()!=null ? nSrc.getRace().element : Element.FIRE;
+    double nHeroAtk = attackerHero != null ? heroService.baseAttack(attackerHero) : 0;
+    CombatEngine.Result r = combat.resolve(attackerSent, nElement, defenderPresent, mods, fx, nHeroAtk);
 
     Long formerController = node.getControllingPlayerId();
     if (r.outcome() == BattleOutcome.VICTORY){
@@ -213,7 +235,8 @@ public class TickScheduler {
     HeroParticipation hp = resolveHero(attackerHero, null, r, r.outcome(), now);
     reports.createNodeReport(m, new BattleResult(r.outcome(), attackerSent, r.attackerLost(), r.attackerSurvived(),
         defenderPresent, r.defenderLost(), r.defenderSurvived(),
-        Map.of("WOOD",0L,"STONE",0L,"SILVER",0L), r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage()),
+        Map.of("WOOD",0L,"STONE",0L,"WHEAT",0L), r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage(),
+        r.attackByElement(), r.defenseByElement()),
         hp, nodeService.label(node), formerController);
 
     if (r.attackerSurvived().isEmpty() && attackerHero == null) return;
@@ -230,7 +253,8 @@ public class TickScheduler {
   private CombatEngine.Mods combinedMods(Hero attackerHero, Hero defenderHero){
     CombatEngine.Mods atk = attackerHero != null ? heroService.offenseMods(attackerHero) : CombatEngine.Mods.none();
     CombatEngine.Mods def = defenderHero != null ? heroService.defenseMods(defenderHero) : CombatEngine.Mods.none();
-    return new CombatEngine.Mods(atk.attackMult(), def.defenseMult(), def.sharpDefenseMult(), atk.attackerLossMult());
+    return new CombatEngine.Mods(atk.attackMult(), def.defenseMult(),
+        def.defFireMult(), def.defWindMult(), def.defEarthMult(), def.defWaterMult(), atk.attackerLossMult());
   }
 
   /** Applies XP / wounds / skill cooldowns to participating heroes and returns the report snapshot. */
@@ -278,9 +302,11 @@ public class TickScheduler {
     }
     if (loot != null){
       long cap = cityService.capacity(home.getId());
-      home.setWood(Math.min(cap, home.getWood()+loot.getOrDefault("WOOD",0L)));
-      home.setStone(Math.min(cap, home.getStone()+loot.getOrDefault("STONE",0L)));
-      home.setSilver(Math.min(cap, home.getSilver()+loot.getOrDefault("SILVER",0L)));
+      for (var e : loot.entrySet()){
+        if (e.getValue()==null || e.getValue()<=0) continue;
+        ResourceType rt; try { rt = ResourceType.valueOf(e.getKey()); } catch (Exception ex){ continue; }
+        home.set(rt, Math.min(cap, home.get(rt)+e.getValue()));
+      }
       cities.save(home);
     }
   }

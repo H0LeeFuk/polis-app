@@ -116,7 +116,7 @@ public class NodeService {
 
   public String label(ResourceNode n){
     String t = switch (n.getNodeType()){
-      case SACRED_GROVE -> "Sacred Grove"; case MARBLE_QUARRY -> "Marble Quarry"; case SILVER_VEIN -> "Silver Vein";
+      case SACRED_GROVE -> "Sacred Grove"; case MARBLE_QUARRY -> "Marble Quarry"; case WHEAT_FIELD -> "Wheat Field";
     };
     return t + " — Lv " + n.getLevel();
   }
@@ -246,9 +246,10 @@ public class NodeService {
       if (amount > 0 && allianceId != null){
         alliances.findById(allianceId).ifPresent(a -> {
           switch (n.getNodeType().producedResource){
-            case WOOD   -> a.setTreasuryWood(a.getTreasuryWood() + amount);
-            case STONE  -> a.setTreasuryStone(a.getTreasuryStone() + amount);
-            case SILVER -> a.setTreasurySilver(a.getTreasurySilver() + amount);
+            case WOOD  -> a.setTreasuryWood(a.getTreasuryWood() + amount);
+            case STONE -> a.setTreasuryStone(a.getTreasuryStone() + amount);
+            case WHEAT -> a.setTreasuryWheat(a.getTreasuryWheat() + amount);
+            default -> {}
           }
           alliances.save(a);
         });

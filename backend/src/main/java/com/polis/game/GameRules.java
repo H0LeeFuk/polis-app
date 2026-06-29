@@ -8,16 +8,15 @@ import java.util.Map;
 public final class GameRules {
   private GameRules(){}
 
-  public static int farmPop(int level){ return level<=0 ? 0 : (int)Math.round(40*Math.pow(1.32, level-1)); }
+  // ~75 pop per Farm level → 3000 at max (level 40); buildings cost ~1000 pop maxed, leaving ~2000 free.
+  public static int farmPop(int level){ return level<=0 ? 0 : 75*level; }
   // TEST MODE: huge storage cap so resources never block building/training.
   public static long storeCap(int level){ return 2_000_000_000L; }
   public static double prodPerHour(int level){ return level<=0 ? 5 : Math.round(28*Math.pow(1.21, level-1)); }
-  public static int favorCap(int templeLevel){ return templeLevel<=0 ? 0 : (int)Math.round(120+templeLevel*60.0); }
-  public static double favorPerHour(int templeLevel){ return templeLevel<=0 ? 0 : 8+templeLevel*4.0; }
 
   public static long[] buildCost(BuildingType b, int level){
     double m=Math.pow(b.mul, level);
-    return new long[]{ Math.round(b.baseWood*m), Math.round(b.baseStone*m), Math.round(b.baseSilver*m) };
+    return new long[]{ Math.round(b.baseWood*m), Math.round(b.baseStone*m), Math.round(b.baseWheat*m) };
   }
   public static int buildSeconds(BuildingType b, int level, int senateLevel){
     double t=b.baseTime*Math.pow(1.28, level);
