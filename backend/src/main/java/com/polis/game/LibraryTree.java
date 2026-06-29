@@ -61,7 +61,8 @@ public final class LibraryTree {
     r("siegecraft", LibraryBranch.LORE,2,"Siegecraft","Unlocks siege engines",8,D2,8,List.of(),false,e(),"siege"),
     r("abundance",  LibraryBranch.LORE,2,"Abundance","+10% resource production",4,D2,0,List.of("pack_trains"),false,e("production",0.10)),
     r("dominion",   LibraryBranch.LORE,3,"Dominion","Enables conquering enemy cities",12,D3,15,List.of("siegecraft"),false,e(),"dominion"),
-    r("grand_roads",LibraryBranch.LORE,3,"Grand Roads","−20% travel between your cities",6,D3,14,List.of("tidecraft"),false,e("cityTravel",0.20))
+    r("grand_roads",LibraryBranch.LORE,3,"Grand Roads","−20% travel between your cities",6,D3,14,List.of("tidecraft"),false,e("cityTravel",0.20)),
+    r("deepforges", LibraryBranch.LORE,2,"Deepforges","−15% naval unit training time",4,D2,0,List.of("tidecraft"),false,e("navalTrainSpeed",0.15))
   );
 
   private static final Map<String,Research> BY_ID = new LinkedHashMap<>();

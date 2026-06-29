@@ -14,4 +14,6 @@ public class Island {
   private int py;
   private long seed;
   @Column(name="is_resource") private boolean resource = false;
+  /** Disc tier from the Heart: 1 core (strong), 2 mid, 3 outer (spawn). 0 = resource/wonder island. */
+  private int tier = 0;
 }

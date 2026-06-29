@@ -3,21 +3,26 @@ import {
   getState, doBuild, doTrain, doCancel, doRename, doFinish, getInbox, getMyMovements,
   getUnreadReportCount, doAttack, getHeroes, getFoundingStatus, getMissions, getTradeDeliveries, assignHero,
   createAlliance, getServerTime, getMyAlliance, inviteToAlliance, acceptAllianceInvite, declineAllianceInvite, postAllianceForum,
-  deassignHero,
+  deassignHero, getTemple, runFestival,
 } from "../api";
-import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements, UnitDto, Hero, FoundingStatus, Trainable, AllianceView } from "../types";
+import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements, UnitDto, Hero, FoundingStatus, Trainable, ShipRole, TempleState, AllianceView, BuildingDto } from "../types";
 import { FoundingBanner, FoundCityModal, RaceBadge, RACES } from "./FoundCity";
 import MissionsPanel from "./MissionsPanel";
 import InventoryModal from "./InventoryModal";
+import { EndgamePanel } from "./WondersPanel";
 import LibraryPanel from "./LibraryPanel";
 import TradePanel from "./TradePanel";
 import { buildingSvg, constructionSvg, emptyPlotSvg } from "../buildings";
+import { PLACEMENTS, PLACEMENT_BY_TYPE, TERRAIN_URL, SCENE_W, SCENE_H, ICON_BASE, type Placement } from "../cityScene";
+import SpyPanel from "./SpyPanel";
 import WorldView from "./WorldView";
 import Rankings from "./Rankings";
 import MovementsOverview from "./MovementsOverview";
 import BattleReports from "./BattleReports";
 import HeroPanel from "./HeroPanel";
 import { CityMovementsPanel, TravelPreview, UnitTooltip, HeroPicker, HERO_GLYPH, UNIT_GLYPH } from "../movements";
+import leoImg from "../assets/leo.png";
+import titaniaImg from "../assets/titania.png";
 
 const fmt = (n: number) => n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : Math.floor(n).toString();
 const RES_GLYPH: Record<string, string> = {
@@ -27,6 +32,31 @@ const RES_GLYPH: Record<string, string> = {
 /** Lowercased resource key for a ResourceType id (WOOD -> wood, COAL -> coal). */
 const resKey = (id: string) => id.toLowerCase();
 const ELEMENT_GLYPH: Record<string, string> = { FIRE: "🔥", WIND: "🌬", EARTH: "🌍", WATER: "💧" };
+
+// hero portrait art, keyed by heroKey; accent/glow drive badges, status, XP fill, silhouette
+const HERO_IMG: Record<string, string> = { LEO: leoImg, TITANIA: titaniaImg };
+const HERO_ACCENT: Record<string, { accent: string; glow: string }> = {
+  LEO: { accent: "#e0995e", glow: "#e8584a" },
+  TITANIA: { accent: "#6fae4f", glow: "#8fe6b0" },
+};
+const heroSilhouette = (accent: string, glow: string, name: string) => {
+  const s = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 312 460'>
+    <defs><radialGradient id='g' cx='50%' cy='30%' r='60%'>
+      <stop offset='0%' stop-color='${accent}' stop-opacity='0.32'/>
+      <stop offset='100%' stop-color='${accent}' stop-opacity='0'/></radialGradient></defs>
+    <rect width='312' height='460' fill='#0d0907'/>
+    <rect width='312' height='460' fill='url(#g)'/>
+    <g fill='${accent}' fill-opacity='0.5'>
+      <circle cx='156' cy='128' r='54'/>
+      <path d='M52 300 Q52 214 156 214 Q260 214 260 300 Z'/></g>
+    <text x='156' y='250' text-anchor='middle' font-family='Inter, Arial, sans-serif'
+      font-size='12' font-weight='700' letter-spacing='1.4'
+      fill='#c2b1a6' fill-opacity='0.85'>DROP ${name.toUpperCase()} ART</text>
+  </svg>`;
+  return "data:image/svg+xml," + encodeURIComponent(s);
+};
+// preload both portraits once so tab switches don't flash
+[leoImg, titaniaImg].forEach(src => { const im = new Image(); im.src = src; });
 const MOVE_BADGE: Record<string, string> = { LAND: "🚶", FLYING: "🕊", SWIMMING: "🌊" };
 const MOVE_LABEL: Record<string, string> = {
   LAND: "Land — needs a transport ship to cross open water",
@@ -60,7 +90,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [state, setState] = useState<GameState | null>(null);
   const [activeCityId, setActiveCityId] = useState<number | undefined>(undefined);
   const [tab, setTab] = useState<"city" | "world">("city");
-  const [modal, setModal] = useState<"rankings" | "profile" | "alliance" | "messages" | null>(null);
+  const [modal, setModal] = useState<"rankings" | "profile" | "alliance" | "messages" | "endgame" | null>(null);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -235,7 +265,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         </div>
       )}
 
-      <div className={"game-shell" + (tab === "world" ? " no-info" : "")}>
+      <div className="game-shell">
         <SideNav
           unreadReports={unreadReports} claimable={claimable}
           heroPts={heroes.reduce((a, h) => a + (h.unlocked ? h.unspentAttributePoints : 0), 0)}
@@ -248,7 +278,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
           <div className="stage-bar">
             <div className="map-tabs">
               <button className="map-tab active" onClick={() => setTab(tab === "city" ? "world" : "city")}>
-                {tab === "city" ? "🌐 World View" : "🏠 Island"}
+                {tab === "city" ? "🌐 World View" : "🏠 City View"}
               </button>
             </div>
           </div>
@@ -264,16 +294,18 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
 
-        {tab === "city" && (
+        {(tab === "city" || tab === "world") && (
           <aside className="side-info">
             <TroopsPanel units={active.units} trainable={active.trainable} />
             <CityMovementsPanel cityId={active.id} now={now}
               onExpand={() => setShowMoves(true)}
               onAttackAgain={(id, name) => setRaidAgain({ id, name })} />
-            <HeroSummary heroes={heroes} cityId={active.id} now={now} onOpen={() => setShowHero(true)}
-              onChanged={refreshHeroes} setErr={setErr} />
           </aside>
         )}
+
+        {/* hero card floats bottom-right of the stage */}
+        <HeroSummary heroes={heroes} cityId={active.id} now={now} onOpen={() => setShowHero(true)}
+          onChanged={refreshHeroes} setErr={setErr} />
       </div>
 
       {showMoves && <MovementsOverview data={moves} now={now} onClose={() => setShowMoves(false)} onGoCity={goToCity} />}
@@ -321,6 +353,9 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         <AlliancePanel player={player} onChanged={() => refresh()} setErr={setErr} />
       </Modal>}
       {modal === "messages" && <Modal title="Messages" onClose={() => setModal(null)}><Inbox /></Modal>}
+      {modal === "endgame" && <Modal title="Endgame · Wonders of the Aegean" onClose={() => setModal(null)}>
+        <EndgamePanel ctx={{ myPlayerId: player.id, activeCityId: active.id, myUnits: active.units, heroes, setErr, onChanged: () => refresh() }} />
+      </Modal>}
     </div>
   );
 }
@@ -328,27 +363,45 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 const ELEMENT_NAME: Record<string, string> = { FIRE: "Fire", WIND: "Wind", EARTH: "Earth", WATER: "Water" };
 
 function TroopsPanel({ units, trainable }: { units: { type: string; count: number }[]; trainable: Trainable[] }) {
-  const total = units.reduce((a, u) => a + u.count, 0);
+  const meta = (type: string) => trainable.find(x => x.type === type);
   const role = (type: string) => {
-    const t = trainable.find(x => x.type === type);
+    const t = meta(type);
     if (!t) return "";
     return t.siege ? "Siege" : (t.attackElement ? ELEMENT_NAME[t.attackElement] : "");
   };
+  // Ships/naval are trained at the Harbor (kind SEA); ground troops at the Barracks.
+  const isShip = (type: string) => { const t = meta(type); return t?.from === "HARBOR" || t?.kind === "SEA"; };
+  const ships = units.filter(u => isShip(u.type));
+  const troops = units.filter(u => !isShip(u.type));
+  const sum = (arr: { count: number }[]) => arr.reduce((a, u) => a + u.count, 0);
+
+  // Compact square tile: icon + count badge. Full stats go in a native multi-line title so the
+  // tooltip is never clipped by the panel's scroll/overflow (a positioned card would be cut off).
+  const tile = (u: { type: string; count: number }) => {
+    const t = meta(u.type);
+    const title = t
+      ? `${titleCase(u.type)} — ${role(u.type) || "—"}\n`
+        + `⚔ ${t.atk}    🔥 ${t.defFire}  🌬 ${t.defWind}  🌍 ${t.defEarth}  💧 ${t.defWater}\n`
+        + `🐢 ${t.speed} min/tile · 👥 ${t.pop} pop${t.carry ? ` · 🎒 ${t.carry}` : ""}`
+      : titleCase(u.type);
+    return (
+      <span className="tp-tile" title={title} key={u.type}>
+        <span className="tp-tile-ico">{UNIT_GLYPH[u.type] ?? "⚔"}</span>
+        <span className="tp-tile-count">{u.count}</span>
+      </span>
+    );
+  };
+
   return (
     <div className="side-card troops-panel">
-      <div className="sc-head"><span className="sc-title">⚔ Troops</span><span className="sc-sub">{total} in city</span></div>
-      {units.length === 0
-        ? <p className="muted tp-empty">No troops yet. Train them in the Barracks or Harbor.</p>
-        : units.map(u => (
-          <div className="tp-row" key={u.type}>
-            <span className="tp-ico">{UNIT_GLYPH[u.type] ?? "⚔"}</span>
-            <span className="tp-main">
-              <UnitTooltip type={u.type}><b className="tp-name">{titleCase(u.type)}</b></UnitTooltip>
-              <small className="tp-role">{role(u.type)}</small>
-            </span>
-            <span className="tp-count">{u.count}</span>
-          </div>
-        ))}
+      <div className="sc-head"><span className="sc-title">⚔ Troops</span><span className="sc-sub">{sum(troops)} in city</span></div>
+      {troops.length === 0
+        ? <p className="muted tp-empty">No ground troops. Train them in the Barracks.</p>
+        : <div className="tp-grid">{troops.map(tile)}</div>}
+      <div className="sc-head" style={{ marginTop: 12 }}><span className="sc-title">⛵ Ships</span><span className="sc-sub">{sum(ships)} in port</span></div>
+      {ships.length === 0
+        ? <p className="muted tp-empty">No ships. Build them at the Harbor.</p>
+        : <div className="tp-grid">{ships.map(tile)}</div>}
     </div>
   );
 }
@@ -356,7 +409,7 @@ function TroopsPanel({ units, trainable }: { units: { type: string; count: numbe
 function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onMissions, onHeroes, onInventory, onModal }: {
   unreadReports: number; claimable: number; heroPts: number; serverLine: string;
   onReports: () => void; onMissions: () => void; onHeroes: () => void; onInventory: () => void;
-  onModal: (m: "rankings" | "profile" | "alliance" | "messages") => void;
+  onModal: (m: "rankings" | "profile" | "alliance" | "messages" | "endgame") => void;
 }) {
   const Item = ({ icon, label, onClick, badge, hostile }: { icon: string; label: string; onClick: () => void; badge?: number; hostile?: boolean }) => (
     <button className="nav-item" onClick={onClick}>
@@ -376,6 +429,7 @@ function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onM
       <Item icon="🤝" label="Alliance" onClick={() => onModal("alliance")} />
       <Item icon="✉" label="Messages" onClick={() => onModal("messages")} />
       <Item icon="🏆" label="Rankings" onClick={() => onModal("rankings")} />
+      <Item icon="⚔" label="Endgame" onClick={() => onModal("endgame")} />
       <Item icon="👤" label="Profile" onClick={() => onModal("profile")} />
       <div className="nav-foot">{serverLine}</div>
     </nav>
@@ -403,14 +457,29 @@ function HeroSummary({ heroes, cityId, now, onOpen, onChanged, setErr }: {
   heroes: Hero[]; cityId: number; now: number; onOpen: () => void; onChanged: () => void; setErr: (s: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [selId, setSelId] = useState<number | null>(null);
   const unlocked = heroes.filter(h => h.unlocked);
   // prefer a hero already here, else an unassigned hero ready to assign, else any idle, else first
-  const hero = unlocked.find(h => h.stationedCityId === cityId)
+  const auto = unlocked.find(h => h.stationedCityId === cityId)
     ?? unlocked.find(h => h.stationedCityId == null && h.state === "IDLE")
-    ?? unlocked.find(h => h.state === "IDLE") ?? unlocked[0] ?? null;
+    ?? unlocked.find(h => h.state === "IDLE") ?? unlocked[0] ?? heroes[0] ?? null;
+  // a tab selection overrides the auto-pick — and may point at a still-locked hero (Titania
+  // before the missions are done), which renders a locked card below
+  const hero = heroes.find(h => h.id === selId) ?? auto;
+  // tabs list every hero (locked ones flagged) so Titania is always visible
+  const tabs = heroes.length > 1 && (
+    <div className="hf-tabs">
+      {heroes.map(h => (
+        <button key={h.id} className={"hf-tab" + (h.id === hero?.id ? " on" : "") + (h.unlocked ? "" : " locked")}
+          onClick={() => setSelId(h.id)}>
+          {HERO_GLYPH(h)} {h.name}{h.unlocked ? "" : " 🔒"}
+        </button>
+      ))}
+    </div>
+  );
   if (!hero) {
     return (
-      <div className="side-card hero-card empty">
+      <div className="hero-float empty">
         <div className="sc-head"><span className="sc-title">🛡 Hero</span></div>
         <p className="muted">No hero yet. Complete missions to recruit your champion.</p>
         <button className="btn ghost" onClick={onOpen}>View heroes</button>
@@ -424,9 +493,48 @@ function HeroSummary({ heroes, cityId, now, onOpen, onChanged, setErr }: {
   const hereIdle = hero.stationedCityId === cityId && idle;
   const unassigned = hero.stationedCityId == null;
   const elsewhereIdle = !unassigned && hero.stationedCityId !== cityId && idle;
-  const where = hero.state === "MARCHING" ? (arriving != null ? "Marching here" : "Marching")
-    : hero.state === "WOUNDED" ? "Wounded"
-    : hero.stationedCityName ? `at ${hero.stationedCityName}` : "Unassigned";
+  // status line (coloured): where the hero is and what it's doing
+  const status = hero.state === "MARCHING" ? { text: arriving != null ? "Marching here" : "Marching", cls: "go" }
+    : hero.state === "WOUNDED" ? { text: "Wounded", cls: "bad" }
+    : hero.stationedCityName ? { text: `Stationed in ${hero.stationedCityName}`, cls: "go" }
+    : { text: "Unassigned", cls: "muted" };
+  // element from race (Humans FIRE · Giants EARTH · Fairies WIND · Newts WATER)
+  const RACE_ELEMENT: Record<string, string> = { HUMANS: "FIRE", GIANTS: "EARTH", FAIRIES: "WIND", NEWTS: "WATER" };
+  const element = RACE_ELEMENT[hero.race] ?? "FIRE";
+  const a = hero.attributes;
+  // display power rollup from level + attributes (cosmetic summary of the hero's strength)
+  const pwr = Math.round(40 + hero.level * 8 + a.valor * 6);
+  const def = Math.round(25 + hero.level * 6 + a.leadership * 6);
+  const spd = Math.round(30 + a.cunning * 5);
+  const skillName = hero.armedSkill ?? hero.skills?.find(s => s.armed)?.id ?? hero.skills?.find(s => s.unlocked)?.id ?? null;
+  const skillArmed = !!hero.armedSkill || !!hero.skills?.some(s => s.armed);
+  const theme = HERO_ACCENT[hero.heroKey] ?? { accent: "#e0995e", glow: "#e8584a" };
+  const portrait = HERO_IMG[hero.heroKey] ?? heroSilhouette(theme.accent, theme.glow, hero.name);
+
+  // Locked hero (e.g. Titania before all missions are claimed): same card frame, dimmed art,
+  // no stats/deploy — just a recruit hint that points to the missions/hero panel.
+  if (!hero.unlocked) {
+    return (
+      <div className={"hero-float hero-art-" + element.toLowerCase()}>
+        {tabs}
+        <div className="hf-card hf-locked">
+          <img className="hf-art" src={portrait} alt={hero.name} />
+          <div className="hf-scrim-top" />
+          <div className="hf-scrim" />
+          <div className="hf-badges">
+            <span className="hf-elem" style={{ borderColor: theme.accent, color: theme.accent }}>{ELEMENT_GLYPH[element]} {element}</span>
+            <span className="hf-lv hf-lock-badge">🔒</span>
+          </div>
+          <div className="hf-overlay">
+            <div className="hf-name">{hero.name}</div>
+            <div className="hf-sub">{titleCase(hero.race)} champion · <span className="hf-status muted">Locked</span></div>
+            <p className="hf-locked-hint">Complete all starter missions to recruit {hero.name}.</p>
+            <button className="btn ghost hf-action" onClick={onOpen}>View heroes</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const run = (fn: () => Promise<any>) => async () => {
     setErr(""); setBusy(true);
@@ -434,28 +542,108 @@ function HeroSummary({ heroes, cityId, now, onOpen, onChanged, setErr }: {
   };
 
   return (
-    <div className="side-card hero-card">
-      <div className="hc-top">
-        <div className="hc-portrait"><span>{HERO_GLYPH(hero)}</span><span className="hc-lv">Lv {hero.level}</span></div>
-        <div className="hc-id">
-          <div className="hc-name">{hero.name}</div>
-          <div className="hc-title muted">{titleCase(hero.race)} champion · {where}</div>
+    <div className={"hero-float hero-art-" + element.toLowerCase()}>
+      {tabs}
+      <div className="hf-card">
+        <img className="hf-art" src={portrait} alt={hero.name} />
+        <div className="hf-scrim-top" />
+        <div className="hf-scrim" />
+        <div className="hf-badges">
+          <span className="hf-elem" style={{ borderColor: theme.accent, color: theme.accent }}>{ELEMENT_GLYPH[element]} {element}</span>
+          <span className="hf-lv"><small>LV</small>{hero.level}</span>
         </div>
-        {hero.unspentAttributePoints > 0 && <span className="nav-pip">{hero.unspentAttributePoints}</span>}
+        <div className="hf-overlay">
+          <div className="hf-name">{hero.name}</div>
+          <div className="hf-sub">{titleCase(hero.race)} champion · <span className="hf-status" style={{ color: theme.accent }}>{status.text}</span></div>
+          <div className="hf-stats">
+            <span>🗡 <b>{pwr}</b> <small>PWR</small></span>
+            <span>🛡 <b>{def}</b> <small>DEF</small></span>
+            <span>⚡ <b>{spd}</b> <small>SPD</small></span>
+          </div>
+          {skillName && (
+            <div className="hf-skill">
+              <span className="hf-skill-name">✦ {titleCase(skillName)}</span>
+              <span className="hf-skill-tag">{skillArmed ? "ACTIVE" : "READY"}</span>
+            </div>
+          )}
+          <div className="hf-xp-row"><span>Experience</span><span>{xpPct}%</span>{hero.unspentAttributePoints > 0 && <span className="nav-pip">{hero.unspentAttributePoints}</span>}</div>
+          <div className="hf-xp"><i style={{ width: xpPct + "%", background: theme.accent }} /></div>
+          {arriving != null
+            ? <button className="btn hf-action" disabled>🕐 Arriving in {clock(arriving)}</button>
+            : hereIdle
+              ? <button className="btn ghost hf-action" disabled={busy} onClick={run(() => deassignHero(hero.id))}>Deassign from city</button>
+              : unassigned && idle
+                ? <button className="btn hf-action" disabled={busy} onClick={run(() => assignHero(hero.id, cityId))}>⚔ Deploy hero</button>
+                : elsewhereIdle
+                  ? <button className="btn ghost hf-action" disabled={busy} onClick={run(() => deassignHero(hero.id))}>Deassign from {hero.stationedCityName}</button>
+                  : <button className="btn hf-action" disabled>Hero busy</button>}
+        </div>
       </div>
-      <div className="hc-stat">
-        <div className="hc-stat-row"><span>Experience</span><span>{xpPct}%</span></div>
-        <div className="hc-bar"><i style={{ width: xpPct + "%" }} /></div>
+    </div>
+  );
+}
+
+function TempleSection({ cityId, now }: { cityId: number; now: number }) {
+  const [t, setT] = useState<TempleState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setLocalErr] = useState("");
+  const load = () => getTemple(cityId).then(setT).catch(() => {});
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [cityId]);
+  if (!t) return <div className="bld-section"><h3>🏛 Festivals</h3><p className="muted">Loading…</p></div>;
+  const pr = t.progression;
+  const run = (ft: string, fuel: string) => async () => {
+    setLocalErr(""); setBusy(true);
+    try { await runFestival(cityId, ft, fuel); await load(); } catch (e: any) { setLocalErr(e.message); } finally { setBusy(false); }
+  };
+  const runningOf = (ft: string) => t.running.find(r => r.festivalType === ft);
+  const FestivalOpt = ({ ft, fuel, title, costLine, canAfford, noFundsLabel }: {
+    ft: string; fuel: string; title: string; costLine: React.ReactNode; canAfford: boolean; noFundsLabel: string;
+  }) => {
+    const r = runningOf(ft);
+    if (r) {
+      const rem = Math.max(0, Math.round((new Date(r.completesAt).getTime() - now) / 1000));
+      const pct = Math.min(100, Math.round((1 - rem / Math.max(1, t.durationSeconds)) * 100));
+      return (
+        <div className="festival-opt">
+          <h4>{title}</h4>
+          <div className="festival-running">
+            <div>🎉 completes in {clock(rem)} → +{r.culturePointsReward} Culture</div>
+            <div className="bar"><i style={{ width: pct + "%" }} /></div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="festival-opt">
+        <h4>{title}</h4>
+        {costLine}
+        <div className="muted">+{t.cultureReward} Culture · ⏱ {clock(t.durationSeconds)}</div>
+        <button className="btn" disabled={busy || !canAfford} onClick={run(ft, fuel)}>
+          {canAfford ? "Hold festival" : noFundsLabel}</button>
       </div>
-      {arriving != null
-        ? <button className="btn" disabled>🚶 Arriving in {clock(arriving)}</button>
-        : hereIdle
-          ? <button className="btn ghost" disabled={busy} onClick={run(() => deassignHero(hero.id))}>Deassign from city</button>
-          : unassigned && idle
-            ? <button className="btn" disabled={busy} onClick={run(() => assignHero(hero.id, cityId))}>Assign to this city</button>
-            : elsewhereIdle
-              ? <button className="btn ghost" disabled={busy} onClick={run(() => deassignHero(hero.id))}>Deassign from {hero.stationedCityName}</button>
-              : <button className="btn" disabled>Hero busy</button>}
+    );
+  };
+  return (
+    <div className="bld-section">
+      <h3>🏛 Festivals <small className="muted" style={{ marginLeft: 6 }}>⚔ {t.combatPoints} Combat Points</small></h3>
+      {err && <div className="hero-inline-err">{err}</div>}
+      <div className="temple-prog">
+        <div className="temple-prog-row"><b>Level {pr.level} / {pr.maxLevel}</b><span className="muted">Cities {pr.citiesOwned} / {pr.maxCities}</span></div>
+        {pr.cultureForNextLevel != null ? (
+          <>
+            <div className="hf-xp"><i style={{ width: Math.min(100, Math.round((pr.culturePoints / pr.cultureForNextLevel) * 100)) + "%" }} /></div>
+            <small className="muted">{pr.culturePoints} / {pr.cultureForNextLevel} Culture to Level {pr.level + 1} → unlocks city #{pr.level + 1}</small>
+          </>
+        ) : <small className="muted">Maximum level reached — 20 cities unlocked.</small>}
+      </div>
+      <div className="festival-menu">
+        <FestivalOpt ft="FESTIVAL_OF_PLENTY" fuel="RESOURCES" title="🌾 Festival of Plenty"
+          costLine={<div className="muted">Cost: {t.resourceCost.toLocaleString()} each 🪵 🪨 🌾</div>}
+          canAfford={t.canAffordResources} noFundsLabel="Not enough resources" />
+        <FestivalOpt ft="FESTIVAL_OF_TRIUMPH" fuel="COMBAT_POINTS" title="⚔ Festival of Triumph"
+          costLine={<div className="muted">Cost: {t.combatCost} Combat Points</div>}
+          canAfford={t.canAffordCombat} noFundsLabel="Not enough Combat Points" />
+      </div>
     </div>
   );
 }
@@ -464,10 +652,9 @@ function Inbox() {
   const [msgs, setMsgs] = useState<InboxMsg[] | null>(null);
   useEffect(() => { getInbox().then(setMsgs).catch(() => setMsgs([])); }, []);
   if (!msgs) return <p className="muted">Loading…</p>;
-  if (msgs.length === 0) return <div className="popup-panel"><h3>Inbox</h3><p className="muted">No messages yet. Other players can message you from the world map.</p></div>;
+  if (msgs.length === 0) return <div className="popup-panel"><p className="muted">No messages yet. Other players can message you from the world map.</p></div>;
   return (
     <div className="popup-panel">
-      <h3>Inbox</h3>
       {msgs.map(m => (
         <div className="msg-row" key={m.id}>
           <div className="msg-head"><strong>{m.from}</strong><small className="muted">{new Date(m.sentAt).toLocaleString()}</small></div>
@@ -649,7 +836,9 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
   onCancel: (j: number) => void; onFinish: (j: number) => void; onFound: () => void;
 }) {
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showSpy, setShowSpy] = useState(false);
   const [showMarket, setShowMarket] = useState(false);
   const r = active.resources;
   const afford = (cost: number[]) => r.wood >= cost[0] && r.stone >= cost[1] && r.wheat >= cost[2];
@@ -673,139 +862,163 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
     TIMBER: "Harvest timber to fuel construction across the city.",
     MARKET: "Trade resources for gold. A higher level carries more per convoy, runs more convoys at once, and delivers faster.",
     WALL: "Fortify your city against attacks and invasions.",
+    TEMPLE: "Hold Festivals to earn Culture Points — raise your level to unlock more city slots.",
+    WATCHTOWER: "Spy enemy cities before attacking. A higher Watchtower is more likely to spy successfully and to catch enemy spies scouting you.",
     GARRISON: "Hold troops and reinforce your city defenses.",
   };
 
-  // Place buildings on a town map: senate at the centre, the rest spread across
-  // concentric rings (mimics the ringed-road layout).
-  const center = active.buildings.find(b => b.type === "SENATE");
-  const others = active.buildings.filter(b => b.type !== "SENATE");
-  // distribute roughly a third per ring so all three rings are populated
-  const per = Math.ceil(others.length / 3);
-  // Keep the cluster inside a central band so no tile lands under the floating
-  // HUD panels (troops/movements on the right ~x>73%, panel-actions on the left
-  // ~x<13%) which sit above tiles in z-order and would swallow their clicks.
-  // Bias slightly left (right side holds two panels) and shrink horizontal radius.
-  const cx = 43, cy = 50;
-  const rings = [
-    { rx: 14, ry: 14, cap: per, start: -90 },
-    { rx: 22, ry: 26, cap: per, start: -64 },
-    { rx: 28, ry: 36, cap: others.length, start: -78 },
-  ];
-  const placed: { b: typeof others[number]; x: number; y: number }[] = [];
-  let idx = 0;
-  for (const ring of rings) {
-    const slice = others.slice(idx, idx + ring.cap);
-    slice.forEach((b, i) => {
-      const a = (ring.start + (360 / Math.max(slice.length, 1)) * i) * Math.PI / 180;
-      placed.push({ b, x: cx + ring.rx * Math.cos(a), y: cy + ring.ry * Math.sin(a) });
-    });
-    idx += ring.cap;
-  }
+  // Place buildings on the painted island scene (terrain.svg, viewBox 1000x760).
+  // Each entry in PLACEMENTS pins a game building type to a fixed ground point;
+  // buildings without a painted plot (e.g. WALL, EXTRACTOR) fall through to the
+  // structures chip-row so they stay reachable. The data layer is untouched.
+  const byType = new Map(active.buildings.map(b => [b.type, b]));
+  const placed = PLACEMENTS
+    .map(p => ({ p, b: byType.get(p.type) }))
+    .filter((e): e is { p: Placement; b: BuildingDto } => !!e.b);
+  // Quick-upgrade affordability for the info panel (mirrors the drawer's logic).
+  const upgradeInfo = (b: BuildingDto) => {
+    const targetLv = b.level + queuedSame(b.type) + 1;
+    const maxed = b.atMax || targetLv > b.max;
+    const popShort = b.pop > 0 && freePop < b.pop;
+    const disabled = maxed || !afford(b.cost) || popShort || buildQueueFull;
+    const label = b.atMax || maxed ? "Maxed"
+      : buildQueueFull ? "Queue full"
+      : popShort ? "Need pop"
+      : !afford(b.cost) ? "Need res"
+      : b.level === 0 && queuedSame(b.type) === 0 ? "Build"
+      : "Upgrade";
+    return { disabled, label };
+  };
 
-  const Badge = ({ lv, building }: { lv: number; building: boolean }) =>
-    <span className={"bld-badge" + (building ? " constructing" : "")}>{building ? "⛏" : lv}</span>;
+  const deselect = () => { setSelectedBuilding(null); setDrawerOpen(false); };
 
   return (
     <div className="city-view">
-      <svg className="city-map-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <radialGradient id="grass" cx="50%" cy="46%" r="65%">
-            <stop offset="0%" stopColor="#8ec64a" /><stop offset="100%" stopColor="#6fae36" />
-          </radialGradient>
-        </defs>
-        <rect x="0" y="0" width="100" height="100" fill="url(#grass)" />
-        {/* river */}
-        <path d="M-5 30 Q30 42 50 46 Q72 50 105 78" fill="none" stroke="#4aa3df" strokeWidth="9" strokeLinecap="round" opacity="0.92" />
-        <path d="M-5 30 Q30 42 50 46 Q72 50 105 78" fill="none" stroke="#6cc0ee" strokeWidth="4.5" strokeLinecap="round" opacity="0.7" />
-        {/* ring roads */}
-        {rings.map((rg, i) =>
-          <ellipse key={i} cx="50" cy="50" rx={rg.rx} ry={rg.ry} fill="none" stroke="#cdb98f" strokeWidth={i === 2 ? 5 : 3.2} opacity="0.85" />
-        )}
-        <ellipse cx="50" cy="50" rx="8" ry="6" fill="#d8c79c" opacity="0.6" />
-      </svg>
+      {/* painted island scene — terrain base + clickable building groups, all in
+          one viewBox so they scale together with the container width */}
+      <div className="city-scene">
+        <svg className="city-svg" viewBox={`0 0 ${SCENE_W} ${SCENE_H}`} preserveAspectRatio="xMidYMid meet">
+          <image href={TERRAIN_URL} x="0" y="0" width={SCENE_W} height={SCENE_H}
+            onClick={deselect} style={{ cursor: "default" }} />
+          {placed.map(({ p, b }) => {
+            const sel = selectedBuilding === p.type;
+            const imgX = p.x - p.w / 2;
+            const imgY = p.y - p.w * ICON_BASE;
+            return (
+              <g key={p.type}
+                className={"bld-grp" + (sel ? " sel" : "")}
+                style={{ transformOrigin: `${p.x}px ${p.y}px` }}
+                onClick={(e) => { e.stopPropagation(); setSelectedBuilding(p.type); }}>
+                {sel && <ellipse className="bld-ring" cx={p.x} cy={p.y}
+                  rx={p.w * 0.34} ry={p.w * 0.34 * 0.32} />}
+                <image href={p.icon} x={imgX} y={imgY} width={p.w} height={p.w} />
+              </g>
+            );
+          })}
+        </svg>
 
-      {/* central senate */}
-      {center && (
-        <button className="bld-tile bld-center" style={{ left: cx + "%", top: cy + "%" }}
-          onClick={() => setSelectedBuilding("SENATE")} title="Senate">
-          <span className="bld-art" dangerouslySetInnerHTML={{ __html: constructing.has("SENATE") ? constructionSvg() : buildingSvg("SENATE", center.level) }} />
-          <Badge lv={center.level} building={constructing.has("SENATE")} />
-        </button>
-      )}
-
-      {/* ringed buildings */}
-      {placed.map(({ b, x, y }) => {
-        const buildingThis = constructing.has(b.type);
-        const built = b.level > 0;
-        return (
-          <button className={"bld-tile" + (selectedBuilding === b.type ? " sel" : "") + (built || buildingThis ? "" : " plot")} key={b.type}
-            style={{ left: x + "%", top: y + "%" }}
-            onClick={() => setSelectedBuilding(b.type)}
-            title={built || buildingThis ? titleCase(b.type) : `Build ${titleCase(b.type)}`}>
-            <span className="bld-art" dangerouslySetInnerHTML={{ __html: buildingThis ? constructionSvg() : built ? buildingSvg(b.type, b.level) : emptyPlotSvg() }} />
-            {(built || buildingThis) && <Badge lv={b.level} building={buildingThis} />}
-          </button>
-        );
-      })}
+        {/* building name labels — HTML overlay, not svg <text> */}
+        <div className="city-labels">
+          {placed.map(({ p, b }) => (
+            <span key={p.type} className="city-label"
+              style={{ left: `${(p.x / SCENE_W) * 100}%`, top: `${((p.y + 13) / SCENE_H) * 100}%` }}>
+              {p.name}{constructing.has(p.type) ? " 🔨" : b.level > 0 ? ` · ${b.level}` : ""}
+            </span>
+          ))}
+        </div>
+      </div>
 
       {/* construction queue bar (bottom-centre) */}
       <ConstructionBar jobs={active.queues.BUILDING} now={now} onCancel={onCancel} onFinish={onFinish} />
 
+      {/* selected-building info panel (bottom-left) */}
+      {selected && (() => {
+        const sp = PLACEMENT_BY_TYPE[selected.type];
+        const up = upgradeInfo(selected);
+        return (
+          <div className="city-info">
+            <button className="ci-close" onClick={deselect}>✕</button>
+            <div className="ci-head">
+              {sp && <img className="ci-thumb" src={sp.icon} alt="" />}
+              <div className="ci-titles">
+                <h3>{sp?.name || titleCase(selected.type)}</h3>
+                <div className="ci-sub">Level {selected.level}{selected.atMax ? " (max)" : ""} · {sp?.tag || titleCase(selected.type)}</div>
+              </div>
+            </div>
+            <p className="ci-desc">{buildingInfo[selected.type] || ""}</p>
+            <div className="ci-actions">
+              <button className="ci-enter" onClick={() => setDrawerOpen(true)}>Enter</button>
+              <button className="ci-upgrade" disabled={up.disabled} onClick={() => onBuild(selected.type)}>⬆ {up.label}</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* primary action toolbar */}
       <div className="city-action-bar">
-        <button className="cab-btn" onClick={() => setSelectedBuilding("BARRACKS")}><span className="cab-ico">⚔</span>Recruit</button>
+        <button className="cab-btn" onClick={() => { setSelectedBuilding("BARRACKS"); setDrawerOpen(true); }}><span className="cab-ico">⚔</span>Recruit</button>
         <button className="cab-btn" onClick={() => setShowMarket(true)}><span className="cab-ico">🔁</span>Trade</button>
+        <button className="cab-btn" onClick={() => setShowSpy(true)}><span className="cab-ico">🕵</span>Spy</button>
       </div>
 
-      {/* building detail drawer */}
-      {selected && (
-        <div className="bld-drawer-backdrop" onClick={() => setSelectedBuilding(null)}>
+      {/* building detail drawer (opened via the info panel's "Enter") */}
+      {selected && drawerOpen && (
+        <div className="bld-drawer-backdrop" onClick={() => setDrawerOpen(false)}>
           <div className="bld-drawer" onClick={e => e.stopPropagation()}>
-            <button className="bld-drawer-close" onClick={() => setSelectedBuilding(null)}>✕</button>
+            <button className="bld-drawer-close" onClick={() => setDrawerOpen(false)}>✕</button>
             <div className="bld-drawer-head">
               <span className="bld-art big" dangerouslySetInnerHTML={{ __html: buildingSvg(selected.type, selected.level) }} />
-              <div>
+              <div className="bld-head-text">
                 <h2>{titleCase(selected.type)}</h2>
                 <div className="muted">Level {selected.level}{selected.atMax ? " (max)" : ""}</div>
                 <p className="muted" style={{ marginTop: 4 }}>{buildingInfo[selected.type] || ""}</p>
               </div>
-            </div>
 
-            {!selected.atMax && (() => {
-              const targetLv = selected.level + queuedSame(selected.type) + 1;
-              const maxed = targetLv > selected.max;
-              const popNeed = selected.pop;                 // 0 for FARM — needs no population
-              const popShort = popNeed > 0 && freePop < popNeed;
-              return (
-                <div className="bld-upgrade">
-                  <div className="cost">
-                    <span className={"costitem" + lack(r.wood, selected.cost[0])}>🪵 {fmt(selected.cost[0])}</span>
-                    <span className={"costitem" + lack(r.stone, selected.cost[1])}>🪨 {fmt(selected.cost[1])}</span>
-                    <span className={"costitem" + lack(r.wheat, selected.cost[2])}>🌾 {fmt(selected.cost[2])}</span>
-                    {popNeed > 0 && <span className={"costitem" + lack(freePop, popNeed)}>👥 {popNeed} pop</span>}
-                    <span className="costitem">⏱ {clock(selected.seconds)}</span>
+              {selected.atMax
+                ? <div className="bld-upgrade-panel"><div className="bld-maxed">Max level reached</div></div>
+                : (() => {
+                const targetLv = selected.level + queuedSame(selected.type) + 1;
+                const maxed = targetLv > selected.max;
+                const popNeed = selected.pop;                 // 0 for FARM — needs no population
+                const popShort = popNeed > 0 && freePop < popNeed;
+                const disabled = !afford(selected.cost) || popShort || buildQueueFull || maxed;
+                const label = buildQueueFull ? "Queue full"
+                  : maxed ? "Max level"
+                  : popShort ? "Need population"
+                  : selected.level === 0 && queuedSame(selected.type) === 0 ? "Build"
+                  : "Upgrade";
+                return (
+                  <div className="bld-upgrade-panel">
+                    <button className="btn bld-upgrade-btn" disabled={disabled} onClick={() => onBuild(selected.type)}>
+                      ⬆ {label}{!maxed && <span className="bld-upgrade-lv"> · Lv {targetLv}</span>}
+                    </button>
+                    <div className="bld-cost-line">
+                      <span className={"costitem" + lack(r.wood, selected.cost[0])}>🪵 {fmt(selected.cost[0])}</span>
+                      <span className={"costitem" + lack(r.stone, selected.cost[1])}>🪨 {fmt(selected.cost[1])}</span>
+                      <span className={"costitem" + lack(r.wheat, selected.cost[2])}>🌾 {fmt(selected.cost[2])}</span>
+                      {popNeed > 0 && <span className={"costitem" + lack(freePop, popNeed)}>👥 {popNeed}</span>}
+                      <span className="costitem">⏱ {clock(selected.seconds)}</span>
+                    </div>
+                    {selected.benefit && (
+                      <div className="bld-improvements">
+                        <div className="bld-impr-head">Lv {targetLv} improvements</div>
+                        {selected.benefit.split(" · ").map((part, i) => (
+                          <div className="bld-impr-row" key={i}>↑ {part}</div>
+                        ))}
+                      </div>
+                    )}
+                    {queuedSame(selected.type) > 0 && <small className="muted">{queuedSame(selected.type)} upgrade(s) queued</small>}
                   </div>
-                  {selected.benefit && <div className="bld-benefit">✨ {selected.benefit}</div>}
-                  {selected.type === "FARM" && <small className="muted">Raises your city population limit. Needs no population.</small>}
-                  <button className="btn" disabled={!afford(selected.cost) || popShort || buildQueueFull || maxed}
-                    onClick={() => onBuild(selected.type)}>
-                    {buildQueueFull ? "Queue full (max 5)"
-                      : maxed ? "Max level reached"
-                      : popShort ? "Not enough population"
-                      : selected.level === 0 && queuedSame(selected.type) === 0 ? "Build"
-                      : `Upgrade to Lv ${targetLv}`}
-                  </button>
-                  {queuedSame(selected.type) > 0 && <small className="muted">{queuedSame(selected.type)} upgrade(s) queued</small>}
-                </div>
-              );
-            })()}
+                );
+              })()}
+            </div>
 
             {(selected.type === "BARRACKS" || selected.type === "HARBOR") && selected.level > 0 && (
               <div className="bld-section">
-                <h3>Train troops</h3>
-                <div className="grid">
-                  {active.trainable.filter(u => u.from === selected.type).map(u => {
+                {(() => {
+                  const isHarbor = selected.type === "HARBOR";
+                  const list = active.trainable.filter(u => u.from === selected.type);
+                  const card = (u: Trainable) => {
                     const specShort = u.elite && u.specialResource ? r.special < u.costSpecial : false;
                     const atkLabel = u.siege ? "💥 Siege" : (u.attackElement ? `${ELEMENT_GLYPH[u.attackElement]} ${ELEMENT_NAME[u.attackElement]}` : "");
                     return (
@@ -832,8 +1045,28 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
                       ) : <button className="btn" disabled>🔒 Research {titleCase(String(u.type))}</button>}
                     </div>
                     );
-                  })}
-                </div>
+                  };
+                  const grid = (items: Trainable[]) => <div className="grid">{items.map(card)}</div>;
+                  // LAND races' harbor fleets group by ship role; Newt harbors hold an aquatic army.
+                  if (isHarbor && list.some(u => u.shipRole)) {
+                    const roles: { role: ShipRole; label: string; desc: string }[] = [
+                      { role: "TRANSPORT", label: "⛴ Transport ships", desc: "Ferry ground troops across water — carry, don't fight" },
+                      { role: "DEFENSE",   label: "🛡 Defense ships",   desc: "Guard the harbor against enemy fleets" },
+                      { role: "ATTACK",    label: "⚔ Attack ships",    desc: "Hunt and sink enemy fleets" },
+                    ];
+                    const aquatic = list.filter(u => !u.shipRole);
+                    return (<>
+                      <h3>⛵ Build ships</h3>
+                      {roles.map(rg => { const items = list.filter(u => u.shipRole === rg.role); if (!items.length) return null;
+                        return (<div key={rg.role} className="ship-role-group">
+                          <div className="ship-role-head">{rg.label} <small className="muted">— {rg.desc}</small></div>
+                          {grid(items)}
+                        </div>); })}
+                      {aquatic.length > 0 && <div className="ship-role-group"><div className="ship-role-head">🌊 Aquatic army</div>{grid(aquatic)}</div>}
+                    </>);
+                  }
+                  return (<><h3>{isHarbor ? "🌊 Train aquatic army" : "Train troops"}</h3>{grid(list)}</>);
+                })()}
                 {(selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR).length > 0 && (
                   <div className="train-queue">
                     <h4>In training</h4>
@@ -859,7 +1092,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
                   </div>
                 )}
                 {active.units.length > 0 && (
-                  <p className="muted" style={{ marginTop: 10 }}>Garrison: {active.units.map(u => `${u.count}× ${titleCase(u.type)}`).join(" · ")}</p>
+                  <p className="muted" style={{ marginTop: 10 }}>Troops: {active.units.map(u => `${u.count}× ${titleCase(u.type)}`).join(" · ")}</p>
                 )}
               </div>
             )}
@@ -881,12 +1114,26 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
                 <button className="btn" onClick={() => setShowLibrary(true)}>Open the Library</button>
               </div>
             )}
+
+            {selected.type === "TEMPLE" && selected.level > 0 && (
+              <TempleSection cityId={active.id} now={now} />
+            )}
+
+            {selected.type === "WATCHTOWER" && (
+              <div className="bld-section">
+                <h3>🕵 Espionage</h3>
+                <p className="muted">Scout an enemy city's troops, resources and defences before you strike — or catch
+                  their spies scouting you. Higher levels raise both your spy success and your catch chance.</p>
+                <button className="btn" onClick={() => { setDrawerOpen(false); setShowSpy(true); }}>Open the Watchtower</button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {showLibrary && <LibraryPanel cityId={active.id} onClose={() => setShowLibrary(false)} />}
       {showMarket && <TradePanel cityId={active.id} onClose={() => setShowMarket(false)} />}
+      {showSpy && <SpyPanel cityId={active.id} onClose={() => setShowSpy(false)} onChanged={() => {}} />}
     </div>
   );
 }

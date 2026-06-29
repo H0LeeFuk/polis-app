@@ -16,12 +16,15 @@ export interface QueueJob { id: number; position: number; totalSeconds: number; 
 export interface UnitDto { type: string; count: number; }
 export type Element = "FIRE" | "WIND" | "EARTH" | "WATER";
 export type MovementClass = "LAND" | "FLYING" | "SWIMMING";
+export type CombatLayer = "LAND" | "SEA";
+export type ShipRole = "TRANSPORT" | "DEFENSE" | "ATTACK";
 export interface Trainable {
   type: string; from: string; kind: string; siege: boolean; attackElement: Element | null;
   atk: number; defFire: number; defWind: number; defEarth: number; defWater: number;
   speed: number; pop: number; carry: number; cost: number[]; seconds: number; unlocked: boolean;
   elite: boolean; costSpecial: number; specialResource: ResourceId | null;
   movementClass: MovementClass; transportCapacity: number; requiresTransport: boolean;
+  combatLayer: CombatLayer; shipRole: ShipRole | null;
 }
 export interface ResearchDto { type: string; req: number; done: boolean; cost: number[]; }
 export interface MovementDto { id: number; phase: string; arriveAt: string; target: string; }
@@ -85,6 +88,19 @@ export interface AttackPreview {
   transportSufficient?: boolean;
   transportShipsShort?: number;
   transportWarning?: string;
+  combatLayer?: "SEA" | "LAND" | "MIXED" | null;   // detected attack layer
+}
+export interface Progression {
+  level: number; maxLevel: number;
+  culturePoints: number; cultureForNextLevel: number | null; culturePointsTotal: number;
+  combatPoints: number; citiesOwned: number; maxCities: number; cap: number; atMax: boolean;
+}
+export interface TempleState {
+  templeLevel: number; combatPoints: number;
+  resourceCost: number; combatCost: number; cultureReward: number; durationSeconds: number;
+  canAffordResources: boolean; canAffordCombat: boolean;
+  running: { festivalType: string; fuelType: string; completesAt: string; culturePointsReward: number }[];
+  progression: Progression;
 }
 export interface MovementsSummary { attacksOut: number; incomingThreats: number; returning: number; idleCities: number; }
 export interface PlayerMovements { summary: MovementsSummary; movements: Movement[]; }
@@ -98,7 +114,7 @@ export interface CityDetail {
 export interface GameState { player: PlayerDto; cities: CitySummary[]; active: CityDetail; }
 
 export interface WorldCity { id: number; slot: number; name: string; points: number; power: number; faction: string; playerId: number | null; owner: string; race: RaceId | null; }
-export interface WorldIsland { id: number; name: string; px: number; py: number; cities: WorldCity[]; resource?: boolean; }
+export interface WorldIsland { id: number; name: string; px: number; py: number; cities: WorldCity[]; resource?: boolean; tier?: number; }
 export interface WorldPlayer { id: number; name: string; level: number; combatPoints: number; }
 export interface WorldData { islands: WorldIsland[]; players: WorldPlayer[]; }
 export interface InboxMsg { id: number; from: string; body: string; sentAt: string; read: boolean; }
@@ -171,6 +187,7 @@ export interface BattleReport {
   foughtAt: string;
   outcome: BattleOutcome;
   role: ReportRole;
+  combatLayer: CombatLayer;
   attackerPlayerId: number | null;
   attackerPlayerName: string;
   attackerCityId: number;
@@ -191,6 +208,8 @@ export interface BattleReport {
   siegeDamage: number;
   attackByElement: Record<string, number>;
   defenseByElement: Record<string, number>;
+  combatPointsEarned: number;
+  combatPointsReason: string | null;
   heroName: string | null;
   heroLevel: number;
   heroAttackBonusPct: number;
@@ -275,6 +294,67 @@ export interface ResourceNode {
   controllingAllianceId: number | null; controllingAllianceName: string | null;
   garrison: Record<string, number>; garrisonPop: number; garrisonCap: number;
   accumulated: number; ratePerHour: number; contestedUntil: string | null; name: string;
+}
+
+// --- endgame: Wonders of the Aegean ---
+export type WonderStatus = "DORMANT" | "ACTIVE" | "CONTROLLED" | "CONTESTED";
+export type WorldPhase = "GROWTH" | "ENDGAME" | "FINISHED";
+export interface WonderDto {
+  id: number; islandId: number; islandName: string; x: number; y: number;
+  kind: "LIGHTHOUSE" | "COLOSSUS" | "SANCTUM"; name: string;
+  level: number; maxLevel: number; status: WonderStatus;
+  controllingAllianceId: number | null; controllingAllianceName: string | null;
+  controllingPlayerName: string | null;
+  garrison: Record<string, number>; garrisonPop: number;
+  nextLevelCost: number; investedWood: number; investedStone: number; investedWheat: number;
+  contestedUntil: string | null;
+}
+export interface WorldEndgame {
+  phase: WorldPhase;
+  endgameStartedAt: string | null;
+  worldAgeDays: number; cityCount: number; cityThreshold: number; daysThreshold: number;
+  consolidationAllianceId: number | null; consolidationAllianceName: string | null;
+  consolidationSecondsLeft: number; consolidationTotalSeconds: number;
+  winnerAllianceId: number | null; winnerAllianceName: string | null;
+  wonders: WonderDto[];
+}
+export interface WonderLeader {
+  allianceId: number; allianceName: string; wondersHeld: number; totalLevels: number;
+}
+export interface ColossusDamageRow {
+  rank: number; allianceId: number; allianceName: string; allianceTag: string;
+  damage: number; sharePct: number;
+}
+export interface ColossusDto {
+  id: number; name: string; tier: number; status: "ROAMING" | "DEFEATED" | "DESPAWNED";
+  maxHealth: number; currentHealth: number; x: number; y: number; despawnAt: string;
+  attackElement: Element;
+  defense: Record<string, number>;   // FIRE/WIND/EARTH/WATER -> defence value
+  totalDamage: number; myAllianceDamage: number; myAllianceSharePct: number;
+  rewardPoolPerResource: number;
+  leaderboard?: ColossusDamageRow[];
+}
+// --- espionage ---
+export interface WatchtowerDto {
+  cityId: number; level: number; maxLevel: number;
+  spySuccessChance: number; spyDefenseChance: number;   // percentages
+  cost: number; seconds: number;
+}
+export interface SpyIntel {
+  capturedAt: string;
+  troops: Record<string, number> | null;
+  resources: Record<string, number> | null;
+  buildings: Record<string, number> | null;
+}
+export interface SpyReportDto {
+  id: number; targetCityId: number; targetCityName: string;
+  outcome: "SUCCESS" | "CAUGHT"; capturedAt: string;
+  troops: Record<string, number> | null;
+  resources: Record<string, number> | null;
+  buildings: Record<string, number> | null;
+}
+export interface SpyAlertDto {
+  id: number; spyingPlayerName: string; targetCityName: string; caughtAt: string;
 }
 
 // --- bandit camp ---

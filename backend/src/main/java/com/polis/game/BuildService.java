@@ -29,14 +29,16 @@ public class BuildService {
   private final HeroService heroes;
   private final MissionService missions;
   private final LibraryService library;
+  private final CombatEngine combat;
 
   public BuildService(CityService cityService, CityRepo cities, BuildingRepo buildings, UnitRepo units,
                       ResearchRepo research, JobRepo jobs, MovementRepo movements, PlayerRepo players,
                       TravelTimeService travel, UnitCatalog catalog, HeroService heroes, MissionService missions,
-                      LibraryService library){
+                      LibraryService library, CombatEngine combat){
     this.cityService=cityService; this.cities=cities; this.buildings=buildings; this.units=units;
     this.research=research; this.jobs=jobs; this.movements=movements; this.players=players;
     this.travel=travel; this.catalog=catalog; this.heroes=heroes; this.missions=missions; this.library=library;
+    this.combat=combat;
   }
 
   private City owned(Long playerId, Long cityId){
@@ -57,6 +59,10 @@ public class BuildService {
   @Transactional
   public void build(Long playerId, Long cityId, BuildingType type){
     City c = owned(playerId, cityId);
+    if (type==BuildingType.HARBOR && c.getRace()==Race.FAIRIES)
+      throw new IllegalStateException("Fairies fly — they have no Harbor.");
+    if (type==BuildingType.BARRACKS && c.getRace()==Race.NEWTS)
+      throw new IllegalStateException("Newts are aquatic — they have no Barracks; train at the Harbor.");
     if (jobs.countByCityIdAndQueueType(cityId, QueueType.BUILDING) >= BUILD_QUEUE_MAX)
       throw new IllegalStateException("Construction queue is full (max " + BUILD_QUEUE_MAX + ")");
     // Effective level = built level + upgrades of this building already queued, so
@@ -110,7 +116,11 @@ public class BuildService {
     pay(c, (long)type.getCostWood()*count, (long)type.getCostStone()*count, (long)type.getCostWheat()*count);
     if (special != null) c.add(special, -(long)type.getCostSpecial()*count);
     cities.save(c);
-    int total = (int)(GameRules.unitSeconds(type, fromLevel) * count * library.effects(cityId).trainTimeMult());
+    // SEA-layer (naval) units use the naval training-speed research (Deepforges); land troops the
+    // general training research (Drillmasters). Hero naval-train items plug in via the same buff key.
+    LibraryService.LibEffects eff = library.effects(cityId);
+    double trainMult = type.isSea() ? eff.navalTrainTimeMult() : eff.trainTimeMult();
+    int total = (int)(GameRules.unitSeconds(type, fromLevel) * count * trainMult);
     BuildJob job = new BuildJob(); job.setUnitType(type.getName()); job.setBatch(count);
     enqueue(c, job, from, total);
   }
@@ -146,8 +156,9 @@ public class BuildService {
       if (u.getCostSpecial()>0 && c.getRace()!=null) c.add(c.getRace().specialResource, (long)u.getCostSpecial()*j.getBatch());
     }
     cities.save(c);
-    QueueType qt=j.getQueueType(); jobs.delete(j);
+    QueueType qt=j.getQueueType(); jobs.delete(j); jobs.flush();   // flush so the requery excludes j
     List<BuildJob> q = jobs.findByCityIdAndQueueTypeOrderByPositionAsc(cityId, qt);
+    q.removeIf(b -> Objects.equals(b.getId(), j.getId()));          // never re-save the deleted job (would un-delete it)
     Instant now=Instant.now();
     for (int i=0;i<q.size();i++){ BuildJob b=q.get(i); b.setPosition(i);
       if (i==0 && b.getFinishAt()==null){ b.setStartedAt(now); b.setFinishAt(now.plusSeconds(b.getTotalSeconds())); } }
@@ -159,9 +170,14 @@ public class BuildService {
 
   @Transactional
   public void finishWithGold(Long playerId, Long cityId, Long jobId){
-    City c = cities.findById(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
+    // Take the city write-lock FIRST, then bring the queue current under it. The background tick
+    // may have finalized/promoted this very job between the player's click and this call; finalizing
+    // here (under the lock) means we never rush — and re-insert via a stale detached entity — a job
+    // the tick already completed. This is the same lock-first discipline finalizeJobs already uses.
+    City c = cities.findByIdForUpdate(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
     if (!Objects.equals(c.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
-    BuildJob j = jobs.findById(jobId).orElseThrow(() -> new IllegalArgumentException("Job not found"));
+    cityService.finalizeJobs(c, Instant.now());
+    BuildJob j = jobs.findById(jobId).orElseThrow(() -> new IllegalStateException("That upgrade has already finished"));
     if (!Objects.equals(j.getCityId(), cityId)) throw new IllegalStateException("Wrong city");
     // A job can be rushed only if no EARLIER job in the same queue targets the same building/unit —
     // e.g. you may gold a Barracks upgrade while the Farm is upgrading, but not Farm→21 before Farm→20.
@@ -197,6 +213,9 @@ public class BuildService {
     if (Objects.equals(tgt.getPlayerId(), playerId)) throw new IllegalStateException("Cannot attack your own city");
     // an army OR a lone hero may march — but never an empty order
     if (army.isEmpty() && heroId == null) throw new IllegalArgumentException("Select at least one unit or a hero");
+    // Two-layer rule: one dispatch is one layer. SEA attack (ships/aquatic) hits the enemy fleet;
+    // LAND attack (ground troops) hits the garrison. Reject mixing combatant layers in one send.
+    combat.attackLayer(army);
     // LAND troops — and a land (non-flying/swimming) hero — can't cross open water without transport ships
     Hero hero = heroId != null ? heroes.requireOwned(playerId, heroId) : null;
     int heroLoad = hero != null ? travel.heroLandLoad(hero.getRace()) : 0;

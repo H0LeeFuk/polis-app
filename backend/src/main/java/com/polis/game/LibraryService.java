@@ -29,8 +29,9 @@ public class LibraryService {
   public record LibEffects(double attackMult, double defenseMult,
                            double defFireMult, double defWindMult, double defEarthMult, double defWaterMult,
                            double travelMult, double prodMult, double lootMult, double trainTimeMult,
+                           double navalTrainTimeMult,
                            Set<String> flags){
-    public static LibEffects none(){ return new LibEffects(1,1,1,1,1,1,1,1,1,1,Set.of()); }
+    public static LibEffects none(){ return new LibEffects(1,1,1,1,1,1,1,1,1,1,1,Set.of()); }
     public boolean has(String f){ return flags.contains(f); }
     public double defElementMult(com.polis.domain.Element e){
       return switch (e){ case FIRE -> defFireMult; case WIND -> defWindMult; case EARTH -> defEarthMult; case WATER -> defWaterMult; };
@@ -65,7 +66,7 @@ public class LibraryService {
   @Transactional
   public LibEffects effects(Long cityId){
     settle(cityId, Instant.now());
-    double attack=0, defense=0, dFire=0, dWind=0, dEarth=0, dWater=0, travel=0, prod=0, loot=0, train=0;
+    double attack=0, defense=0, dFire=0, dWind=0, dEarth=0, dWater=0, travel=0, prod=0, loot=0, train=0, navalTrain=0;
     Set<String> flags = new HashSet<>();
     for (CityLibraryResearch cr : research.findByCityId(cityId)){
       if (cr.getStatus()!=CityLibraryResearch.Status.COMPLETED) continue;
@@ -83,13 +84,14 @@ public class LibraryService {
           case "production" -> prod += e.getValue();
           case "loot" -> loot += e.getValue();
           case "trainTime" -> train += e.getValue();
+          case "navalTrainSpeed" -> navalTrain += e.getValue();
           default -> {}
         }
       }
       flags.addAll(def.flags());
     }
     return new LibEffects(1+attack, 1+defense, 1+dFire, 1+dWind, 1+dEarth, 1+dWater,
-        Math.max(0.2,1-travel), 1+prod, 1+loot, Math.max(0.2,1-train), flags);
+        Math.max(0.2,1-travel), 1+prod, 1+loot, Math.max(0.2,1-train), Math.max(0.2,1-navalTrain), flags);
   }
 
   // --- point economy ---------------------------------------------------------

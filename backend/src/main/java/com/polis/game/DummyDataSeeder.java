@@ -31,15 +31,19 @@ public class DummyDataSeeder implements ApplicationRunner {
   private final HeroRepo heroRepo; private final HeroItemRepo itemRepo; private final ItemFactory itemFactory;
   private final HeroService heroes; private final HeroEquipmentService equipment;
   private final AllianceRepo alliances; private final PasswordEncoder encoder;
+  private final MissionService missions; private final CityService cityService;
+  private final UnitCatalog catalog; private final UnitRepo units;
 
   public DummyDataSeeder(AuthService auth, PlayerRepo players, WorldRepo worlds, IslandRepo islands,
                          CityRepo cities, CityFactory cityFactory, BuildingRepo buildings, HeroRepo heroRepo,
                          HeroItemRepo itemRepo, ItemFactory itemFactory, HeroService heroes,
-                         HeroEquipmentService equipment, AllianceRepo alliances, PasswordEncoder encoder){
+                         HeroEquipmentService equipment, AllianceRepo alliances, PasswordEncoder encoder,
+                         MissionService missions, CityService cityService, UnitCatalog catalog, UnitRepo units){
     this.auth=auth; this.players=players; this.worlds=worlds; this.islands=islands;
     this.cities=cities; this.cityFactory=cityFactory; this.buildings=buildings; this.heroRepo=heroRepo;
     this.itemRepo=itemRepo; this.itemFactory=itemFactory; this.heroes=heroes; this.equipment=equipment;
     this.alliances=alliances; this.encoder=encoder;
+    this.missions=missions; this.cityService=cityService; this.catalog=catalog; this.units=units;
   }
 
   /** One dummy player's distinct profile. */
@@ -98,13 +102,16 @@ public class DummyDataSeeder implements ApplicationRunner {
 
     // player record: combat record + alliance for the rankings
     p.setCombatPoints(s.combat());
+    p.setCombatPointsTotal(s.combat());
     p.setLevel(s.level());
     p.setAllianceId(allianceId);
     players.save(p);
 
-    // capital: race flavour + boosted buildings (drives points ranking)
+    // capital: ALWAYS Humans (every player's first city is Human — Coal special). The dummy's
+    // flavour race only colours its colonies below; overriding the capital here produced
+    // inconsistent cities (e.g. a "Giants" capital still holding Humans' Coal).
     City capital = cities.findByPlayerIdAndCapitalTrue(p.getId()).orElseThrow();
-    capital.setRace(s.race());
+    capital.setRace(Race.HUMANS);
     boostCity(capital, s.buildingBoost(), rnd);
 
     // optional extra colonies for "X cities" variety
@@ -122,17 +129,51 @@ public class DummyDataSeeder implements ApplicationRunner {
     leo.setStationedCityId(capital.getId());
     heroRepo.save(leo);
 
-    heroRepo.findByOwnerPlayerIdAndHeroKey(p.getId(), HeroKey.TITANIA).ifPresent(tit -> {
-      if (s.titaniaUnlocked()){
-        tit.setUnlocked(true);
-        tit.setStationedCityId(capital.getId());
+    // Titania obeys the real rule: unlocked ONLY by finishing the whole starter chain. Drive the
+    // dummy through the missions legitimately (which unlocks + stations her); otherwise she stays
+    // locked. No more cheat-flagging — that was silently re-locked by the hero gate anyway.
+    if (s.titaniaUnlocked()){
+      missions.completeAllStarter(p.getId());
+      heroRepo.findByOwnerPlayerIdAndHeroKey(p.getId(), HeroKey.TITANIA).ifPresent(tit -> {
         levelHero(tit, s.titaniaLevel(), Race.FAIRIES);
-      }
-      heroRepo.save(tit);
-    });
+        heroRepo.save(tit);
+      });
+    }
+
+    // resources (within warehouse cap) + a valid basic garrison (within free population) on every city
+    for (City c : cities.findByPlayerId(p.getId())) provision(c, rnd);
 
     // items: roll a distinct loadout, equip one of each slot onto Leo
     rollAndEquip(p.getId(), leo, s.items(), rnd);
+  }
+
+  /** Stock a city with resources (never above the warehouse cap) and a rule-legal garrison. */
+  private void provision(City c, Random rnd){
+    long cap = cityService.capacity(c.getId());
+    double fill = 0.6 + rnd.nextDouble() * 0.25;        // 60–85% of cap — always under the cap
+    double amt = cap * fill;
+    c.setWood(amt); c.setStone(amt); c.setWheat(amt);
+    Race race = c.getRace() == null ? Race.HUMANS : c.getRace();
+    c.set(race.specialResource, amt);                   // the city race's own special only
+    cities.save(c);
+    garrison(c, rnd);
+  }
+
+  /** Add troops the city could actually field: a basic (non-elite, non-research) barracks land unit
+   *  of a race the city can train, with a count bounded by the city's free population. */
+  private void garrison(City c, Random rnd){
+    Race race = c.getRace() == null ? Race.HUMANS : c.getRace();
+    UnitType basic = catalog.byQueue(QueueType.BARRACKS).stream()
+        .filter(u -> !u.isElite() && u.getResearchRequired() == null && u.getCombatLayer() == CombatLayer.LAND)
+        .filter(u -> u.getRace() == null || u.getRace() == race)
+        .min(Comparator.comparingInt(UnitType::getPopulationCost))
+        .orElse(null);
+    if (basic == null || basic.getPopulationCost() <= 0) return;
+    int freePop = cityService.maxPop(c.getId(), false) - cityService.popUsed(c.getId());
+    int maxByPop = freePop / basic.getPopulationCost();
+    if (maxByPop <= 0) return;
+    int count = Math.max(1, (int) Math.round(maxByPop * (0.3 + rnd.nextDouble() * 0.4)));  // 30–70% of free pop
+    units.save(new CityUnit(c.getId(), basic.getName(), count));
   }
 
   /** Raise the city's buildings (capped at each type's max) and recompute its points/power. */
@@ -184,9 +225,11 @@ public class DummyDataSeeder implements ApplicationRunner {
   }
 
   private long[] firstFreeSlot(Long worldId){
-    for (Island is : islands.findByWorldId(worldId))
+    for (Island is : islands.findByWorldId(worldId)){
+      if (is.getTier() <= 0) continue;   // skip resource / wonder islands
       for (int s = 0; s < GameRules.SLOTS_PER_ISLAND; s++)
         if (cities.findByIslandIdAndSlot(is.getId(), s).isEmpty()) return new long[]{is.getId(), s};
+    }
     return null;
   }
 }

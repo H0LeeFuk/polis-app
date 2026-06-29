@@ -2,6 +2,7 @@ package com.polis.api;
 
 import com.polis.config.SecurityConfig;
 import com.polis.game.HeroService;
+import com.polis.game.MissionService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -12,7 +13,8 @@ import java.util.Map;
 @RequestMapping("/api/players/me")
 public class HeroController {
   private final HeroService heroes;
-  public HeroController(HeroService heroes){ this.heroes = heroes; }
+  private final MissionService missions;
+  public HeroController(HeroService heroes, MissionService missions){ this.heroes = heroes; this.missions = missions; }
   private Long me(){ return SecurityConfig.currentPlayerId(); }
 
   public record AttributesRequest(int leadership, int cunning, int valor){}
@@ -24,7 +26,9 @@ public class HeroController {
   /** All of the player's heroes (locked ones included, with unlocked=false). */
   @GetMapping("/heroes")
   public List<Map<String,Object>> heroes(){
-    return heroes.list(me()).stream().map(heroes::dto).toList();
+    Long me = me();
+    missions.enforceHeroGates(me);   // heal any hero unlocked without its mission being claimed
+    return heroes.list(me).stream().map(heroes::dto).toList();
   }
 
   @GetMapping("/heroes/{heroId}")

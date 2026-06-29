@@ -4,7 +4,7 @@ import type { RankRow } from "../types";
 
 const TABS: [string, string][] = [
   ["points", "Players · points"], ["combat", "Players · combat"],
-  ["alliancePoints", "Alliances · points"], ["alliances", "Alliances · members"],
+  ["alliancePoints", "Alliances · points"], ["alliances", "Alliances · combat"],
 ];
 
 export default function Rankings() {

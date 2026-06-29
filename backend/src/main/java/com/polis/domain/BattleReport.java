@@ -23,6 +23,8 @@ public class BattleReport {
   @Column(name="movement_id") private Long movementId;
   @Column(name="fought_at", nullable=false) private Instant foughtAt = Instant.now();
   @Enumerated(EnumType.STRING) @Column(nullable=false) private BattleOutcome outcome;
+  /** Which layer was fought: SEA (fleets engaged) or LAND (garrison engaged). */
+  @Enumerated(EnumType.STRING) @Column(name="combat_layer", nullable=false) private CombatLayer combatLayer = CombatLayer.LAND;
 
   @Column(name="attacker_player_id") private Long attackerPlayerId;          // null only for NPC raiders (none today)
   @Column(name="attacker_city_id") private Long attackerCityId;
@@ -50,6 +52,10 @@ public class BattleReport {
 
   @JdbcTypeCode(SqlTypes.JSON) @Column(name="resources_stolen", columnDefinition="json")
   private Map<String,Long> resourcesStolen = new HashMap<>();
+
+  /** Combat Points granted to the attacker for this fight, plus the anti-farming reason (if reduced). */
+  @Column(name="combat_points_earned") private int combatPointsEarned = 0;
+  @Column(name="combat_points_reason") private String combatPointsReason;
 
   @Column(name="attacker_attack_power") private int attackerTotalAttackPower;
   @Column(name="defender_defence_power") private int defenderTotalDefencePower;

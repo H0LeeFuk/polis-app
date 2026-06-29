@@ -174,6 +174,53 @@ public class MissionService {
     return h;
   }
 
+  /**
+   * Enforce the mission gate on hero unlocks: a hero whose unlocking mission is not yet CLAIMED must
+   * stay locked. Heals stale unlocks (heroes freed before the gate existed / by old seed data) so a
+   * player can't field Titania before finishing the starter chain. Only re-locks an IDLE hero so one
+   * already marching or settling is never yanked mid-mission.
+   */
+  @Transactional
+  public void enforceHeroGates(Long playerId){
+    for (Mission m : missionConfig().values()){
+      if (m.getUnlocksHeroKey() == null) continue;
+      boolean earned = playerMissions.findByPlayerIdAndMissionId(playerId, m.getId())
+          .map(pm -> pm.getStatus() == PlayerMissionStatus.CLAIMED).orElse(false);
+      if (earned) continue;
+      heroes.findByOwnerPlayerIdAndHeroKey(playerId, m.getUnlocksHeroKey()).ifPresent(h -> {
+        if (h.isUnlocked() && h.getState() == HeroState.IDLE){
+          h.setUnlocked(false);
+          h.setStationedCityId(null);
+          heroes.save(h);
+        }
+      });
+    }
+  }
+
+  /**
+   * Drive a player through the entire STARTER chain the legitimate way: complete each mission and
+   * claim it in order, so rewards are applied and the capstone claim unlocks Titania through the
+   * normal gate (no cheat-flagging the hero). Used by the dummy seeder so seeded players obey the
+   * same Titania-after-all-missions rule as real ones.
+   */
+  @Transactional
+  public void completeAllStarter(Long playerId){
+    Map<Long,Mission> cfg = missionConfig();
+    List<PlayerMission> pms = playerMissions.findByPlayerId(playerId);
+    // order by chain index so prerequisites (and the capstone, last) claim in the right sequence
+    pms.sort(Comparator.comparingInt(pm -> { Mission m = cfg.get(pm.getMissionId()); return m==null?999:m.getOrderIndex(); }));
+    for (PlayerMission pm : pms){
+      Mission m = cfg.get(pm.getMissionId());
+      if (m == null || !"STARTER".equals(m.getChain())) continue;
+      if (pm.getStatus() == PlayerMissionStatus.CLAIMED) continue;
+      pm.setStatus(PlayerMissionStatus.COMPLETED);
+      pm.setProgress(m.getObjectiveTarget());
+      pm.setCompletedAt(Instant.now());
+      playerMissions.save(pm);
+      claim(playerId, m.getId());   // applies rewards; capstone claim unlocks Titania
+    }
+  }
+
   // --- read view --------------------------------------------------------------
 
   @Transactional(readOnly = true)

@@ -174,11 +174,16 @@ export function ReportDetail({ report, onClose, onDeleted, onAttackAgain }: {
             : "— Both sides withdrew"}</small>
       </div>
 
+      {(() => { const sea = report.combatLayer === "SEA";
+        return <div className="br-layer">{sea
+          ? "⛵ Naval battle — fleets engaged (the land garrison was untouched)"
+          : "⚔ Land battle — garrison engaged (ships in port were untouched)"}</div>; })()}
+
       <div className="br-section-label">Forces</div>
       <div className="br-armies">
-        <TroopTable title={attacker ? "Your army" : "Enemy army"} presentLabel="Sent"
+        <TroopTable title={report.combatLayer === "SEA" ? (attacker ? "Your fleet" : "Enemy fleet") : (attacker ? "Your army" : "Enemy army")} presentLabel="Sent"
           present={report.attackerTroopsSent} lost={report.attackerTroopsLost} survived={report.attackerTroopsSurvived} />
-        <TroopTable title={attacker ? "Defender garrison" : "Your garrison"} presentLabel="Present"
+        <TroopTable title={report.combatLayer === "SEA" ? (attacker ? "Defender fleet" : "Your fleet") : (attacker ? "Defender troops" : "Your troops")} presentLabel="Present"
           present={report.defenderTroopsPresent} lost={report.defenderTroopsLost} survived={report.defenderTroopsSurvived} />
       </div>
       <div className="br-powers">
@@ -186,18 +191,11 @@ export function ReportDetail({ report, onClose, onDeleted, onAttackAgain }: {
         <span>Defence Power: <b>{report.defenderTotalDefencePower.toLocaleString()}</b></span>
       </div>
 
-      {(report.attackByElement || report.defenseByElement) && (
-        <>
-          <div className="br-section-label">By element</div>
-          <div className="br-elements">
-            {ELEMENT_ORDER.filter(e => (report.attackByElement?.[e] ?? 0) > 0 || (report.defenseByElement?.[e] ?? 0) > 0).map(e => (
-              <div className="br-elem-row" key={e}>
-                <span>{ELEMENT_GLYPH[e]} {titleCase(e)}</span>
-                <span className="muted">⚔ {report.attackByElement?.[e] ?? 0} · 🛡 {report.defenseByElement?.[e] ?? 0}</span>
-              </div>
-            ))}
-          </div>
-        </>
+      {report.combatPointsEarned > 0 && (
+        <div className="br-combat-pts">
+          ⚔ <b>+{report.combatPointsEarned}</b> Combat Points earned
+          {report.combatPointsReason && <small className="muted"> — {report.combatPointsReason}</small>}
+        </div>
       )}
 
       <div className="br-section-label">Plunder</div>

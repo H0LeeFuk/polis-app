@@ -3,6 +3,10 @@ import type {
   BattleReport, BattleReportPage, BattleOutcome, Hero, ResourceNode, HeroItemDto,
   BanditCamp, BanditAttackResult, IslandSlots, FoundingStatus, MissionsData, IslandBoss, BossAttackResult,
   LibraryData, TradeMarket, BuyPreview, TradeConvoyDto, AllianceView,
+  TempleState, Progression,
+  WorldEndgame, WonderDto, WonderLeader,
+  ColossusDto, ColossusDamageRow,
+  WatchtowerDto, SpyReportDto, SpyAlertDto, SpyIntel,
 } from "./types";
 
 const TOKEN_KEY = "polis_token";
@@ -46,6 +50,12 @@ export const doCancel   = (c: number, jobId: number) => api<{ ok: boolean }>(`/a
 export const doFinish   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/finish/${jobId}`, { method: "POST" });
 export const doAttack   = (c: number, targetCityId: number, units: Record<string, number>, heroId: number | null = null) => post(c, "attack", { targetCityId, units, heroId });
 
+// Temple / Festivals / progression
+export const getTemple = (c: number) => api<TempleState>(`/api/cities/${c}/temple`);
+export const runFestival = (c: number, festivalType: string, fuelType: string) =>
+  api<{ ok: boolean }>(`/api/cities/${c}/temple/festival`, { method: "POST", body: JSON.stringify({ festivalType, fuelType }) });
+export const getProgression = () => api<Progression>("/api/players/me/progression");
+
 // --- city founding (hero settle + race choice) ---
 export const getIslandSlots = (islandId: number) => api<IslandSlots>(`/api/islands/${islandId}/slots`);
 export const settleSlot = (islandId: number, slotIndex: number, fromCityId: number, heroId: number) =>
@@ -64,6 +74,25 @@ export const getCityMovements = (cityId: number) => api<Movement[]>(`/api/cities
 export const getMyMovements = () => api<PlayerMovements>("/api/players/me/movements");
 export const previewAttack = (cityId: number, targetCityId: number, units: Record<string, number>, heroId?: number | null) =>
   api<AttackPreview>(`/api/cities/${cityId}/attack/preview?targetCityId=${targetCityId}&units=${encodeURIComponent(JSON.stringify(units))}${heroId ? `&heroId=${heroId}` : ""}`);
+
+// --- colossi (daily roaming world bosses) ---
+export const getColossi = () => api<ColossusDto[]>("/api/world/colossi");
+export const getColossus = (id: number) => api<ColossusDto>(`/api/world/colossi/${id}`);
+export const getColossusLeaderboard = (id: number) => api<ColossusDamageRow[]>(`/api/world/colossi/${id}/leaderboard`);
+export const attackColossus = (id: number, fromCityId: number, troops: Record<string, number>, includeHeroId?: number | null) =>
+  api<{ ok?: boolean; status: string; travelSeconds?: number; arriveAt?: string }>(
+    `/api/world/colossi/${id}/attack`, { method: "POST", body: JSON.stringify({ fromCityId, troops, includeHeroId: includeHeroId ?? null }) });
+export const spawnColossusNow = () => api<{ ok: boolean }>("/api/world/colossi/spawn-now", { method: "POST" });
+
+// --- espionage (Watchtower) ---
+export const getWatchtower = (cityId: number) => api<WatchtowerDto>(`/api/cities/${cityId}/watchtower`);
+export const launchSpy = (fromCityId: number, targetCityId: number) =>
+  api<{ ok?: boolean; status: string; missionId?: number; resolvesAt?: string }>(
+    `/api/cities/${fromCityId}/spy`, { method: "POST", body: JSON.stringify({ targetCityId }) });
+export const getSpyReports = () => api<SpyReportDto[]>("/api/players/me/spy-reports");
+export const getSpyAlerts = () => api<SpyAlertDto[]>("/api/players/me/spy-alerts");
+export const getIntel = (targetCityId: number) =>
+  api<{ hasIntel: boolean; intel?: SpyIntel }>(`/api/players/me/intel?targetCityId=${targetCityId}`);
 
 // --- battle reports ---
 export interface ReportFilters { page?: number; size?: number; outcome?: BattleOutcome; read?: boolean; cityId?: number; }
@@ -148,6 +177,20 @@ export const attackNode = (nodeId: number, b: NodeMove) =>
   api<{ ok: boolean }>(`/api/nodes/${nodeId}/attack`, { method: "POST", body: JSON.stringify(b) });
 export const withdrawNode = (nodeId: number, troops?: Record<string, number>) =>
   api<{ ok: boolean }>(`/api/nodes/${nodeId}/withdraw`, { method: "POST", body: JSON.stringify({ troops: troops ?? null }) });
+
+// --- endgame: Wonders of the Aegean ---
+export const getWorldState = () => api<WorldEndgame>("/api/world/state");
+export const getWonderLeaderboard = () => api<WonderLeader[]>("/api/world/leaderboard");
+type WonderMove = { cityId: number; troops: Record<string, number>; heroId?: number | null };
+export const occupyWonder = (id: number, b: WonderMove) =>
+  api<{ ok: boolean }>(`/api/world/wonders/${id}/occupy`, { method: "POST", body: JSON.stringify(b) });
+export const attackWonder = (id: number, b: WonderMove) =>
+  api<{ ok: boolean }>(`/api/world/wonders/${id}/attack`, { method: "POST", body: JSON.stringify(b) });
+export const withdrawWonder = (id: number, troops?: Record<string, number>) =>
+  api<{ ok: boolean }>(`/api/world/wonders/${id}/withdraw`, { method: "POST", body: JSON.stringify({ troops: troops ?? null }) });
+export const investWonder = (id: number, cityId: number, each: number) =>
+  api<WonderDto>(`/api/world/wonders/${id}/invest`, { method: "POST", body: JSON.stringify({ cityId, each }) });
+export const forceEndgame = () => api<{ ok: boolean }>("/api/world/force-endgame", { method: "POST" });
 
 // --- bandit camp ---
 export const getBanditCamp = (islandId: number) => api<BanditCamp>(`/api/islands/${islandId}/bandit-camp`);

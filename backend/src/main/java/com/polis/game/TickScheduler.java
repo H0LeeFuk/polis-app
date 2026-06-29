@@ -31,17 +31,26 @@ public class TickScheduler {
   private final LibraryService library;
   private final BanditCampService banditCamps;
   private final TradeService trade;
+  private final ProgressionService progression;
+  private final TempleService temple;
+  private final WonderService wonders;
+  private final ColossusService colossi;
+  private final SpyService spyService;
 
   public TickScheduler(CityService cityService, CityFactory cityFactory, CityRepo cities, UnitRepo units,
                        JobRepo jobs, MovementRepo movements, PlayerRepo players, BattleReportService reports,
                        CombatEngine combat, UnitCatalog catalog, HeroService heroService, HeroRepo heroRepo,
                        NodeService nodeService, ResourceNodeRepo resourceNodes, SettleService settleService,
-                       LibraryService library, BanditCampService banditCamps, TradeService trade){
+                       LibraryService library, BanditCampService banditCamps, TradeService trade,
+                       ProgressionService progression, TempleService temple, WonderService wonders,
+                       ColossusService colossi, SpyService spyService){
+    this.wonders=wonders; this.colossi=colossi; this.spyService=spyService;
     this.cityService=cityService; this.cityFactory=cityFactory; this.cities=cities; this.units=units;
     this.jobs=jobs; this.movements=movements; this.players=players; this.reports=reports;
     this.combat=combat; this.catalog=catalog; this.heroService=heroService; this.heroRepo=heroRepo;
     this.nodeService=nodeService; this.resourceNodes=resourceNodes; this.settleService=settleService;
     this.library=library; this.banditCamps=banditCamps; this.trade=trade;
+    this.progression=progression; this.temple=temple;
   }
 
   @Scheduled(fixedDelayString = "${polis.tick.interval-ms}")
@@ -58,6 +67,8 @@ public class TickScheduler {
     heroService.recoverHealed(now);
     // complete any due Library research
     library.completeDue(now);
+    // complete any due Temple festivals (grant Culture Points → level-ups)
+    temple.completeDue(now);
 
     // resolve movements
     for (Movement m : movements.findDue(now)){
@@ -67,11 +78,13 @@ public class TickScheduler {
         case COLONY -> resolveColony(m);
         case OUT     -> {
           if (m.getTargetCampId()!=null) banditCamps.onArrive(m, now);
+          else if (m.getTargetColossusId()!=null) colossi.onArrive(m, now);
+          else if (m.getTargetWonderId()!=null) wonders.resolveAttack(m, now);
           else if (m.getTargetNodeId()!=null) resolveNodeAttack(m, now);
           else resolveRaid(m, now);
         }
         case RETURN  -> resolveReturn(m);
-        case OCCUPY  -> nodeService.resolveOccupy(m, now);
+        case OCCUPY  -> { if (m.getTargetWonderId()!=null) wonders.resolveOccupy(m, now); else nodeService.resolveOccupy(m, now); }
         default      -> {}
       }
       m.setResolved(true); movements.save(m);
@@ -83,7 +96,17 @@ public class TickScheduler {
     // trade logistics: deliver arrived convoys, then dispatch queued ones into freed slots
     trade.deliverDue(now);
     trade.dispatchPending(now);
+
+    // Colossus: time out any whose 1-hour window has elapsed (defeated ones already paid out)
+    colossi.sweepDespawns(now);
+
+    // resolve any due spy missions (the espionage contest)
+    spyService.resolveDue(now);
   }
+
+  /** Daily roaming Colossus: spawns at 21:00 server time (despawns at 22:00 via the tick sweep). */
+  @Scheduled(cron = "${polis.colossus.spawn-cron:0 0 21 * * *}")
+  public void spawnDailyColossus(){ colossi.spawnDaily(Instant.now()); }
 
   private void resolveColony(Movement m){
     if (cities.findByIslandIdAndSlot(m.getTargetIslandId(), m.getTargetSlot()).isPresent()) return; // plot taken
@@ -104,6 +127,14 @@ public class TickScheduler {
     Map<String,Integer> defenderPresent = new LinkedHashMap<>();
     for (CityUnit cu : garrison)
       if (cu.getCount() > 0) defenderPresent.merge(cu.getType().toUpperCase(), cu.getCount(), Integer::sum);
+
+    // Two-layer combat: this dispatch is one layer — a SEA attack hits the enemy fleet, a LAND
+    // attack the garrison. Resolve only the matching layer; the other is untouched. Transports
+    // are cargo (never fight, never sunk in battle). A hero-only march fights on the land layer.
+    CombatLayer layer = combat.attackLayer(attackerSent);
+    if (layer == null) layer = CombatLayer.LAND;
+    Map<String,Integer> attackerCombat = combat.combatants(attackerSent, layer);
+    Map<String,Integer> defenderCombat = combat.combatants(defenderPresent, layer);
 
     // hero modifiers: the attacker's marching hero, plus the defender's idle stationed hero
     Hero attackerHero = heroRepo.findByActiveMovementId(m.getId()).orElse(null);
@@ -127,7 +158,7 @@ public class TickScheduler {
     Element atkElement = atkRace != null ? atkRace.element : Element.FIRE;
     CombatEngine.CombatFx fx = attackerHero != null ? heroService.combatFx(attackerHero) : CombatEngine.CombatFx.none();
     double heroAtk = attackerHero != null ? heroService.baseAttack(attackerHero) : 0;
-    CombatEngine.Result r = combat.resolve(attackerSent, atkElement, defenderPresent, mods, fx, heroAtk);
+    CombatEngine.Result r = combat.resolve(attackerCombat, atkElement, defenderCombat, mods, fx, heroAtk);
     BattleOutcome outcome = r.outcome();
 
     // apply defender casualties back to the garrison
@@ -151,7 +182,8 @@ public class TickScheduler {
     Map<String,Long> resourcesStolen = new LinkedHashMap<>();
     resourcesStolen.put("WOOD",0L); resourcesStolen.put("STONE",0L); resourcesStolen.put("WHEAT",0L);
     Map<String,Long> loot = null;
-    if (outcome == BattleOutcome.VICTORY){
+    // Only a LAND victory plunders the city — a SEA victory just clears the harbor fleet.
+    if (outcome == BattleOutcome.VICTORY && layer == CombatLayer.LAND){
       long carry = armyCarry(r.attackerSurvived());
       if (atkRace != null) carry = (long)(carry * atkRace.lootMult);                    // race loot bonus
       carry = (long)(carry * atkLib.lootMult());                                        // Library loot research
@@ -175,25 +207,43 @@ public class TickScheduler {
     tgt.setPower(outcome == BattleOutcome.VICTORY ? Math.max(40, tgt.getPower()*0.45+20) : Math.max(40, tgt.getPower()*0.9));
     cities.save(tgt);
 
-    // combat points: attacker population lost + enemy population killed
-    awardCombat(m.getPlayerId(), popOf(r.attackerLost()) + popOf(r.defenderLost()));
+    // Combat Points (spendable war currency / festival fuel) — anti-farmed; the winner earns them.
+    Player defP = tgt.getPlayerId()!=null ? players.findById(tgt.getPlayerId()).orElse(null) : null;
+    Player atkP = m.getPlayerId()!=null ? players.findById(m.getPlayerId()).orElse(null) : null;
+    ProgressionService.CombatAward award = outcome == BattleOutcome.VICTORY
+        ? progression.combatAward(m.getPlayerId(), defP, countOf(r.defenderLost()), r.attackerAttackPower(), r.defenderDefencePower())
+        : progression.combatAward(tgt.getPlayerId(), atkP, countOf(r.attackerLost()), r.defenderDefencePower(), r.attackerAttackPower());
+    Long winnerId = outcome == BattleOutcome.VICTORY ? m.getPlayerId() : tgt.getPlayerId();
+    if (award.points() > 0 && winnerId != null){
+      Player w = players.findById(winnerId).orElse(null);
+      if (w != null){
+        // available balance (spendable on festivals) AND lifetime total (rankings) both rise on a win
+        w.setCombatPoints(w.getCombatPoints() + award.points());
+        w.setCombatPointsTotal(w.getCombatPointsTotal() + award.points());
+        players.save(w);
+      }
+    }
 
     // hero: XP, wounds, armed-skill consumption, and the report snapshot
     HeroParticipation hp = resolveHero(attackerHero, defenderHero, r, outcome, now);
 
-    // persist the battle report (both perspectives in one row)
+    // persist the battle report (both perspectives in one row) — only the engaged layer's units
     reports.createReport(m, new BattleResult(outcome,
-        attackerSent, r.attackerLost(), r.attackerSurvived(),
-        defenderPresent, r.defenderLost(), r.defenderSurvived(),
+        attackerCombat, r.attackerLost(), r.attackerSurvived(),
+        defenderCombat, r.defenderLost(), r.defenderSurvived(),
         resourcesStolen, r.attackerAttackPower(), r.defenderDefencePower(), r.siegeDamage(),
-        r.attackByElement(), r.defenseByElement()), hp);
+        r.attackByElement(), r.defenseByElement()), hp, layer, award.points(), award.reason());
 
+    // surviving combatants + any cargo (transports never fight) march home
+    Map<String,Integer> returnUnits = new LinkedHashMap<>(r.attackerSurvived());
+    for (var e : attackerSent.entrySet())
+      if (!attackerCombat.containsKey(e.getKey())) returnUnits.merge(e.getKey(), e.getValue(), Integer::sum);
     // the army (and any attacking hero) marches home unless wiped with no hero present
-    if (r.attackerSurvived().isEmpty() && attackerHero == null) return;
+    if (returnUnits.isEmpty() && attackerHero == null) return;
     Movement ret = new Movement();
     ret.setWorldId(m.getWorldId()); ret.setPlayerId(m.getPlayerId()); ret.setSourceCityId(m.getSourceCityId());
     ret.setTargetCityId(m.getTargetCityId()); ret.setPhase(MovementPhase.RETURN);
-    ret.setUnits(r.attackerSurvived()); ret.setLoot(loot);
+    ret.setUnits(returnUnits); ret.setLoot(loot);
     long secs = Math.max(5, now.getEpochSecond() - m.getDepartAt().getEpochSecond());
     ret.setArriveAt(now.plusSeconds(secs));
     Movement savedRet = movements.save(ret);
@@ -231,7 +281,7 @@ public class TickScheduler {
     }
     resourceNodes.save(node);
 
-    awardCombat(m.getPlayerId(), popOf(r.attackerLost()) + popOf(r.defenderLost()));
+    // Resource nodes are PvE — no Combat Points (anti-farming: zero from NPC targets).
     HeroParticipation hp = resolveHero(attackerHero, null, r, r.outcome(), now);
     reports.createNodeReport(m, new BattleResult(r.outcome(), attackerSent, r.attackerLost(), r.attackerSurvived(),
         defenderPresent, r.defenderLost(), r.defenderSurvived(),
@@ -311,14 +361,9 @@ public class TickScheduler {
     }
   }
 
-  private void awardCombat(Long playerId, int pts){
-    if (playerId==null || pts<=0) return;
-    Player p = players.findById(playerId).orElse(null); if (p==null) return;
-    int cp = p.getCombatPoints()+pts, lvl = p.getLevel();
-    while (cp >= GameRules.levelReq(lvl)){ cp -= GameRules.levelReq(lvl); lvl++; }
-    p.setCombatPoints(cp); p.setLevel(lvl); players.save(p);
-  }
 
   private long armyCarry(Map<String,Integer> a){ long s=0; for (var e:a.entrySet()) s+=(long)catalog.get(e.getKey()).getCarryCapacity()*e.getValue(); return s; }
   private int popOf(Map<String,Integer> a){ int s=0; for (var e:a.entrySet()) s+=catalog.get(e.getKey()).getPopulationCost()*e.getValue(); return s; }
+  /** Total troop COUNT in a unit map (Combat Points are earned per enemy troop killed). */
+  private int countOf(Map<String,Integer> a){ int s=0; for (var v:a.values()) if (v!=null) s+=v; return s; }
 }

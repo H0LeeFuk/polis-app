@@ -19,6 +19,8 @@ public class Movement {
   @Column(name="target_slot") private Integer targetSlot;
   @Column(name="target_node_id") private Long targetNodeId;   // resource-node moves (OCCUPY / node attack)
   @Column(name="target_camp_id") private Long targetCampId;   // bandit-camp raids (OUT / RETURN)
+  @Column(name="target_wonder_id") private Long targetWonderId; // Wonder captures (OUT assault / OCCUPY claim)
+  @Column(name="target_colossus_id") private Long targetColossusId; // Colossus strikes (OUT) / march home (RETURN)
   @Enumerated(EnumType.STRING) private MovementPhase phase;
 
   @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition="json")

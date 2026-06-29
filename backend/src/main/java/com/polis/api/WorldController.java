@@ -32,7 +32,7 @@ public class WorldController {
     for (Island i : islands.findByWorldId(worldId)){
       Map<String,Object> mi = new LinkedHashMap<>();
       mi.put("id",i.getId()); mi.put("name",i.getName()); mi.put("px",i.getPx()); mi.put("py",i.getPy());
-      mi.put("resource", i.isResource());
+      mi.put("resource", i.isResource()); mi.put("tier", i.getTier());
       List<Map<String,Object>> slots = new ArrayList<>();
       for (City c : cities.findByIslandId(i.getId())){
         Map<String,Object> mc = new LinkedHashMap<>();

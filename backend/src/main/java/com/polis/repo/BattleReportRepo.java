@@ -31,6 +31,15 @@ public interface BattleReportRepo extends JpaRepository<BattleReport, Long> {
       """)
   long countUnread(@Param("me") Long me);
 
+  /** Anti-farming: how many Combat-Point-earning wins this winner already scored vs this loser recently. */
+  @Query("""
+      select count(r) from BattleReport r
+      where r.attackerPlayerId = :winner and r.defenderPlayerId = :loser
+        and r.combatPointsEarned > 0 and r.foughtAt > :since
+      """)
+  long countRecentWins(@Param("winner") Long winner, @Param("loser") Long loser,
+                       @Param("since") java.time.Instant since);
+
   @Modifying
   @Query("update BattleReport r set r.attackerRead = true where r.attackerPlayerId = :me and r.attackerRead = false and r.attackerDeleted = false")
   void markAllReadAsAttacker(@Param("me") Long me);

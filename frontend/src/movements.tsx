@@ -33,6 +33,27 @@ export const UNIT_DEX: Record<string, UnitDex> = {
   EARTHSHAKER:     { element: "EARTH", atk: 170, defFire: 60, defWind: 55, defEarth: 95, defWater: 70, speed: 26, carry: 50, pop: 4 },
   STORMCALLER:     { element: "WIND",  atk: 175, defFire: 55, defWind: 95, defEarth: 45, defWater: 65, speed: 14, carry: 35, pop: 3 },
   LEVIATHAN_RIDER: { element: "WATER", atk: 165, defFire: 60, defWind: 50, defEarth: 65, defWater: 95, speed: 18, carry: 60, pop: 4 },
+  // race rosters — attack with the city race's element (null here); defences from V25.
+  // Fairies (flyers)
+  GLIMMER_GUARD:   { element: null, atk: 30,  defFire: 45, defWind: 65, defEarth: 40, defWater: 45, speed: 10, carry: 10,  pop: 1 },
+  SPRITE:          { element: null, atk: 45,  defFire: 25, defWind: 45, defEarth: 20, defWater: 30, speed: 8,  carry: 15,  pop: 1 },
+  PIXIE_ARCHER:    { element: null, atk: 80,  defFire: 20, defWind: 42, defEarth: 18, defWater: 28, speed: 7,  carry: 20,  pop: 1 },
+  DRAGONFLY_SKIFF: { element: null, atk: 100, defFire: 30, defWind: 55, defEarth: 30, defWater: 35, speed: 10, carry: 260, pop: 4 },
+  MOTH_RIDER:      { element: null, atk: 130, defFire: 30, defWind: 52, defEarth: 28, defWater: 34, speed: 5,  carry: 120, pop: 3 },
+  // Giants (heavy)
+  BOULDER_THROWER: { element: null, atk: 90,  defFire: 40, defWind: 35, defEarth: 60, defWater: 45, speed: 40, carry: 20,  pop: 3 },
+  WAR_BARGE:       { element: null, atk: 120, defFire: 30, defWind: 30, defEarth: 40, defWater: 45, speed: 35, carry: 300, pop: 10 },
+  TROLL:           { element: null, atk: 120, defFire: 55, defWind: 45, defEarth: 70, defWater: 50, speed: 40, carry: 60,  pop: 4 },
+  STONE_GIANT:     { element: null, atk: 180, defFire: 65, defWind: 55, defEarth: 90, defWater: 60, speed: 45, carry: 40,  pop: 6 },
+  COLOSSUS:        { element: null, atk: 360, defFire: 70, defWind: 60, defEarth: 100, defWater: 65, speed: 70, carry: 50, pop: 12 },
+  // Humans (ship)
+  TRIREME:         { element: null, atk: 90,  defFire: 45, defWind: 40, defEarth: 40, defWater: 55, speed: 20, carry: 200, pop: 6 },
+  // Newts (amphibious)
+  MUDLING:         { element: null, atk: 35,  defFire: 25, defWind: 25, defEarth: 30, defWater: 45, speed: 26, carry: 15,  pop: 1 },
+  NEWT_SPEAR:      { element: null, atk: 60,  defFire: 40, defWind: 35, defEarth: 35, defWater: 55, speed: 24, carry: 20,  pop: 1 },
+  TIDE_RAIDER:     { element: null, atk: 120, defFire: 40, defWind: 35, defEarth: 45, defWater: 65, speed: 12, carry: 300, pop: 3 },
+  SNAPPER:         { element: null, atk: 140, defFire: 45, defWind: 40, defEarth: 50, defWater: 70, speed: 14, carry: 250, pop: 4 },
+  LEVIATHAN:       { element: null, atk: 300, defFire: 60, defWind: 50, defEarth: 65, defWater: 92, speed: 12, carry: 400, pop: 10 },
 };
 export const ELEMENT_GLYPH: Record<string, string> = { FIRE: "🔥", WIND: "🌬", EARTH: "🌍", WATER: "💧" };
 const titleCaseU = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
@@ -169,7 +190,7 @@ export function TravelPreview({ originCityId, targetCityId, units, heroId, onSta
     const sel = Object.fromEntries(Object.entries(units).filter(([, n]) => n > 0));
     const h = window.setTimeout(() => {
       previewAttack(originCityId, targetCityId, sel, heroId)
-        .then(d => { setData(d); onState?.(d.transportSufficient !== false); })
+        .then(d => { setData(d); onState?.(d.transportSufficient !== false && d.combatLayer !== "MIXED"); })
         .catch(() => { setData(null); onState?.(true); }).finally(() => setLoading(false));
     }, 300); // debounce while the player tweaks quantities
     return () => window.clearTimeout(h);
@@ -186,6 +207,13 @@ export function TravelPreview({ originCityId, targetCityId, units, heroId, onSta
         <div className="travel-row muted">{loading ? "Charting the route…" : "—"}</div>
       ) : (
         <>
+          {data.combatLayer === "MIXED" ? (
+            <div className="layer-banner mixed">⚠ Mixed forces — send ships and ground troops as <b>separate attacks</b>. Sea attacks hit the enemy fleet; land attacks hit the garrison.</div>
+          ) : data.combatLayer === "SEA" ? (
+            <div className="layer-banner sea">⛵ <b>Sea attack</b> — engages the enemy fleet only. Clear it before landing troops.</div>
+          ) : data.combatLayer === "LAND" ? (
+            <div className="layer-banner land">⚔ <b>Land attack</b> — engages the enemy garrison only (ships untouched).</div>
+          ) : null}
           <div className="travel-row"><span>🐢 Slowest unit</span><b>{data.slowestUnit ? titleCase(data.slowestUnit) : "—"}</b></div>
           <div className="travel-row"><span>📏 Distance</span><b>{data.distance} tiles</b></div>
           <div className="travel-row"><span>⏱ Travel time</span><b>{fmtDuration(data.travelSeconds)}</b></div>

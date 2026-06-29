@@ -48,9 +48,11 @@ public class GameService {
   private Map<String,Object> playerDto(Player p, int cityCount){
     Map<String,Object> m=new LinkedHashMap<>();
     m.put("id",p.getId()); m.put("username",p.getUsername()); m.put("level",p.getLevel());
-    m.put("combatPoints",p.getCombatPoints()); m.put("combatToNext",GameRules.levelReq(p.getLevel()));
+    m.put("combatPoints",p.getCombatPoints());
+    m.put("culturePoints",p.getCulturePoints());
+    m.put("cultureForNextLevel", p.getLevel()>=GameRules.MAX_LEVEL ? null : GameRules.cultureForLevel(p.getLevel()+1));
     m.put("gold",p.getGold());
-    m.put("citySlots",GameRules.citySlots(p.getLevel())); m.put("ownedCities",cityCount);
+    m.put("citySlots",GameRules.maxCities(p.getLevel())); m.put("ownedCities",cityCount);
     m.put("totalPoints",ranking.playerPoints(p.getId()));
     if (p.getAllianceId()!=null) alliances.findById(p.getAllianceId()).ifPresent(a->m.put("alliance",a.getName()));
     return m;
@@ -72,6 +74,10 @@ public class GameService {
 
     List<Map<String,Object>> bld = new ArrayList<>();
     for (BuildingType t : BuildingType.values()){
+      // Fairies fly and have no Harbor — omit the plot entirely from their cities.
+      if (t==BuildingType.HARBOR && c.getRace()==Race.FAIRIES) continue;
+      // Newts are an aquatic race — no Barracks/land troops; they train everything at the Harbor.
+      if (t==BuildingType.BARRACKS && c.getRace()==Race.NEWTS) continue;
       int l = lv.get(t); long[] cost = GameRules.buildCost(t, l);
       Map<String,Object> b=new LinkedHashMap<>();
       b.put("type",t.name()); b.put("level",l); b.put("max",t.max); b.put("pop",t.pop);
@@ -100,6 +106,8 @@ public class GameService {
       t.put("movementClass",u.getMovementClass().name());
       t.put("transportCapacity",u.getTransportCapacity());
       t.put("requiresTransport",u.isRequiresTransport());
+      t.put("combatLayer", u.getCombatLayer().name());
+      t.put("shipRole", u.getShipRole()!=null ? u.getShipRole().name() : null);
       t.put("cost",List.of(u.getCostWood(),u.getCostStone(),u.getCostWheat()));
       t.put("elite", u.isElite());
       t.put("costSpecial", u.getCostSpecial());
@@ -182,13 +190,20 @@ public class GameService {
       case SENATE    -> "Build speed +" + senatePct(l) + "% → +" + senatePct(n) + "% faster construction";
       case BARRACKS  -> "Training +" + trainPct(l) + "% → +" + trainPct(n) + "% faster";
       case HARBOR    -> "Ship training +" + trainPct(l) + "% → +" + trainPct(n) + "% faster";
-      case WAREHOUSE -> "Raises resource storage capacity";
+      case WAREHOUSE -> "Storage capacity " + GameRules.storeCap(l) + " → " + GameRules.storeCap(n) + " per resource";
       case LIBRARY   -> "Research speed +" + libPct(l) + "% → +" + libPct(n) + "% (unlocks research up to level " + n + ")";
       case WALL      -> "Strengthens the city's defences";
-      case MARKET    -> "Bigger trade convoys, more at once, faster delivery";
+      case WATCHTOWER -> "Spy success " + pct1(GameRules.spySuccessChance(l)) + " → " + pct1(GameRules.spySuccessChance(n))
+                        + " · catch enemy spies " + pct1(GameRules.spyDefenseChance(l)) + " → " + pct1(GameRules.spyDefenseChance(n));
+      case MARKET    -> "Trade capacity " + marketCap(l) + " → " + marketCap(n)
+                        + " · " + marketConvoys(l) + " → " + marketConvoys(n) + " convoys at once";
+      case TEMPLE    -> "Host Festivals → Culture Points (level up → +1 city slot)";
     };
   }
-  private static int senatePct(int level){ return (int)Math.round(Math.min(0.6, level * 0.04) * 100); }
-  private static int trainPct(int level){ return (int)Math.round(Math.min(0.5, Math.max(0, level - 1) * 0.03) * 100); }
+  private static String pct1(double frac){ return Math.round(frac * 1000) / 10.0 + "%"; }
+  private static int senatePct(int level){ return (int)Math.round(Math.min(0.75, level * 0.025) * 100); }
+  private static int trainPct(int level){ return (int)Math.round(Math.min(0.5, level * 0.03) * 100); }
+  private static int marketCap(int level){ return TradeService.BASE_CAPACITY + level * TradeService.PER_LEVEL_CAPACITY; }
+  private static int marketConvoys(int level){ return 2 + level / 3; }
   private static int libPct(int level){ return (int)Math.round(LibraryService.librarySpeedBonus(level) * 100); }
 }

@@ -67,6 +67,7 @@ public class HeroEquipmentService {
   public double defenseElementPct(Hero h, Element e){ return sum(h, "DEFENSE_" + e.name() + "_PCT"); }
   public double travelPct(Hero h){ return sum(h, "TRAVEL_TIME_PCT"); }
   public double navalTravelPct(Hero h){ return sum(h, "NAVAL_TRAVEL_TIME_PCT"); }
+  public double navalTrainSpeedPct(Hero h){ return sum(h, "NAVAL_TRAIN_SPEED_PCT"); }
   public double lootPct(Hero h){ return sum(h, "LOOT_PCT"); }
   public double dropChancePct(Hero h){ return sum(h, "DROP_CHANCE_PCT"); }
   public double heroXpPct(Hero h){ return sum(h, "HERO_XP_PCT"); }

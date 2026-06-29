@@ -24,12 +24,16 @@ public class CityService {
   private final MissionService missions;
   private final LibraryService library;
   private final MovementRepo movements;
+  private final PlayerRepo players;
+
+  /** Dev account that keeps resources pinned at the warehouse cap (never depletes). */
+  private static final String GOD_ACCOUNT = "bruno";
 
   public CityService(CityRepo cities, BuildingRepo buildings, UnitRepo units, JobRepo jobs,
                      UnitCatalog catalog, MissionService missions, LibraryService library,
-                     MovementRepo movements){
+                     MovementRepo movements, PlayerRepo players){
     this.cities=cities; this.buildings=buildings; this.units=units; this.jobs=jobs; this.catalog=catalog;
-    this.missions=missions; this.library=library; this.movements=movements;
+    this.missions=missions; this.library=library; this.movements=movements; this.players=players;
   }
 
   public Map<BuildingType,Integer> levels(Long cityId){
@@ -42,6 +46,11 @@ public class CityService {
   public int level(Long cityId, BuildingType t){ return levels(cityId).getOrDefault(t,0); }
 
   public long capacity(Long cityId){ return GameRules.storeCap(level(cityId, BuildingType.WAREHOUSE)); }
+
+  /** True for the dev "god" account whose resources stay pinned at the warehouse cap. */
+  private boolean isGodAccount(Long playerId){
+    return players.findById(playerId).map(p -> GOD_ACCOUNT.equalsIgnoreCase(p.getUsername())).orElse(false);
+  }
 
   public int maxPop(Long cityId, boolean bounty){
     int p = GameRules.farmPop(level(cityId, BuildingType.FARM));
@@ -85,13 +94,15 @@ public class CityService {
       }
       c.setLastTickAt(now);
     }
-    // TEST MODE: keep player cities topped up with resources for free testing.
-    if (c.getPlayerId()!=null){
-      double TEST = 1_000_000_000d;
-      if (c.getWood()<TEST)  c.setWood(TEST);
-      if (c.getStone()<TEST) c.setStone(TEST);
-      if (c.getWheat()<TEST) c.setWheat(TEST);
-      if (c.getRace()!=null && c.get(c.getRace().specialResource)<TEST) c.set(c.getRace().specialResource, TEST);
+    // GOD ACCOUNT: the dev account's cities stay pinned exactly at the warehouse cap —
+    // resources never deplete and never exceed the cap. Every other account obeys the
+    // normal capped accrual above.
+    if (c.getPlayerId()!=null && isGodAccount(c.getPlayerId())){
+      double cap = GameRules.storeCap(level(c.getId(), BuildingType.WAREHOUSE));
+      c.setWood(cap);
+      c.setStone(cap);
+      c.setWheat(cap);
+      if (c.getRace()!=null) c.set(c.getRace().specialResource, cap);
     }
     if (c.getPlayerId()!=null) c.setPoints(GameRules.cityPoints(levels(c.getId())));
     return cities.save(c);
@@ -139,7 +150,12 @@ public class CityService {
     applyJob(c, j);
     QueueType qt = j.getQueueType();
     jobs.delete(j);
+    jobs.flush();   // force the DELETE to hit the DB before re-reading the queue
+    // Re-read and DROP the just-deleted job from the list (mirrors finalizeJobs). Re-saving a
+    // re-queried row that still includes j would cancel the pending delete in the persistence
+    // context — leaving a phantom job that never disappears and inflates the queue by a slot.
     List<BuildJob> q = jobs.findByCityIdAndQueueTypeOrderByPositionAsc(c.getId(), qt);
+    q.removeIf(b -> Objects.equals(b.getId(), j.getId()));
     Instant now = Instant.now();
     for (int i = 0; i < q.size(); i++){
       BuildJob b = q.get(i); b.setPosition(i);

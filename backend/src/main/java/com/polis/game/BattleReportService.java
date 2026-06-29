@@ -30,10 +30,11 @@ public class BattleReportService {
   // --- creation (called from TickScheduler within the tick transaction) --------
 
   @Transactional
-  public void createReport(Movement m, BattleResult res){ createReport(m, res, null); }
+  public void createReport(Movement m, BattleResult res){ createReport(m, res, null, CombatLayer.LAND, 0, null); }
 
   @Transactional
-  public void createReport(Movement m, BattleResult res, HeroParticipation hero){
+  public void createReport(Movement m, BattleResult res, HeroParticipation hero, CombatLayer layer,
+                           int combatPointsEarned, String combatPointsReason){
     City atkCity = cities.findById(m.getSourceCityId()).orElse(null);
     City defCity = cities.findById(m.getTargetCityId()).orElse(null);
     Long defPlayerId = defCity != null ? defCity.getPlayerId() : null;
@@ -42,6 +43,9 @@ public class BattleReportService {
     r.setWorldId(m.getWorldId());
     r.setMovementId(m.getId());
     r.setOutcome(res.outcome());
+    r.setCombatLayer(layer);
+    r.setCombatPointsEarned(combatPointsEarned);
+    r.setCombatPointsReason(combatPointsReason);
 
     r.setAttackerPlayerId(m.getPlayerId());
     r.setAttackerCityId(m.getSourceCityId());
@@ -89,6 +93,7 @@ public class BattleReportService {
     r.setWorldId(m.getWorldId());
     r.setMovementId(m.getId());
     r.setOutcome(res.outcome());
+    r.setCombatLayer(CombatLayer.LAND);
     r.setAttackerPlayerId(m.getPlayerId());
     r.setAttackerCityId(m.getSourceCityId());
     r.setAttackerCityName(atkCity != null ? atkCity.getName() : "Unknown city");
@@ -129,6 +134,7 @@ public class BattleReportService {
     BattleReport r = new BattleReport();
     r.setWorldId(worldId);
     r.setOutcome(res.outcome());
+    r.setCombatLayer(CombatLayer.LAND);
     r.setAttackerPlayerId(attackerPlayerId);
     r.setAttackerCityId(attackerCityId);
     r.setAttackerCityName(atkCity != null ? atkCity.getName() : "Unknown city");
@@ -245,12 +251,14 @@ public class BattleReportService {
     boolean attacker = isAttacker(r, me);
     return new BattleReportDTO(
         r.getId(), r.getFoughtAt().toString(), r.getOutcome().name(), attacker ? "ATTACKER" : "DEFENDER",
+        r.getCombatLayer().name(),
         r.getAttackerPlayerId(), r.getAttackerPlayerName(), r.getAttackerCityId(), r.getAttackerCityName(),
         r.getDefenderPlayerId(), r.getDefenderPlayerName(), r.getDefenderCityId(), r.getDefenderCityName(),
         r.getAttackerTroopsSent(), r.getAttackerTroopsLost(), r.getAttackerTroopsSurvived(),
         r.getDefenderTroopsPresent(), r.getDefenderTroopsLost(), r.getDefenderTroopsSurvived(),
         r.getResourcesStolen(), r.getAttackerTotalAttackPower(), r.getDefenderTotalDefencePower(),
         r.getSiegeDamage(), r.getAttackByElement(), r.getDefenseByElement(),
+        r.getCombatPointsEarned(), r.getCombatPointsReason(),
         r.getHeroName(), r.getHeroLevel(), r.getHeroAttackBonusPct(), r.getHeroLossReductionPct(),
         r.getHeroSkillUsed(), r.getHeroXpGained(), r.getHeroLeveledTo(), r.isHeroWounded(),
         unread(r, attacker));

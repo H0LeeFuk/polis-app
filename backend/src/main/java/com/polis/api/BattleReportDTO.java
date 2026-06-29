@@ -8,6 +8,7 @@ public record BattleReportDTO(
     String foughtAt,
     String outcome,            // VICTORY | DEFEAT | DRAW — always the attacker's perspective
     String role,               // ATTACKER | DEFENDER — the requesting player's side
+    String combatLayer,        // SEA (fleets engaged) | LAND (garrison engaged)
 
     Long attackerPlayerId,
     String attackerPlayerName,
@@ -32,6 +33,8 @@ public record BattleReportDTO(
     int siegeDamage,
     Map<String,Integer> attackByElement,
     Map<String,Integer> defenseByElement,
+    int combatPointsEarned,
+    String combatPointsReason,
 
     // hero participation — heroName null => no hero took part
     String heroName,

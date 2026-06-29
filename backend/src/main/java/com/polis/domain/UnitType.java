@@ -54,6 +54,11 @@ public class UnitType {
   /** For transports: how much LAND population this unit can ferry across water (0 = not a transport). */
   @Column(name="transport_capacity") private int transportCapacity;
 
+  /** Which battle layer this unit fights in. Ground troops = LAND; ships + Newt aquatic = SEA. */
+  @Enumerated(EnumType.STRING) @Column(name="combat_layer", nullable=false) private CombatLayer combatLayer = CombatLayer.LAND;
+  /** Ship role for LAND-race fleets (Transport/Defense/Attack); null for non-ships incl. Newt aquatic. */
+  @Enumerated(EnumType.STRING) @Column(name="ship_role") private ShipRole shipRole;
+
   /** This unit's resistance to a given element. */
   @Transient public int defenseOf(Element e){
     return switch (e){ case FIRE -> defenseFire; case WIND -> defenseWind; case EARTH -> defenseEarth; case WATER -> defenseWater; };
@@ -63,4 +68,6 @@ public class UnitType {
   /** LAND units need a transport to cross open water; flyers and swimmers do not. */
   @Transient public boolean isRequiresTransport(){ return movementClass == MovementClass.LAND; }
   @Transient public boolean isTransport(){ return transportCapacity > 0; }
+  /** SEA-layer = ships and Newt aquatic units; LAND-layer = ground troops. */
+  @Transient public boolean isSea(){ return combatLayer == CombatLayer.SEA; }
 }

@@ -1,2 +1,0 @@
--- (Postgres) No-op for version parity with the H2 history.
--- Postgres jsonb already parses the V8 literals correctly; only H2 needed the FORMAT JSON rewrite.

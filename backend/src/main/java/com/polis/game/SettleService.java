@@ -66,8 +66,9 @@ public class SettleService {
 
     long owned = cities.countByPlayerId(playerId);
     int pending = movements.findByPlayerIdAndPhaseAndResolvedFalse(playerId, MovementPhase.SETTLE).size();
-    if (owned + pending >= GameRules.citySlots(p.getLevel()))
-      throw new IllegalStateException("No free city slots — level up to settle more cities");
+    // max cities = player level (cap 20). Reach the next level by earning Culture at a Temple.
+    if (owned + pending >= GameRules.maxCities(p.getLevel()))
+      throw new IllegalStateException("All city slots used — earn Culture at a Temple to reach the next level");
 
     long secs = travel.seconds(from.getIslandId(), islandId, TravelTimeService.DEFAULT_MINUTES_PER_TILE);
     if (from.getRace() != null) secs = (long)(secs * from.getRace().travelMult);
@@ -258,7 +259,10 @@ public class SettleService {
     List<Movement> pend = movements.findByPlayerIdAndPhaseAndResolvedFalse(playerId, MovementPhase.SETTLE);
     Map<String,Object> out = new LinkedHashMap<>();
     if (pend.isEmpty()){ out.put("founding", null); return out; }
-    Movement m = pend.get(0);
+    // Prefer a founding that has ARRIVED and awaits a race choice. With more than one settle pending,
+    // returning an arbitrary first (a still-marching one) made the race banner target the wrong slot —
+    // the choice would then resolve against a different slot than the player saw.
+    Movement m = pend.stream().filter(x -> x.getArrivedAt()!=null).findFirst().orElse(pend.get(0));
     Map<String,Object> f = new LinkedHashMap<>();
     f.put("movementId", m.getId());
     f.put("phase", m.getArrivedAt()!=null ? "AWAITING_RACE" : "MARCHING");

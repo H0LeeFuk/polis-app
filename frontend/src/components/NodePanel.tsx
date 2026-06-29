@@ -186,7 +186,7 @@ export default function NodePanel({ nodeId, ctx, onClose, onChanged }: {
               <div><strong>Status</strong><span className={"node-badge tone-" + statusTone(node, ctx.myPlayerId)}>{titleCase(node.status)}</span></div>
               <div><strong>Controller</strong><span>{node.controllingPlayerName ?? "Unclaimed"}</span></div>
               <div><strong>Produces</strong><span>{RES_GLYPH[node.producedResource]} {node.ratePerHour}/h</span></div>
-              <div><strong>Garrison</strong><span>{node.garrisonPop} / {node.garrisonCap} pop</span></div>
+              <div><strong>Troops</strong><span>{node.garrisonPop} / {node.garrisonCap} pop</span></div>
             </div>
             {node.status === "CONTROLLED" && (
               <div className="node-accum">📦 Accumulated: <b>{Math.floor(accum)}</b> {titleCase(node.producedResource)}

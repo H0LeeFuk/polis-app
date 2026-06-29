@@ -17,6 +17,7 @@ public interface CityRepo extends JpaRepository<City, Long> {
   Optional<City> findByPlayerIdAndCapitalTrue(Long playerId);
   Optional<City> findByIslandIdAndSlot(Long islandId, int slot);
   long countByPlayerId(Long playerId);
+  long countByWorldIdAndPlayerIdNotNull(Long worldId);
 
   // Serializes job finalization: rush (finishWithGold), per-read sync(), and the
   // background tick all run finalizeJobs and would otherwise concurrently delete/promote

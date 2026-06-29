@@ -17,7 +17,7 @@ public class RankingController {
     Long worldId = players.findById(SecurityConfig.currentPlayerId()).orElseThrow().getWorldId();
     return switch (type){
       case "combat"         -> ranking.byCombat(worldId);
-      case "alliances"      -> ranking.alliancesBy(worldId, false);
+      case "alliances"      -> ranking.alliancesByCombat(worldId);
       case "alliancePoints" -> ranking.alliancesBy(worldId, true);
       default               -> ranking.byPoints(worldId);
     };

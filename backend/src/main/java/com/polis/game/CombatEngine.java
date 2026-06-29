@@ -1,7 +1,9 @@
 package com.polis.game;
 
 import com.polis.domain.BattleOutcome;
+import com.polis.domain.CombatLayer;
 import com.polis.domain.Element;
+import com.polis.domain.ShipRole;
 import com.polis.domain.UnitType;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,43 @@ import java.util.*;
 public class CombatEngine {
   private final UnitCatalog catalog;
   public CombatEngine(UnitCatalog catalog){ this.catalog = catalog; }
+
+  // ---- two-layer combat (sea fleets vs land garrison; the layers never cross-damage) ----------
+  // Transports only carry — they are never combatants (don't fight, aren't destroyed in battle).
+
+  /** "SEA", "LAND", "MIXED", or null (no combatants) — non-throwing, for the dispatch preview. */
+  public String layerLabel(Map<String,Integer> army){
+    boolean land=false, sea=false;
+    if (army != null) for (var e : army.entrySet()){
+      if (e.getValue()==null || e.getValue()<=0) continue;
+      UnitType u = catalog.get(e.getKey());
+      if (u.getShipRole()==ShipRole.TRANSPORT) continue;   // cargo, not a combatant
+      if (u.isSea()) sea=true; else land=true;
+    }
+    if (land && sea) return "MIXED";
+    return sea ? "SEA" : land ? "LAND" : null;
+  }
+
+  /** Layer of an army's COMBATANT units; null if it has none. Throws if SEA and LAND are mixed. */
+  public CombatLayer attackLayer(Map<String,Integer> army){
+    String l = layerLabel(army);
+    if ("MIXED".equals(l)) throw new IllegalStateException(
+      "Send ships and ground troops as separate attacks — a sea attack hits the enemy fleet, a land attack the garrison.");
+    return "SEA".equals(l) ? CombatLayer.SEA : "LAND".equals(l) ? CombatLayer.LAND : null;
+  }
+
+  /** Filter a unit map to the COMBATANTS on the given layer (transports always excluded). */
+  public Map<String,Integer> combatants(Map<String,Integer> units, CombatLayer layer){
+    Map<String,Integer> m = new LinkedHashMap<>();
+    if (units==null || layer==null) return m;
+    for (var e : units.entrySet()){
+      if (e.getValue()==null || e.getValue()<=0) continue;
+      UnitType u = catalog.get(e.getKey());
+      if (u.getShipRole()==ShipRole.TRANSPORT) continue;
+      if (u.isSea() == (layer==CombatLayer.SEA)) m.put(e.getKey(), e.getValue());
+    }
+    return m;
+  }
 
   /**
    * Multipliers applied before resolving. {@code defenseMult} scales all four elemental defences;

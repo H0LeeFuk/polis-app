@@ -24,12 +24,14 @@ public class MovementService {
   private final TravelTimeService travel;
   private final HeroRepo heroes;
   private final TradeConvoyRepo tradeConvoys;
+  private final CombatEngine combat;
 
   public MovementService(MovementRepo movements, CityRepo cities, PlayerRepo players,
                          IslandRepo islands, TravelTimeService travel, HeroRepo heroes,
-                         TradeConvoyRepo tradeConvoys){
+                         TradeConvoyRepo tradeConvoys, CombatEngine combat){
     this.movements = movements; this.cities = cities; this.players = players;
     this.islands = islands; this.travel = travel; this.heroes = heroes; this.tradeConvoys = tradeConvoys;
+    this.combat = combat;
   }
 
   /** Preview the travel time for an attack without creating a movement. */
@@ -55,6 +57,8 @@ public class MovementService {
     out.put("transportSufficient", tc.sufficient());
     out.put("transportShipsShort", tc.shipsShort());
     if (tc.reason()!=null) out.put("transportWarning", tc.reason());
+    // detected attack layer: SEA (hits fleet) | LAND (hits garrison) | MIXED (rejected) | null
+    out.put("combatLayer", combat.layerLabel(units));
     return out;
   }
 

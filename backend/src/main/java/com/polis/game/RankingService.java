@@ -27,9 +27,27 @@ public class RankingService {
       .sorted(Comparator.comparingLong(Row::value).reversed()).limit(50).toList();
   }
   public List<Row> byCombat(Long worldId){
+    // value is LIFETIME Combat Points earned (never reduced by festival spending), so rankings
+    // reflect total war prowess; ties broken by level so higher-level players rank above equals.
     return players.findByWorldId(worldId).stream()
-      .map(p -> new Row(p.getUsername(), p.getCombatPoints()+(long)p.getLevel()*60, "level "+p.getLevel()))
-      .sorted(Comparator.comparingLong(Row::value).reversed()).limit(50).toList();
+      .sorted(Comparator.comparingInt(Player::getCombatPointsTotal).thenComparingInt(Player::getLevel).reversed())
+      .map(p -> new Row(p.getUsername(), p.getCombatPointsTotal(), "level "+p.getLevel()))
+      .limit(50).toList();
+  }
+  /** Rank alliances by the SUM of their members' Combat Points (alliances store no CP of their own). */
+  public List<Row> alliancesByCombat(Long worldId){
+    Map<Long,long[]> agg = new HashMap<>(); // allianceId -> [members, combatPoints]
+    for (Player p : players.findByWorldId(worldId)){
+      if (p.getAllianceId()==null) continue;
+      long[] a = agg.computeIfAbsent(p.getAllianceId(), k->new long[2]);
+      a[0]++; a[1]+=p.getCombatPointsTotal();
+    }
+    Map<Long,Alliance> byId = alliances.findByWorldId(worldId).stream().collect(Collectors.toMap(Alliance::getId, x->x));
+    return agg.entrySet().stream().map(e -> {
+        Alliance al = byId.get(e.getKey());
+        long members=e.getValue()[0], cp=e.getValue()[1];
+        return new Row(al!=null?al.getName():"—", cp, members+" members");
+      }).sorted(Comparator.comparingLong(Row::value).reversed()).toList();
   }
   public List<Row> alliancesBy(Long worldId, boolean byPoints){
     Map<Long,long[]> agg = new HashMap<>(); // allianceId -> [members, points]

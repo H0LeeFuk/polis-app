@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { getWorld, getIslandSlots, doAttack, sendMessage } from "../api";
-import type { WorldData, WorldIsland, WorldCity, UnitDto, Hero, IslandSlots } from "../types";
+import { getWorld, getIslandSlots, doAttack, sendMessage, getWorldState, getColossi, launchSpy } from "../api";
+import type { WorldData, WorldIsland, WorldCity, UnitDto, Hero, IslandSlots, WonderDto, ColossusDto } from "../types";
 import { TravelPreview, HeroPicker } from "../movements";
 import { ResourceIslandModal } from "./NodePanel";
+import { WonderModal } from "./WondersPanel";
 import { FoundCityModal } from "./FoundCity";
 import BanditCampModal from "./BanditCampModal";
+import ColossusPanel from "./ColossusPanel";
 
 const fmt = (n: number) => n >= 10000 ? (n / 1000).toFixed(1) + "k" : Math.floor(n).toString();
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 const SLOTS_PER_ISLAND = 12;
+const WONDER_ICON: Record<string, string> = { LIGHTHOUSE: "🗼", COLOSSUS: "🗽", SANCTUM: "🏯" };
 // extra sea around the islands so the map can be panned past their bounds
 const PAD_X = 520, PAD_Y = 360;
+// fallback world centre (only used if there are no islands to derive a centroid from)
+const WORLD_CENTER = 2900;
+const TIER_ROMAN = ["I", "II", "III"];
 
 export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, onChanged, setErr }: {
   activeCityId: number; myUnits: UnitDto[]; heroes: Hero[]; myPlayerId: number; onChanged: () => void; setErr: (s: string) => void;
@@ -21,6 +27,11 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
   const [foundSlot, setFoundSlot] = useState<{ islandId: number; islandName: string; slotIndex: number } | null>(null);
   const [nodeIsland, setNodeIsland] = useState<WorldIsland | null>(null);
   const [banditIsland, setBanditIsland] = useState<WorldIsland | null>(null);
+  const [wonders, setWonders] = useState<WonderDto[]>([]);
+  const [wonderSel, setWonderSel] = useState<WonderDto | null>(null);
+  const [colossi, setColossi] = useState<ColossusDto[]>([]);
+  const [colossusSel, setColossusSel] = useState<number | null>(null);
+  const [spyNote, setSpyNote] = useState("");
   const [selCity, setSelCity] = useState<WorldCity | null>(null);   // drives the player popup
   const [raidTarget, setRaidTarget] = useState<WorldCity | null>(null);
   const [raidCounts, setRaidCounts] = useState<Record<string, number>>({});
@@ -29,9 +40,40 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
   const [msgBody, setMsgBody] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; sl: number; st: number; moved: boolean } | null>(null);
+  const [scale, setScale] = useState(1);
+  const scaleRef = useRef(1);
+  const WSPACE = 6300;   // matches .wspace intrinsic size in styles.css (world center 2900 + outer 2800 + pad)
 
-  async function load() { try { setData(await getWorld()); } catch (e: any) { setErr(e.message); } }
+  // scroll wheel zooms (anchored on the cursor) instead of panning; drag still pans.
+  useEffect(() => {
+    const el = scroller.current; if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+      const cur = scaleRef.current;
+      const next = Math.min(2.5, Math.max(0.4, cur * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      if (next === cur) return;
+      const ratio = next / cur;
+      const nl = (el.scrollLeft + cx) * ratio - cx;
+      const nt = (el.scrollTop + cy) * ratio - cy;
+      scaleRef.current = next;
+      setScale(next);
+      requestAnimationFrame(() => { el.scrollLeft = nl; el.scrollTop = nt; });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [data]);   // scroller only mounts once data loads (component early-returns while null)
+
+  async function load() {
+    try { setData(await getWorld()); } catch (e: any) { setErr(e.message); }
+    getWorldState().then(s => setWonders(s.wonders)).catch(() => {});
+    getColossi().then(setColossi).catch(() => {});
+  }
   useEffect(() => { load(); }, []);
+  // colossi roam live — refresh their position/health every 10s while the map is open
+  useEffect(() => { const t = setInterval(() => getColossi().then(setColossi).catch(() => {}), 10000); return () => clearInterval(t); }, []);
+  const wonderByIsland = new Map(wonders.map(w => [w.islandId, w]));
 
   function centerOnMyCity() {
     if (!data || !scroller.current) return;
@@ -39,12 +81,33 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
     const mine = data.islands.find(i => i.cities.some(c => c.id === activeCityId))
       ?? data.islands.find(i => i.cities.some(c => c.faction === "self"));
     if (!mine) return;
-    scroller.current.scrollLeft = mine.px + PAD_X - scroller.current.clientWidth / 2;
-    scroller.current.scrollTop = mine.py + PAD_Y - scroller.current.clientHeight / 2;
+    const sc = scaleRef.current;
+    scroller.current.scrollLeft = (mine.px + PAD_X) * sc - scroller.current.clientWidth / 2;
+    scroller.current.scrollTop = (mine.py + PAD_Y) * sc - scroller.current.clientHeight / 2;
   }
   useEffect(() => { if (data) setTimeout(centerOnMyCity, 30); }, [data, activeCityId]);
 
   if (!data) return <p className="muted">Charting the seas…</p>;
+
+  // Data-driven tier rings: centre = centroid of all islands; each ring's radius encloses its tier's
+  // islands (+ a margin for island body/label). This stays correct for ANY backend geometry/seed —
+  // the rings always sit OUTSIDE their tier's islands instead of relying on hardcoded radii.
+  const allIsl = data.islands;
+  const ringCx = allIsl.length ? allIsl.reduce((s, i) => s + i.px, 0) / allIsl.length : WORLD_CENTER;
+  const ringCy = allIsl.length ? allIsl.reduce((s, i) => s + i.py, 0) / allIsl.length : WORLD_CENTER;
+  const RING_MARGIN = 190;   // largest island half-width (~161) + name label headroom
+  let tierRings = [1, 2, 3].map(t => {
+    const maxR = allIsl.filter(i => (i.tier ?? 0) === t)
+      .reduce((m, i) => Math.max(m, Math.hypot(i.px - ringCx, i.py - ringCy)), 0);
+    return { tier: t, r: maxR > 0 ? maxR + RING_MARGIN : 0 };
+  }).filter(x => x.r > 0);
+  // Fallback (older backend not sending `tier`, or no tier data): split islands into three distance
+  // bands from the centroid so the three tier lines still draw and always enclose their islands.
+  if (tierRings.length === 0 && allIsl.length) {
+    const dists = allIsl.map(i => Math.hypot(i.px - ringCx, i.py - ringCy)).sort((a, b) => a - b);
+    const q = (p: number) => dists[Math.min(dists.length - 1, Math.floor(p * (dists.length - 1)))];
+    tierRings = [1, 2, 3].map(t => ({ tier: t, r: q(t / 3) + RING_MARGIN }));
+  }
 
   const act = async (fn: () => Promise<any>) => {
     setErr("");
@@ -106,8 +169,32 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
       <button className="centerbtn" onClick={centerOnMyCity}>⌖ Center on my city</button>
       <div className="world" ref={scroller} style={{ flex: 1, minHeight: 0 }}
         onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
-        <div className="wspace">
+        <div className="wzoom" style={{ position: "relative", width: WSPACE * scale, height: WSPACE * scale }}>
+        <div className="wspace" style={{ transform: `scale(${scale})`, transformOrigin: "0 0" }}>
+          {/* tier zones — concentric rings derived from the live island positions (always enclose them) */}
+          {tierRings.slice().reverse().map(({ tier, r }) => (
+            <div key={"tz" + tier} className={"tier-zone tier-" + tier}
+              style={{ left: ringCx + PAD_X - r, top: ringCy + PAD_Y - r, width: 2 * r, height: 2 * r }}>
+              <span className="tier-label">{TIER_ROMAN[tier - 1]}</span>
+            </div>
+          ))}
           {data.islands.map(isl => {
+            const wonder = wonderByIsland.get(isl.id);
+            if (wonder){
+              const size = 124;
+              return (
+                <div className={"island wonder-island tone-" + wonder.status.toLowerCase()} key={isl.id}
+                  style={{ left: isl.px + PAD_X, top: isl.py + PAD_Y, width: size, height: size }}
+                  onClick={() => { if (!wasDragged()) setWonderSel(wonder); }}
+                  title={`${wonder.name} — ${wonder.status}`}>
+                  <div className="island-land wonder-land" style={{ borderRadius: blobRadius(isl.id) }}>
+                    <span className="wonder-ico">{WONDER_ICON[wonder.kind]}</span>
+                    {wonder.level > 0 && <span className="wonder-lvl-badge">Lv {wonder.level}</span>}
+                  </div>
+                  <div className="nm">{isl.name}</div>
+                </div>
+              );
+            }
             if (isl.resource){
               const size = 110;
               return (
@@ -157,14 +244,42 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
               </div>
             );
           })}
+          {/* roaming Colossi — live markers on the Tier 2/3 ring with a shared health bar */}
+          {colossi.map(c => {
+            const hpPct = Math.max(0, Math.round((c.currentHealth / Math.max(1, c.maxHealth)) * 100));
+            return (
+              <div className="colossus-marker" key={c.id}
+                style={{ left: c.x + PAD_X, top: c.y + PAD_Y }}
+                title={`${c.name} — ${hpPct}% HP`}
+                onClick={(e) => { e.stopPropagation(); if (!wasDragged()) setColossusSel(c.id); }}>
+                <span className="colossus-ico">🐙</span>
+                <div className="colossus-hp"><i style={{ width: hpPct + "%" }} /></div>
+                <div className="colossus-nm">{c.name}</div>
+              </div>
+            );
+          })}
+        </div>
         </div>
       </div>
+
+      {/* colossus → live detail + attack */}
+      {colossusSel != null && (
+        <ColossusPanel colossusId={colossusSel} myUnits={myUnits} activeCityId={activeCityId}
+          onClose={() => setColossusSel(null)} onChanged={() => { load(); onChanged(); }} setErr={setErr} />
+      )}
 
       {/* bandit camp */}
       {banditIsland && (
         <BanditCampModal islandId={banditIsland.id} activeCityId={activeCityId}
           cityOnIsland={banditIsland.cities.some(c => c.id === activeCityId)} myUnits={myUnits}
           onClose={() => setBanditIsland(null)} onChanged={() => { load(); onChanged(); }} setErr={setErr} />
+      )}
+
+      {/* wonder island → capture / invest */}
+      {wonderSel && (
+        <WonderModal wonder={wonderSel}
+          ctx={{ myPlayerId, activeCityId, myUnits, heroes: heroesHere, setErr, onChanged: () => { load(); onChanged(); } }}
+          onClose={() => setWonderSel(null)} onChanged={() => { load(); onChanged(); }} />
       )}
 
       {/* resource island → node list */}
@@ -256,13 +371,19 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                           <td className={"faction-" + c.faction}>{c.name}</td>
                           <td className="muted">{isl?.name || "—"}</td>
                           <td>{fmt(c.points)}</td>
-                          <td>{c.faction !== "self" && c.faction !== "ally" &&
-                            <button className="btn" onClick={() => openRaid(c)}>⚔ Attack</button>}</td>
+                          <td>{c.faction !== "self" && c.faction !== "ally" && <>
+                            <button className="btn" onClick={() => openRaid(c)}>⚔ Attack</button>
+                            <button className="btn ghost" title="Send a spy from your selected city"
+                              onClick={async () => { setSpyNote("");
+                                try { const r = await launchSpy(activeCityId, c.id); setSpyNote(`🕵 Spy en route to ${c.name} — resolves ${r.resolvesAt ? "in ~" + Math.max(1, Math.round((new Date(r.resolvesAt).getTime() - Date.now())/60000)) + "m" : "soon"}. Check Spy Reports.`); }
+                                catch (e: any) { setSpyNote(e.message); } }}>🕵 Spy</button>
+                          </>}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+                {spyNote && <p className="muted" style={{ marginTop: 6 }}>{spyNote}</p>}
                 {selCity.playerId != null && selCity.faction !== "self" && (
                   <button className="btn ghost" onClick={() => { setMsgTo({ id: selCity.playerId!, name: selCity.owner }); }}>✉ Message {selCity.owner}</button>
                 )}
