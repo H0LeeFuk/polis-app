@@ -184,13 +184,19 @@ public class CombatEngine {
     }
 
     boolean win = globalRatio >= 1.0 && totalAtk > 0;
+    double totalDef = 0; for (Element el : Element.values()) totalDef += def.get(el);
     Map<String,Integer> aLost=new LinkedHashMap<>(), aSurv=new LinkedHashMap<>();
     Map<String,Integer> dLost=new LinkedHashMap<>(), dSurv=new LinkedHashMap<>();
 
     if (win){
-      double aFrac = clamp(1.0/globalRatio, 0.10, 0.90) * mods.attackerLossMult();
-      aFrac *= GameRules.weakTargetLossMult(globalRatio);   // stomping the weak costs you troops
-      if (fx.safeRound()) aFrac *= 0.5;   // EXTRA_SAFE_ROUND: a loss-free opening round halves casualties
+      double aFrac;
+      if (totalDef <= 0){
+        aFrac = 0;   // UNDEFENDED target: nothing fights back → no casualties (skip the 10% floor + weak-target penalty)
+      } else {
+        aFrac = clamp(1.0/globalRatio, 0.10, 0.90) * mods.attackerLossMult();
+        aFrac *= GameRules.weakTargetLossMult(globalRatio);   // stomping the weak costs you troops
+        if (fx.safeRound()) aFrac *= 0.5;   // EXTRA_SAFE_ROUND: a loss-free opening round halves casualties
+      }
       split(attacker, clamp(aFrac,0,1), aLost, aSurv);
       split(defender, 1.0, dLost, dSurv);                 // defenders routed
     } else {

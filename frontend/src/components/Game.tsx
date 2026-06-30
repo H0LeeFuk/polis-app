@@ -1201,7 +1201,10 @@ const HammerIcon = () => (
 
 const BUILD_QUEUE_SLOTS = 5;   // matches server-side BUILD_QUEUE_MAX
 function ConstructionBar({ jobs, now, onCancel, onFinish }: { jobs: any[]; now: number; onCancel: (j: number) => void; onFinish: (j: number) => void; }) {
-  const shown = jobs.slice(0, BUILD_QUEUE_SLOTS);
+  // Sort by position so the running head is always slot 0, then drive "running vs queued" off the
+  // slot INDEX (not the raw position value) — the bar can then only ever show ONE active countdown,
+  // immune to any stray/duplicate position in the data.
+  const shown = [...jobs].sort((a, b) => a.position - b.position).slice(0, BUILD_QUEUE_SLOTS);
   return (
     <div className="city-build-bar">
       {Array.from({ length: BUILD_QUEUE_SLOTS }).map((_, i) => {
@@ -1217,7 +1220,7 @@ function ConstructionBar({ jobs, now, onCancel, onFinish }: { jobs: any[]; now: 
             {PLACEMENT_BY_TYPE[j.label]
               ? <span className="cbart"><img src={PLACEMENT_BY_TYPE[j.label].icon} alt={titleCase(j.label)} /></span>
               : <span className="cbart" dangerouslySetInnerHTML={{ __html: buildingSvg(j.label, j.toLevel || 1) }} />}
-            <span className="cbtime">{j.position > 0 ? `#${j.position}` : rem != null ? clock(rem) : "…"}</span>
+            <span className="cbtime">{i === 0 ? (rem != null ? clock(rem) : "…") : `#${i}`}</span>
             <div className="cbbar"><i style={{ width: pct + "%" }} /></div>
             {canRush && <button className="cbrush" title={`Rush for ${Math.max(1, Math.ceil(rushSecs / 60))} gold`} onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rushSecs / 60))}</button>}
             <a className="cbcancel" onClick={() => onCancel(j.id)}>✕</a>

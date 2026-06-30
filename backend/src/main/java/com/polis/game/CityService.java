@@ -185,12 +185,10 @@ public class CityService {
     // context — leaving a phantom job that never disappears and inflates the queue by a slot.
     List<BuildJob> q = jobs.findByCityIdAndQueueTypeOrderByPositionAsc(c.getId(), qt);
     q.removeIf(b -> Objects.equals(b.getId(), j.getId()));
-    Instant now = Instant.now();
-    for (int i = 0; i < q.size(); i++){
-      BuildJob b = q.get(i); b.setPosition(i);
-      if (i == 0 && b.getFinishAt() == null){ b.setStartedAt(now); b.setFinishAt(now.plusSeconds(b.getTotalSeconds())); }
-    }
-    jobs.saveAll(q);
+    // Same single-runner invariant as every other path: contiguous positions 0..n and ONLY the head
+    // running. Using the shared normalizer (instead of a hand-rolled reindex that never cleared a
+    // stray finishAt on a non-head) means a gold rush can never leave two "running" slots.
+    normalizeQueue(q, Instant.now());
   }
 
   private void applyJob(City c, BuildJob j){

@@ -11,15 +11,20 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 
 /**
- * Seeds a single disc-shaped world made of GROUPS of 6 islands plus scattered loners.
+ * Seeds a single disc-shaped world by PACKING non-overlapping island GROUPS into three concentric
+ * tier bands, plus a few loose islands beside each group.
  *
  * <p><b>Group</b> = 1 YELLOW resource island at the centre + 5 player islands evenly ringed around it
- * at the SAME distance (a regular pentagon). The 5 surrounding islands are GREEN — the only places a
- * player may spawn. Resource-island yield scales inward by tier (Tier 1 outer/weak → Tier 3 core/strong).
+ * at the SAME distance (a regular pentagon). Every group is identical in shape. The 5 surrounding
+ * islands are GREEN (spawnable) ONLY in Tier 1 — in Tiers 2 &amp; 3 they are RED (founding/conquest only).
+ * Resource-island yield scales inward by tier (Tier 1 outer/weak → Tier 3 core/strong).
  *
- * <p><b>Scattered islands</b> = standalone RED player islands placed in the open water OUTSIDE every
- * group's circle (never inside a group's radius). Players cannot spawn on these — they are reached
- * only by founding on a free slot (or conquering).
+ * <p><b>Packing</b>: group centres are dart-thrown within each tier's annular band so that (a) every
+ * group's protective circle stays entirely inside one band — no island crosses a tier boundary — and
+ * (b) no two group centres are closer than {@link #MIN_SEP} — protective radii never overlap.
+ *
+ * <p><b>Loose islands</b> = {@link #LOOSE_PER_GROUP} standalone RED islands placed beside each group,
+ * OUTSIDE every group's radius. Players cannot spawn on these — reached only by founding/conquering.
  */
 @Component
 @Order(10)
@@ -37,14 +42,22 @@ public class WorldSeeder implements ApplicationRunner {
       "Kasos","Melos","Tenara","Zephyra","Korais","Aulis","Phaedra","Olynth"};
   private static final String[] ROMAN = { "", " II", " III", " IV", " V", " VI", " VII", " VIII", " IX", " X", " XI", " XII" };
 
-  // groups per ring (index = tier: 1 outer .. 3 core) and the ring radius each sits on
-  private static final int[]    GROUPS_PER_TIER = { 0, 12, 8, 3 };
-  private static final double[] RING_RADIUS     = { 0, 2150, 1400, 700 };
-  private static final double GROUP_RADIUS  = 290;    // distance from the resource centre to each of the 5 surrounding islands
-  private static final double GROUP_CIRCLE  = GROUP_RADIUS + 230;   // keep scattered loners this far from any group centre
-  private static final int    SCATTERED     = 55;     // standalone found-only islands in open water
-  private static final int    MIN_GAP       = 230;    // min centre-to-centre island spacing
-  private static final double WORLD_RADIUS  = 2750;   // disc radius for scattered placement
+  // ---- PACKING GEOMETRY (index = tier: 1 outer/weak/spawn .. 3 core/strong) ----
+  // Each tier is an annular BAND [BAND_IN, BAND_OUT] measured from the world centre. A group's
+  // protective circle (GROUP_CONTAIN radial half-extent) stays fully inside its band, so no island
+  // ever crosses a tier boundary. Bands are sized for the disc; inner tiers are thinner (fewer groups).
+  // Bands are separated by a wide CLEAR GAP (≥ ~310px between adjacent tiers' islands) so the tier
+  // division line, drawn at the midpoint of that gap, never touches a 150px island body.
+  private static final int[]    TARGET_GROUPS = { 0, 14, 8, 4 };       // groups to pack per tier
+  private static final double[] BAND_IN       = { 0, 2260, 1350, 440 };
+  private static final double[] BAND_OUT      = { 0, 2960, 2050, 1140 };
+  private static final double GROUP_RADIUS  = 270;    // resource centre → each of the 5 surrounding islands
+  private static final double GROUP_CONTAIN = 320;    // radial half-extent kept inside the band (≥ GROUP_RADIUS)
+  private static final double MIN_SEP       = 780;    // min group-centre spacing (protective radii never overlap; clears 150px islands)
+  // After groups, leftover open water is densely FILLED with loose RED islands (small gaps).
+  private static final double GROUP_EXCLUDE     = GROUP_RADIUS + 90;  // keep loose out of a group's pentagon
+  private static final double LOOSE_BAND_MARGIN = 80; // keep loose off the tier boundary (inside the band)
+  private static final int    LOOSE_SPACING     = 220;// loose centre-to-centre min from any island (~70px water between 150px isles)
 
   @Override @Transactional
   public void run(ApplicationArguments args){
@@ -55,56 +68,88 @@ public class WorldSeeder implements ApplicationRunner {
     Long wid = w.getId();
     int cx = GameRules.WORLD_CENTER_X, cy = GameRules.WORLD_CENTER_Y;
 
-    List<int[]> taken = new ArrayList<>();          // every island centre (spacing checks)
-    List<double[]> groupCentres = new ArrayList<>(); // {x, y} of each group's resource island
+    List<int[]> taken = new ArrayList<>();           // every island centre (spacing checks)
+    List<double[]> groupCentres = new ArrayList<>();  // {x, y, tier} of each packed group
     int nameIdx = 0, groupId = 0;
 
-    // ---- GROUPS: 1 resource centre + 5 equidistant surrounding (GREEN, spawnable) ----
+    // ---- PACK GROUPS tier by tier: dart-throw non-overlapping centres inside each band ----
     for (int tier = 1; tier <= 3; tier++){
-      int groups = GROUPS_PER_TIER[tier];
-      double R = RING_RADIUS[tier];
-      for (int g = 0; g < groups; g++){
-        groupId++;
-        double theta = (2 * Math.PI * g / groups) + tier * 0.4;     // stagger rings
-        double gx = cx + Math.cos(theta) * R, gy = cy + Math.sin(theta) * R;
-        groupCentres.add(new double[]{ gx, gy });
+      double rIn = BAND_IN[tier] + GROUP_CONTAIN, rOut = BAND_OUT[tier] - GROUP_CONTAIN;
+      int target = TARGET_GROUPS[tier], placedGroups = 0;
+      boolean green = (tier == 1);                    // spawn only on Tier-1 surrounders
+      for (int attempt = 0; attempt < target * 400 && placedGroups < target; attempt++){
+        double ang = rnd.nextDouble() * 2 * Math.PI;
+        double r   = rIn + rnd.nextDouble() * Math.max(0, rOut - rIn);
+        double gx  = cx + Math.cos(ang) * r, gy = cy + Math.sin(ang) * r;
+        if (tooCloseToGroup(gx, gy, groupCentres)) continue;   // protective radii must not overlap
+        groupId++; placedGroups++;
+        groupCentres.add(new double[]{ gx, gy, tier });
 
         // yellow resource island at the centre (yield strength = tier: T1<T2<T3)
         save(wid, nameIdx++, true, false, tier, groupId, tier, gx, gy, taken, rnd);
 
-        // 5 surrounding GREEN islands, all at GROUP_RADIUS, evenly spaced
-        double off = rnd.nextDouble() * 2 * Math.PI;                 // rotate the pentagon a little per group
+        // 5 surrounding islands at GROUP_RADIUS, evenly spaced — GREEN in T1, RED in T2/T3
+        double off = rnd.nextDouble() * 2 * Math.PI;             // rotate the pentagon a little per group
         for (int k = 0; k < 5; k++){
           double phi = off + (2 * Math.PI * k / 5);
-          save(wid, nameIdx++, false, true, tier, groupId, 0,
+          save(wid, nameIdx++, false, green, tier, groupId, 0,
               gx + Math.cos(phi) * GROUP_RADIUS, gy + Math.sin(phi) * GROUP_RADIUS, taken, rnd);
         }
       }
+      if (placedGroups < target)
+        System.out.printf("WorldSeeder: tier %d packed %d/%d groups (band too tight)%n", tier, placedGroups, target);
     }
 
-    // ---- SCATTERED loners: RED, found-only, always OUTSIDE every group's circle ----
-    int placed = 0;
-    for (int attempt = 0; attempt < SCATTERED * 60 && placed < SCATTERED; attempt++){
-      double ang = rnd.nextDouble() * 2 * Math.PI;
-      double r = 500 + rnd.nextDouble() * (WORLD_RADIUS - 500);
-      double x = cx + Math.cos(ang) * r, y = cy + Math.sin(ang) * r;
-      if (insideAnyGroup(x, y, groupCentres)) continue;             // never inside a group's radius
-      if (!farEnough((int)x, (int)y, taken)) continue;
-      int tier = r > 1750 ? 1 : r > 1050 ? 2 : 3;                   // strength band by distance (display/parity)
-      save(wid, nameIdx++, false, false, tier, 0, 0, x, y, taken, rnd);
-      placed++;
+    // ---- FILL leftover open water with loose RED islands, packed (small gaps) ----
+    // Sweep each tier band's interior and drop a found-only island wherever there is still room:
+    // off the tier boundary, outside every group's pentagon, and at least LOOSE_SPACING from any
+    // other island. The dart budget scales with the band's free area so pockets get saturated.
+    int looseTotal = 0;
+    for (int tier = 1; tier <= 3; tier++){
+      double lo = BAND_IN[tier] + LOOSE_BAND_MARGIN, hi = BAND_OUT[tier] - LOOSE_BAND_MARGIN;
+      double bandArea = Math.PI * (hi * hi - lo * lo);
+      int attempts = (int)(bandArea / (LOOSE_SPACING * LOOSE_SPACING) * 8);   // generous — keep darting until full
+      for (int a = 0; a < attempts; a++){
+        double ang = rnd.nextDouble() * 2 * Math.PI;
+        double r   = lo + rnd.nextDouble() * (hi - lo);
+        double x   = cx + Math.cos(ang) * r, y = cy + Math.sin(ang) * r;
+        if (insideAnyGroup(x, y, groupCentres)) continue;        // never inside a group's pentagon
+        if (!farEnough((int) x, (int) y, taken, LOOSE_SPACING)) continue;
+        save(wid, nameIdx++, false, false, tier, 0, 0, x, y, taken, rnd);
+        looseTotal++;
+      }
     }
+    System.out.printf("WorldSeeder: packed %d groups, %d loose islands%n", groupId, looseTotal);
+    validatePacking(groupCentres, cx, cy);
 
     seedNpcs(wid, rnd);
   }
 
-  private boolean insideAnyGroup(double x, double y, List<double[]> centres){
-    for (double[] c : centres) if (Math.hypot(x - c[0], y - c[1]) < GROUP_CIRCLE) return true;
+  /** True if (x,y) is closer than MIN_SEP to any already-placed group centre. */
+  private boolean tooCloseToGroup(double x, double y, List<double[]> centres){
+    for (double[] c : centres) if (Math.hypot(x - c[0], y - c[1]) < MIN_SEP) return true;
     return false;
   }
-  private boolean farEnough(int px, int py, List<int[]> taken){
-    for (int[] t : taken) if (Math.hypot(px - t[0], py - t[1]) < MIN_GAP) return false;
+  /** True if (x,y) sits within any group's radius (used to keep loose islands out of groups). */
+  private boolean insideAnyGroup(double x, double y, List<double[]> centres){
+    for (double[] c : centres) if (Math.hypot(x - c[0], y - c[1]) < GROUP_EXCLUDE) return true;
+    return false;
+  }
+  private boolean farEnough(int px, int py, List<int[]> taken, int minGap){
+    for (int[] t : taken) if (Math.hypot(px - t[0], py - t[1]) < minGap) return false;
     return true;
+  }
+
+  /** Hard-constraint check: no two group protective circles overlap. Logs any violation. */
+  private void validatePacking(List<double[]> centres, int cx, int cy){
+    int overlaps = 0;
+    for (int i = 0; i < centres.size(); i++)
+      for (int j = i + 1; j < centres.size(); j++){
+        double[] a = centres.get(i), b = centres.get(j);
+        if (Math.hypot(a[0] - b[0], a[1] - b[1]) < MIN_SEP) overlaps++;
+      }
+    if (overlaps > 0) System.out.printf("WorldSeeder: WARNING %d overlapping group pairs%n", overlaps);
+    else System.out.println("WorldSeeder: packing OK — no overlapping groups, no boundary crossings");
   }
 
   private void save(Long wid, int nameIdx, boolean resource, boolean spawnable, int tier, int groupId,

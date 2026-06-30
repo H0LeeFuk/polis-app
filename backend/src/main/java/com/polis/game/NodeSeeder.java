@@ -11,9 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 
 /**
- * Seeds dedicated resource islands (~1 per 4–5 player islands) across the disc. Resource strength
- * scales with the tier the island falls in: rich, high-level nodes guarded by tough bosses cluster
- * in the dangerous core (tier 1), while the outer rim (tier 3, the spawn zone) holds only weak nodes.
+ * Attaches resource nodes + a guardian boss to every GROUP-CENTRE resource island (one per group).
+ * Resource strength scales inward by tier: rich, high-level nodes guarded by tough bosses sit in the
+ * dangerous core (tier 3), while the outer rim (tier 1, the spawn zone) holds only weak nodes.
  * Idempotent per world.
  */
 @Component
@@ -40,43 +40,22 @@ public class NodeSeeder implements ApplicationRunner {
       Long wid = w.getId();
       if (!nodes.findByWorldId(wid).isEmpty()) continue;   // already seeded for this world
 
-      List<Island> playerIslands = islands.findByWorldId(wid).stream().filter(i -> i.getTier() > 0).toList();
-      if (playerIslands.isEmpty()) continue;
+      // every group's centre yellow island (1 resource island per group)
+      List<Island> resourceIslands = islands.findByWorldId(wid).stream()
+          .filter(i -> i.isResource() && i.getClusterId() > 0 && i.getTier() > 0).toList();
+      if (resourceIslands.isEmpty()) continue;
       Random rnd = new Random(wid * 1000 + 7);
 
-      int cx = GameRules.WORLD_CENTER_X, cy = GameRules.WORLD_CENTER_Y;
-
-      // collect existing island positions so nothing overlaps
-      List<int[]> taken = new ArrayList<>();
-      for (Island i : islands.findByWorldId(wid)) taken.add(new int[]{ i.getPx(), i.getPy() });
-
-      int resourceIslandCount = Math.max(3, playerIslands.size() / 4);
-      // Split the islands across the three tier bands as evenly as possible, then place each tier's
-      // share at EVENLY-SPACED angles around its ring (not random) so no player island ends up with a
-      // cluster of resource isles next door while another has none — every angular sector gets one.
-      int[] perTier = new int[4];
-      for (int k = 0; k < resourceIslandCount; k++) perTier[1 + (k % 3)]++;
-
       int typeCursor = 0, k = -1;
-      for (int tier = 1; tier <= 3; tier++){
-        int countT = perTier[tier];
-        for (int j = 0; j < countT; j++){
+      for (Island ri : resourceIslands){
         k++;
-        Race race = RACES[k % RACES.length];   // race-themed island
-        // even angle for this tier's share, offset so resource isles sit between the player islands
-        double baseAngle = (2 * Math.PI * j / countT) + (tier * 0.5) + (Math.PI / countT);
-        int[] pos = ringSpot(cx, cy, GameRules.TIER_INNER[tier], GameRules.TIER_OUTER[tier], baseAngle, taken, rnd);
-        taken.add(pos);
-        Island ri = new Island();
-        ri.setWorldId(wid); ri.setName(ISLE_NAME.get(race) + " " + (k + 1));
-        ri.setPx(pos[0]); ri.setPy(pos[1]);
-        ri.setOceanX(42); ri.setOceanY(42); ri.setSeed(rnd.nextInt(1_000_000));
-        ri.setResource(true); ri.setTier(0);
-        ri = islands.save(ri);
+        int tier = ri.getTier();                 // 1 outer/weak .. 3 core/strong
+        Race race = RACES[k % RACES.length];      // race-themed guardian
+        if (ri.getName() == null || ri.getName().isBlank()) ri.setName(ISLE_NAME.get(race) + " " + (k + 1));
 
-        // node level by tier: core 4–5, mid 2–4, rim 1–2
-        int lo = switch (tier){ case 1 -> 4; case 2 -> 2; default -> 1; };
-        int hi = switch (tier){ case 1 -> 5; case 2 -> 4; default -> 2; };
+        // node level by tier: core (T3) 4–5, mid (T2) 2–4, rim (T1) 1–2
+        int lo = switch (tier){ case 3 -> 4; case 2 -> 2; default -> 1; };
+        int hi = switch (tier){ case 3 -> 5; case 2 -> 4; default -> 2; };
 
         for (int n = 0; n < 2; n++){
           ResourceNode node = new ResourceNode();
@@ -88,36 +67,16 @@ public class NodeSeeder implements ApplicationRunner {
           nodes.save(node);
         }
 
-        // one guardian boss; stronger toward the core
+        // one guardian boss; stronger toward the core (T3)
         if (bosses.findByIslandId(ri.getId()).isEmpty()){
-          int level = (switch (tier){ case 1 -> 5; case 2 -> 3; default -> 2; }) + rnd.nextInt(2);
+          int level = (switch (tier){ case 3 -> 5; case 2 -> 3; default -> 2; }) + rnd.nextInt(2);
           IslandBoss boss = new IslandBoss();
           boss.setWorldId(wid); boss.setIslandId(ri.getId());
           boss.setRace(race); boss.setName(bossService.bossName(race)); boss.setLevel(level);
           boss.setDefenderTroops(IslandBossService.defendersFor(level));
           bosses.save(boss);
         }
-        }
       }
     }
-  }
-
-  private static final int MIN_GAP = 190;
-  /** A spot in the [rIn,rOut] band near {@code baseAngle}, nudged (small angular jitter) until it
-   *  clears other islands — keeps each resource island in its assigned, evenly-spaced sector. */
-  private int[] ringSpot(int cx, int cy, double rIn, double rOut, double baseAngle, List<int[]> taken, Random rnd){
-    for (int a = 0; a < 200; a++){
-      double ang = baseAngle + (rnd.nextDouble() - 0.5) * 0.4;   // stay within this sector
-      double r = rIn + rnd.nextDouble() * (rOut - rIn);
-      int px = (int)Math.round(cx + Math.cos(ang) * r);
-      int py = (int)Math.round(cy + Math.sin(ang) * r);
-      if (farEnough(px, py, taken)) return new int[]{px, py};
-    }
-    double ang = baseAngle, r = (rIn + rOut) / 2;
-    return new int[]{ (int)Math.round(cx + Math.cos(ang)*r), (int)Math.round(cy + Math.sin(ang)*r) };
-  }
-  private boolean farEnough(int px, int py, List<int[]> taken){
-    for (int[] t : taken) if (Math.hypot(px - t[0], py - t[1]) < MIN_GAP) return false;
-    return true;
   }
 }

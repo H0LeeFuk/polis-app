@@ -138,10 +138,26 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
   const ringCx = allIsl.length ? allIsl.reduce((s, i) => s + i.px, 0) / allIsl.length : WORLD_CENTER;
   const ringCy = allIsl.length ? allIsl.reduce((s, i) => s + i.py, 0) / allIsl.length : WORLD_CENTER;
   const RING_MARGIN = 190;   // largest island half-width (~161) + name label headroom
+  // Radial extent (min/max distance from the centroid) of each tier's islands. Tiers are nested:
+  // T1 outer, T2 mid, T3 core. A boundary line must sit in the CLEAR GAP between two tiers' islands —
+  // at the midpoint of that gap — so no island ever renders on a division line. The outermost line
+  // (T1) has no tier beyond it, so it sits a margin past T1's outermost island.
+  const ext: Record<number, { min: number; max: number }> = {};
+  for (const t of [1, 2, 3]) {
+    const rs = allIsl.filter(i => (i.tier ?? 0) === t)
+      .map(i => Math.hypot(i.px - ringCx, i.py - ringCy));
+    if (rs.length) ext[t] = { min: Math.min(...rs), max: Math.max(...rs) };
+  }
+  const mid = (a: number, b: number) => (a + b) / 2;   // midpoint of the gap between two tiers
   let tierRings = [1, 2, 3].map(t => {
-    const maxR = allIsl.filter(i => (i.tier ?? 0) === t)
-      .reduce((m, i) => Math.max(m, Math.hypot(i.px - ringCx, i.py - ringCy)), 0);
-    return { tier: t, r: maxR > 0 ? maxR + RING_MARGIN : 0 };
+    if (!ext[t]) return { tier: t, r: 0 };
+    let r: number;
+    if (t === 1) r = ext[1].max + RING_MARGIN;                 // outer edge of the world
+    else {
+      const outer = ext[t - 1];                                 // the next tier OUT from this one
+      r = outer ? mid(ext[t].max, outer.min) : ext[t].max + RING_MARGIN;
+    }
+    return { tier: t, r };
   }).filter(x => x.r > 0);
   // Fallback (older backend not sending `tier`, or no tier data): split islands into three distance
   // bands from the centroid so the three tier lines still draw and always enclose their islands.
