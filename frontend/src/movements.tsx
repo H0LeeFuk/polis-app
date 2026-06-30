@@ -7,7 +7,11 @@ import type { Movement, AttackPreview, Hero } from "./types";
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 export const UNIT_GLYPH: Record<string, string> = {
-  HOPLITE: "🛡", SWORDSMAN: "⚔", SPEARMAN: "🔱", ARCHER: "🏹", HORSEMAN: "🐎", CATAPULT: "🪨", TRIREME: "⛵",
+  HOPLITE: "🛡", SWORDSMAN: "⚔", SPEARMAN: "🔱", ARCHER: "🏹", HORSEMAN: "🐎", CATAPULT: "🪨",
+  // Human ships: defence (Trireme), attack ram (Fire Ram), transport (Galley)
+  TRIREME: "⛵", FIRE_RAM: "🔥", GALLEY: "🚣",
+  // Giant ships: attack galleon, bulwark defence ship
+  SIEGE_GALLEON: "💥", BULWARK_SHIP: "🛡",
   // Giants
   BOULDER_THROWER: "🪨", TROLL: "👹", STONE_GIANT: "🗿", COLOSSUS: "🏛", WAR_BARGE: "🚢",
   // Fairies
@@ -20,7 +24,7 @@ export const UNIT_GLYPH: Record<string, string> = {
 const glyph = (t: string) => UNIT_GLYPH[t?.toUpperCase()] ?? "⚔";
 
 export type ElementType = "FIRE" | "WIND" | "EARTH" | "WATER";
-export interface UnitDex { element: ElementType | null; siege?: boolean; atk: number; defFire: number; defWind: number; defEarth: number; defWater: number; speed: number; carry: number; pop: number; }
+export interface UnitDex { element: ElementType | null; siege?: boolean; atk: number; defFire: number; defWind: number; defEarth: number; defWater: number; speed: number; carry: number; pop: number; tcap?: number; }
 /** Client-side mirror of the seeded unit_types catalog, for stat tooltips (display only). */
 export const UNIT_DEX: Record<string, UnitDex> = {
   // shared roster — element is the attacking city's race element (null here)
@@ -44,12 +48,17 @@ export const UNIT_DEX: Record<string, UnitDex> = {
   MOTH_RIDER:      { element: null, atk: 130, defFire: 30, defWind: 52, defEarth: 28, defWater: 34, speed: 5,  carry: 120, pop: 3 },
   // Giants (heavy)
   BOULDER_THROWER: { element: null, atk: 90,  defFire: 40, defWind: 35, defEarth: 60, defWater: 45, speed: 40, carry: 20,  pop: 3 },
-  WAR_BARGE:       { element: null, atk: 120, defFire: 30, defWind: 30, defEarth: 40, defWater: 45, speed: 35, carry: 300, pop: 10 },
+  WAR_BARGE:       { element: null, atk: 0,   defFire: 50, defWind: 45, defEarth: 65, defWater: 55, speed: 35, carry: 300, pop: 12, tcap: 60 },
   TROLL:           { element: null, atk: 120, defFire: 55, defWind: 45, defEarth: 70, defWater: 50, speed: 40, carry: 60,  pop: 4 },
   STONE_GIANT:     { element: null, atk: 180, defFire: 65, defWind: 55, defEarth: 90, defWater: 60, speed: 45, carry: 40,  pop: 6 },
   COLOSSUS:        { element: null, atk: 360, defFire: 70, defWind: 60, defEarth: 100, defWater: 65, speed: 70, carry: 50, pop: 12 },
-  // Humans (ship)
-  TRIREME:         { element: null, atk: 90,  defFire: 45, defWind: 40, defEarth: 40, defWater: 55, speed: 20, carry: 200, pop: 6 },
+  // Humans (ships): Trireme = defence picket, Fire Ram = attack warship, Galley = troop transport
+  TRIREME:         { element: null, atk: 30,  defFire: 55, defWind: 55, defEarth: 50, defWater: 75, speed: 18, carry: 0,  pop: 4 },
+  FIRE_RAM:        { element: null, atk: 70,  defFire: 35, defWind: 30, defEarth: 30, defWater: 45, speed: 14, carry: 40, pop: 5 },
+  GALLEY:          { element: null, atk: 0,   defFire: 25, defWind: 25, defEarth: 25, defWater: 35, speed: 18, carry: 0,  pop: 5,  tcap: 30 },
+  // Giants (ships): Siege Galleon = attack, Bulwark Ship = defence, War Barge = transport
+  SIEGE_GALLEON:   { element: null, atk: 180, defFire: 60, defWind: 55, defEarth: 80, defWater: 70, speed: 26, carry: 60, pop: 16 },
+  BULWARK_SHIP:    { element: null, atk: 90,  defFire: 70, defWind: 65, defEarth: 95, defWater: 80, speed: 35, carry: 30, pop: 14 },
   // Newts (amphibious)
   MUDLING:         { element: null, atk: 35,  defFire: 25, defWind: 25, defEarth: 30, defWater: 45, speed: 26, carry: 15,  pop: 1 },
   NEWT_SPEAR:      { element: null, atk: 60,  defFire: 40, defWind: 35, defEarth: 35, defWater: 55, speed: 24, carry: 20,  pop: 1 },
@@ -183,9 +192,11 @@ export const kindMeta = (m: Movement) => KIND_META[moveKind(m)];
 // AREA 1 — Travel-time preview card (inside the attack modal)
 // ============================================================================
 
-export function TravelPreview({ originCityId, targetCityId, units, heroId, onState }: {
+export function TravelPreview({ originCityId, targetCityId, units, heroId, attack, onState }: {
   originCityId: number; targetCityId: number; units: Record<string, number>;
   heroId?: number | null;
+  /** true for a raid (shows the Combat Points + weak-target effectiveness note). */
+  attack?: boolean;
   /** Reports whether the current army can make the trip (false = transport insufficient). */
   onState?: (sufficient: boolean) => void;
 }) {
@@ -223,28 +234,39 @@ export function TravelPreview({ originCityId, targetCityId, units, heroId, onSta
           ) : data.combatLayer === "LAND" ? (
             <div className="layer-banner land">⚔ <b>Land attack</b> — engages the enemy garrison only (ships untouched).</div>
           ) : null}
+          {attack && data.combatLayer && data.combatLayer !== "MIXED" && (
+            <div className="combat-note">
+              <div className="cn-row"><span>⚔ Combat Points</span><b>+1 per enemy troop destroyed</b></div>
+              <div className="cn-hint muted">Same reward against any target — but your troops fight <b>weaker</b> against a much weaker garrison and take heavier losses, so farming the helpless is costly.</div>
+            </div>
+          )}
           <div className="travel-row"><span>🐢 Slowest unit</span><b>{data.slowestUnit ? titleCase(data.slowestUnit) : "—"}</b></div>
           <div className="travel-row"><span>📏 Distance</span><b>{data.distance} tiles</b></div>
           <div className="travel-row"><span>⏱ Travel time</span><b>{fmtDuration(data.travelSeconds)}</b></div>
           <div className="travel-row"><span>🕐 Arrives</span><b>{fmtArrival(data.arriveAt)}</b></div>
-          {water && (
-            <div className={"transport-panel" + (insufficient ? " bad" : " ok")}>
-              {freeCrossing ? (
-                <div className="tp-line">🌊 Crosses water freely — no transport needed.</div>
-              ) : (
-                <>
-                  <div className="tp-line">
-                    🚢 Transport: <b>{data.providedTransportCapacity ?? 0}</b> / {data.requiredTransportCapacity ?? 0} land-pop capacity
-                  </div>
-                  {insufficient && (
-                    <div className="tp-warn">⚠ {data.transportWarning
-                      ?? "Not enough transport to cross water."}{(data.transportShipsShort ?? 0) > 0
-                        ? ` Add ~${data.transportShipsShort} more transport ship(s).` : ""}</div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+          {(() => {
+            const used = data.requiredTransportCapacity ?? 0;       // land-pop needing a ride (0 on a land route)
+            const cap = data.providedTransportCapacity ?? 0;        // total transport capacity of selected ships
+            // free crossing: water route, no land troops to ferry (flyers/swimmers only)
+            if (freeCrossing) return (
+              <div className="transport-panel ok"><div className="tp-line">🌊 Crosses water freely — no transport needed.</div></div>
+            );
+            // nothing transport-related to show (no ships selected, no water to cross)
+            if (cap === 0 && !water) return null;
+            const over = used > cap;
+            const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : (used > 0 ? 100 : 0);
+            return (
+              <div className={"transport-panel" + (insufficient ? " bad" : " ok")}>
+                <div className="tp-line">🚢 Transport capacity <b>{used} / {cap}</b> {over ? "— over capacity" : water ? "land-pop" : "(carry capacity)"}</div>
+                <div className="tp-meter"><i className={over ? "over" : ""} style={{ width: pct + "%" }} /></div>
+                {insufficient && (
+                  <div className="tp-warn">⚠ {data.transportWarning
+                    ?? "Not enough transport to cross water."}{(data.transportShipsShort ?? 0) > 0
+                      ? ` Add ~${data.transportShipsShort} more transport ship(s).` : ""}</div>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
     </div>

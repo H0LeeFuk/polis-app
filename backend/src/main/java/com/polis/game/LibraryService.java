@@ -139,7 +139,7 @@ public class LibraryService {
   }
   private int effectiveDuration(City c, LibraryTree.Research def){
     double lib = 1 - librarySpeedBonus(libraryLevel(c.getId()));  // higher Library level → faster research
-    return (int)Math.max(5, def.durationSeconds()*lib);
+    return (int)GameRules.fast(Math.max(5, Math.round(def.durationSeconds()*lib)));
   }
 
   /** Research-time reduction from the Library building level: 3% per level, capped at 60%. */
@@ -152,6 +152,19 @@ public class LibraryService {
       if (def!=null) s += effectiveCost(c, def);
     }
     return s;
+  }
+
+  /**
+   * Tier-ladder gate: a tier-N node opens once ≥1 tier-(N−1) node in the <em>same branch</em> is
+   * COMPLETED. Tier 1 is always open. No node-specific prerequisites — pick any path up a branch.
+   */
+  private static boolean prevTierDone(Collection<CityLibraryResearch> owned, LibraryTree.Research def){
+    if (def.tier() <= 1) return true;
+    return owned.stream()
+        .filter(cr -> cr.getStatus()==CityLibraryResearch.Status.COMPLETED)
+        .map(cr -> LibraryTree.byId(cr.getResearchId()))
+        .filter(Objects::nonNull)
+        .anyMatch(x -> x.branch()==def.branch() && x.tier()==def.tier()-1);
   }
 
   // --- actions ---------------------------------------------------------------
@@ -169,17 +182,8 @@ public class LibraryService {
       throw new IllegalStateException("Another research is already in progress");
     if (libraryLevel(cityId) < effectiveMinLevel(c, def))
       throw new IllegalStateException("Requires Library level " + effectiveMinLevel(c, def));
-    for (String pre : def.prereqs()){
-      CityLibraryResearch p = byId.get(pre);
-      if (p==null || p.getStatus()!=CityLibraryResearch.Status.COMPLETED)
-        throw new IllegalStateException("Requires " + LibraryTree.byId(pre).name());
-    }
-    if (def.needsTwoTier2()){
-      long t2 = owned.stream().filter(cr -> cr.getStatus()==CityLibraryResearch.Status.COMPLETED)
-          .map(cr -> LibraryTree.byId(cr.getResearchId()))
-          .filter(Objects::nonNull).filter(x -> x.branch()==def.branch() && x.tier()==2).count();
-      if (t2 < 2) throw new IllegalStateException("Requires any 2 tier-2 researches in this branch");
-    }
+    if (!prevTierDone(owned, def))
+      throw new IllegalStateException("Requires any tier-" + (def.tier()-1) + " research in this branch");
     int available = libraryLevel(cityId)*LibraryTree.POINTS_PER_LEVEL - spentPoints(c);
     int cost = effectiveCost(c, def);
     if (available < cost) throw new IllegalStateException("Not enough research points");
@@ -221,20 +225,15 @@ public class LibraryService {
       CityLibraryResearch cr = owned.get(def.id());
       String state = cr==null ? "LOCKED"
           : cr.getStatus()==CityLibraryResearch.Status.RESEARCHING ? "RESEARCHING" : "COMPLETED";
-      boolean prereqOk = def.prereqs().stream().allMatch(p -> {
-        CityLibraryResearch pc = owned.get(p); return pc!=null && pc.getStatus()==CityLibraryResearch.Status.COMPLETED; });
-      boolean tier2Ok = !def.needsTwoTier2() || owned.values().stream()
-          .filter(x -> x.getStatus()==CityLibraryResearch.Status.COMPLETED)
-          .map(x -> LibraryTree.byId(x.getResearchId())).filter(Objects::nonNull)
-          .filter(x -> x.branch()==def.branch() && x.tier()==2).count() >= 2;
+      boolean tierOk = prevTierDone(owned.values(), def);
       int cost = effectiveCost(c, def);
-      boolean available = state.equals("LOCKED") && prereqOk && tier2Ok
+      boolean available = state.equals("LOCKED") && tierOk
           && level >= effectiveMinLevel(c, def) && !anyResearching && (total-spent) >= cost;
       Map<String,Object> m = new LinkedHashMap<>();
       m.put("id", def.id()); m.put("branch", def.branch().name()); m.put("tier", def.tier());
       m.put("name", def.name()); m.put("effect", def.effectText());
       m.put("pointCost", cost); m.put("durationSeconds", effectiveDuration(c, def));
-      m.put("minLibraryLevel", effectiveMinLevel(c, def)); m.put("prereqs", def.prereqs());
+      m.put("minLibraryLevel", effectiveMinLevel(c, def)); m.put("tierOk", tierOk);
       m.put("state", state); m.put("available", available);
       if (cr!=null && cr.getStatus()==CityLibraryResearch.Status.RESEARCHING)
         m.put("completesAt", cr.getCompletesAt()==null?null:cr.getCompletesAt().toString());

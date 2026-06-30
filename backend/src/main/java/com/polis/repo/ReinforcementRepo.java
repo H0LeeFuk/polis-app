@@ -10,4 +10,5 @@ public interface ReinforcementRepo extends JpaRepository<Reinforcement, Long> {
   List<Reinforcement> findByHostCityId(Long hostCityId);
   List<Reinforcement> findByOwnerPlayerId(Long ownerPlayerId);
   Optional<Reinforcement> findByHostCityIdAndOwnerPlayerId(Long hostCityId, Long ownerPlayerId);
+  Optional<Reinforcement> findByHostCityIdAndOwnerPlayerIdAndOriginCityId(Long hostCityId, Long ownerPlayerId, Long originCityId);
 }

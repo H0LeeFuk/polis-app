@@ -3,7 +3,7 @@ import type {
   BattleReport, BattleReportPage, BattleOutcome, Hero, ResourceNode, HeroItemDto,
   BanditTowerState, BanditTowerLevelRow, BanditTowerAttackResult, IslandSlots, FoundingStatus, MissionsData, IslandBoss, BossAttackResult,
   LibraryData, TradeMarket, BuyPreview, TradeConvoyDto, AllianceView,
-  TempleState, Progression,
+  AltarState, Progression, SiegeData,
   WorldEndgame, WonderDto, WonderLeader,
   ColossusDto, ColossusDamageRow,
   WatchtowerDto, SpyReportDto, SpyAlertDto, SpyIntel,
@@ -48,15 +48,53 @@ export const doResearch = (c: number, researchType: string) => post(c, "research
 export const doRename   = (c: number, name: string) => post(c, "rename", { name });
 export const doCancel   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/cancel/${jobId}`, { method: "POST" });
 export const doFinish   = (c: number, jobId: number) => api<{ ok: boolean }>(`/api/cities/${c}/finish/${jobId}`, { method: "POST" });
-export const doAttack   = (c: number, targetCityId: number, units: Record<string, number>, heroId: number | null = null) => post(c, "attack", { targetCityId, units, heroId });
+export const doAttack   = (c: number, targetCityId: number, units: Record<string, number>, heroId: number | null = null, intent?: string) => post(c, "attack", { targetCityId, units, heroId, intent });
 export const doSupport  = (c: number, targetCityId: number, units: Record<string, number>) => post(c, "support", { targetCityId, units });
 export const getReinforcements = (cityId: number) =>
   api<{ ownerPlayerId: number; owner: string; mine: boolean; units: Record<string, number> }[]>(`/api/cities/${cityId}/reinforcements`);
 
-// Temple / Festivals / progression
-export const getTemple = (c: number) => api<TempleState>(`/api/cities/${c}/temple`);
+// Siege & Conquest
+export const startSiege   = (c: number, targetCityId: number, units: Record<string, number>, heroId: number | null) =>
+  post(c, "attack", { targetCityId, units, heroId, intent: "SIEGE" });
+export const getSiege     = (siegeId: number) => api<SiegeData>(`/api/sieges/${siegeId}`);
+export const getCitySiege = (cityId: number) => api<SiegeData | { siege: null }>(`/api/cities/${cityId}/siege`);
+export const getMySieges  = () => api<SiegeData[]>(`/api/players/me/sieges`);
+export const reinforceSiege = (siegeId: number, fromCityId: number, troops: Record<string, number>) =>
+  api<unknown>(`/api/sieges/${siegeId}/reinforce`, { method: "POST", body: JSON.stringify({ fromCityId, troops }) });
+export const attackSiege  = (siegeId: number, fromCityId: number, troops: Record<string, number>, includeHeroId: number | null = null) =>
+  api<unknown>(`/api/sieges/${siegeId}/attack`, { method: "POST", body: JSON.stringify({ fromCityId, troops, includeHeroId }) });
+export const withdrawSiege = (siegeId: number) =>
+  api<{ ok: boolean }>(`/api/sieges/${siegeId}/withdraw`, { method: "POST" });
+export const getSiegeMovements = (siegeId: number) => api<Movement[]>(`/api/sieges/${siegeId}/movements`);
+
+export interface TroopsAbroadRow { locationType: "ALLY_CITY" | "NODE" | "SIEGE"; locationId: number; locationName: string; troops: Record<string, number>; }
+export interface ForeignTroopsRow { ownerPlayerId: number; ownerName: string; ownerAlliance: string | null; troops: Record<string, number>; }
+export const getTroopsAbroad = (cityId: number) => api<TroopsAbroadRow[]>(`/api/cities/${cityId}/troops-abroad`);
+export const getForeignTroops = (cityId: number) => api<ForeignTroopsRow[]>(`/api/cities/${cityId}/foreign-troops`);
+export const recallAbroad = (cityId: number, locationType: string, locationId: number) =>
+  api<{ ok: boolean }>(`/api/cities/${cityId}/recall-abroad`, { method: "POST", body: JSON.stringify({ locationType, locationId }) });
+export const dismissForeign = (cityId: number, ownerPlayerId: number) =>
+  api<{ ok: boolean }>(`/api/cities/${cityId}/dismiss-foreign`, { method: "POST", body: JSON.stringify({ ownerPlayerId }) });
+
+export interface SimSide { race: string; troops: Record<string, number>; heroAttack?: number; attackBuff?: number; defenseBuff?: number; }
+export interface SimResult {
+  layer: string; winner: "ATTACKER" | "DEFENDER"; outcome: string; globalRatio: number;
+  attackerAttackPower: number; defenderDefencePower: number;
+  attacker: { sent: Record<string, number>; lost: Record<string, number>; survived: Record<string, number> };
+  defender: { present: Record<string, number>; lost: Record<string, number>; survived: Record<string, number> };
+  attackByElement: Record<string, number>; defenseByElement: Record<string, number>;
+}
+export const simulateCombat = (attacker: SimSide, defender: SimSide, layer: "SEA" | "LAND") =>
+  api<SimResult>(`/api/simulator/combat`, { method: "POST", body: JSON.stringify({ attacker, defender, layer }) });
+export const importSpyForSim = (spyReportId: number) =>
+  api<{ targetCityName: string; troops: Record<string, number>; buildings: Record<string, number>; capturedAt: string }>(`/api/simulator/import-spy/${spyReportId}`);
+export const chooseRace   = (cityId: number, race: string) =>
+  api<{ ok: boolean }>(`/api/cities/${cityId}/choose-race`, { method: "POST", body: JSON.stringify({ race }) });
+
+// Altar / Festivals / progression
+export const getAltar = (c: number) => api<AltarState>(`/api/cities/${c}/altar`);
 export const runFestival = (c: number, festivalType: string, fuelType: string) =>
-  api<{ ok: boolean }>(`/api/cities/${c}/temple/festival`, { method: "POST", body: JSON.stringify({ festivalType, fuelType }) });
+  api<{ ok: boolean }>(`/api/cities/${c}/altar/festival`, { method: "POST", body: JSON.stringify({ festivalType, fuelType }) });
 export const getProgression = () => api<Progression>("/api/players/me/progression");
 
 // --- city founding (hero settle + race choice) ---

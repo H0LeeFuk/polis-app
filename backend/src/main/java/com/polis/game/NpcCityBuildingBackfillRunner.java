@@ -66,9 +66,8 @@ public class NpcCityBuildingBackfillRunner implements ApplicationRunner {
     m.put(BuildingType.MINE, Math.max(1, lv - 1));
     m.put(BuildingType.EXTRACTOR, Math.max(1, lv - 2));
     m.put(BuildingType.BARRACKS, Math.max(1, lv - 2));
-    m.put(BuildingType.WALL, Math.max(1, lv - 1));
     m.put(BuildingType.MARKET, Math.max(0, lv - 3));
-    m.put(BuildingType.TEMPLE, Math.max(0, lv - 3));
+    m.put(BuildingType.ALTAR, Math.max(0, lv - 3));
     m.put(BuildingType.LIBRARY, Math.max(0, lv - 4));
     m.put(BuildingType.HARBOR, Math.max(0, lv - 5));
     m.put(BuildingType.WATCHTOWER, Math.max(0, lv - 4));

@@ -3,9 +3,9 @@ import {
   getState, doBuild, doTrain, doCancel, doRename, doFinish, getInbox, getMyMovements,
   getUnreadReportCount, doAttack, getHeroes, getFoundingStatus, getMissions, getTradeDeliveries, assignHero,
   createAlliance, getServerTime, getMyAlliance, inviteToAlliance, acceptAllianceInvite, declineAllianceInvite, postAllianceForum,
-  deassignHero, getTemple, runFestival,
+  deassignHero, getAltar, runFestival, callCityGuard,
 } from "../api";
-import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements, UnitDto, Hero, FoundingStatus, Trainable, ShipRole, TempleState, AllianceView, BuildingDto } from "../types";
+import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements, UnitDto, Hero, FoundingStatus, Trainable, ShipRole, AltarState, AllianceView, BuildingDto } from "../types";
 import { FoundingBanner, FoundCityModal, RaceBadge, RACES } from "./FoundCity";
 import MissionsPanel from "./MissionsPanel";
 import InventoryModal from "./InventoryModal";
@@ -22,6 +22,9 @@ import BattleReports from "./BattleReports";
 import HeroPanel from "./HeroPanel";
 import BanditTowerPanel from "./BanditTowerPanel";
 import ProfilePanel from "./ProfilePanel";
+import SiegePanel, { RaceChoiceModal } from "./SiegePanel";
+import TroopDetailPanel from "./TroopDetailPanel";
+import SimulatorPanel from "./SimulatorPanel";
 import { useDraggable } from "../useDraggable";
 import { CityMovementsPanel, TravelPreview, UnitTooltip, HeroPicker, HERO_GLYPH, UNIT_GLYPH } from "../movements";
 import leoImg from "../assets/leo.png";
@@ -93,7 +96,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [state, setState] = useState<GameState | null>(null);
   const [activeCityId, setActiveCityId] = useState<number | undefined>(undefined);
   const [tab, setTab] = useState<"city" | "world">("city");
-  const [modal, setModal] = useState<"rankings" | "profile" | "alliance" | "messages" | "endgame" | null>(null);
+  const [modal, setModal] = useState<"rankings" | "profile" | "alliance" | "messages" | "endgame" | "sieges" | null>(null);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -102,6 +105,8 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [nameDraft, setNameDraft] = useState("");
   const [moves, setMoves] = useState<PlayerMovements | null>(null);
   const [showMoves, setShowMoves] = useState(false);
+  const [showTroopDetail, setShowTroopDetail] = useState(false);
+  const [showSimulator, setShowSimulator] = useState(false);
   const [showReports, setShowReports] = useState(false);
   const [unreadReports, setUnreadReports] = useState(0);
   const [raidAgain, setRaidAgain] = useState<{ id: number; name: string } | null>(null);
@@ -259,7 +264,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
         <ResourceBar active={active} gold={player.gold} />
 
         <div className="topbar-right">
-          <PlayerCrest player={player} />
+          <PlayerCrest player={player} onClick={() => setModal("profile")} />
           <button className="logout" onClick={onLogout}>log out</button>
         </div>
       </div>
@@ -288,6 +293,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
           onReports={() => setShowReports(true)} onMissions={() => setShowMissions(true)}
           onHeroes={() => setShowHero(true)} onInventory={() => setShowInv(true)}
           onTower={() => setShowTower(true)}
+          onSimulator={() => setShowSimulator(true)}
           onModal={setModal} />
 
         <div className="stage">
@@ -304,7 +310,8 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
               onTrain={(t, c) => action(() => doTrain(active.id, t, c))()}
               onCancel={(j) => action(() => doCancel(active.id, j))()}
               onFinish={(j) => action(() => doFinish(active.id, j))()}
-              onFound={() => setTab("world")} />}
+              onFound={() => setTab("world")}
+              onCallGuard={action(() => callCityGuard(active.id))} />}
 
             {tab === "world" && <WorldView activeCityId={active.id} myUnits={active.units} heroes={heroes} myPlayerId={player.id} onChanged={() => { refresh(); refreshHeroes(); bumpMoves(); }} setErr={setErr} />}
           </div>
@@ -312,7 +319,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 
         {(tab === "city" || tab === "world") && (
           <aside className="side-info">
-            <TroopsPanel units={active.units} trainable={active.trainable} />
+            <TroopsPanel units={active.units} trainable={active.trainable} onDetails={() => setShowTroopDetail(true)} />
             <CityMovementsPanel cityId={active.id} now={now} reloadKey={movesNonce}
               onExpand={() => setShowMoves(true)}
               onAttackAgain={(id, name) => setRaidAgain({ id, name })} />
@@ -325,6 +332,9 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
       </div>
 
       {showMoves && <MovementsOverview data={moves} now={now} onClose={() => setShowMoves(false)} onGoCity={goToCity} />}
+      {showTroopDetail && <TroopDetailPanel cityId={active.id} cityName={active.name}
+        onClose={() => setShowTroopDetail(false)} onChanged={() => { refresh(); bumpMoves(); }} />}
+      {showSimulator && <SimulatorPanel onClose={() => setShowSimulator(false)} />}
 
       {showReports && <BattleReports cities={cities} unreadCount={unreadReports}
         onClose={() => setShowReports(false)} onUnreadChange={refreshUnreadReports}
@@ -349,11 +359,18 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 
       {raidAgain && <RaidAgainModal originCityId={active.id} originName={active.name} myUnits={active.units}
         heroes={heroesHere} target={raidAgain} onClose={() => setRaidAgain(null)}
-        onSend={async (units, heroId) => {
+        onSend={async (units, heroId, intent) => {
           setErr("");
-          try { await doAttack(active.id, raidAgain.id, units, heroId); setRaidAgain(null); await refresh(); refreshHeroes(); bumpMoves(); }
+          try { await doAttack(active.id, raidAgain.id, units, heroId, intent); setRaidAgain(null); await refresh(); refreshHeroes(); bumpMoves(); }
           catch (e: any) { setErr(e.message); }
         }} />}
+
+      {modal === "sieges" && <SiegePanel originCityId={active.id} originName={active.name}
+        myUnits={active.units} heroes={heroes} onClose={() => setModal(null)}
+        onChanged={() => { refresh(); refreshHeroes(); bumpMoves(); }} />}
+
+      {active.conqueredPendingRace && <RaceChoiceModal cityId={active.id} cityName={active.name}
+        onChosen={() => refresh()} />}
 
       {modal === "rankings" && <Modal title="Rankings" onClose={() => setModal(null)}><Rankings /></Modal>}
       {modal === "profile" && <ProfilePanel player={player} cities={cities}
@@ -371,7 +388,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 
 const ELEMENT_NAME: Record<string, string> = { FIRE: "Fire", WIND: "Wind", EARTH: "Earth", WATER: "Water" };
 
-function TroopsPanel({ units, trainable }: { units: { type: string; count: number }[]; trainable: Trainable[] }) {
+function TroopsPanel({ units, trainable, onDetails }: { units: { type: string; count: number }[]; trainable: Trainable[]; onDetails: () => void }) {
   const meta = (type: string) => trainable.find(x => x.type === type);
   const role = (type: string) => {
     const t = meta(type);
@@ -403,7 +420,10 @@ function TroopsPanel({ units, trainable }: { units: { type: string; count: numbe
 
   return (
     <div className="side-card troops-panel">
-      <div className="sc-head"><span className="sc-title">⚔ Troops</span><span className="sc-sub">{sum(troops)} in city</span></div>
+      <div className="sc-head">
+        <span className="sc-title">⚔ Troops</span>
+        <span className="sc-sub">{sum(troops)} in city · <button className="tp-details" title="Troops abroad & foreign troops here" onClick={onDetails}>🔍 Details</button></span>
+      </div>
       {troops.length === 0
         ? <p className="muted tp-empty">No ground troops. Train them in the Barracks.</p>
         : <div className="tp-grid">{troops.map(tile)}</div>}
@@ -415,10 +435,10 @@ function TroopsPanel({ units, trainable }: { units: { type: string; count: numbe
   );
 }
 
-function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onMissions, onHeroes, onInventory, onTower, onModal }: {
+function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onMissions, onHeroes, onInventory, onTower, onSimulator, onModal }: {
   unreadReports: number; claimable: number; heroPts: number; serverLine: string;
-  onReports: () => void; onMissions: () => void; onHeroes: () => void; onInventory: () => void; onTower: () => void;
-  onModal: (m: "rankings" | "profile" | "alliance" | "messages" | "endgame") => void;
+  onReports: () => void; onMissions: () => void; onHeroes: () => void; onInventory: () => void; onTower: () => void; onSimulator: () => void;
+  onModal: (m: "rankings" | "profile" | "alliance" | "messages" | "endgame" | "sieges") => void;
 }) {
   const Item = ({ icon, label, onClick, badge, hostile }: { icon: string; label: string; onClick: () => void; badge?: number; hostile?: boolean }) => (
     <button className="nav-item" onClick={onClick}>
@@ -439,8 +459,9 @@ function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onM
       <Item icon="🤝" label="Alliance" onClick={() => onModal("alliance")} />
       <Item icon="✉" label="Messages" onClick={() => onModal("messages")} />
       <Item icon="🏆" label="Rankings" onClick={() => onModal("rankings")} />
+      <Item icon="⚑" label="Sieges" onClick={() => onModal("sieges")} />
       <Item icon="⚔" label="Endgame" onClick={() => onModal("endgame")} />
-      <Item icon="👤" label="Profile" onClick={() => onModal("profile")} />
+      <Item icon="⚔📜" label="Simulator" onClick={onSimulator} />
       <div className="nav-foot">{serverLine}</div>
     </nav>
   );
@@ -504,7 +525,8 @@ function HeroSummary({ heroes, cityId, now, onOpen, onChanged, setErr }: {
   const unassigned = hero.stationedCityId == null;
   const elsewhereIdle = !unassigned && hero.stationedCityId !== cityId && idle;
   // status line (coloured): where the hero is and what it's doing
-  const status = hero.state === "MARCHING" ? { text: arriving != null ? "Marching here" : "Marching", cls: "go" }
+  const status = hero.state === "MARCHING"
+    ? { text: arriving != null ? `Marching to ${hero.stationedCityName ?? "city"}` : "Marching with army", cls: "go" }
     : hero.state === "WOUNDED" ? { text: "Wounded", cls: "bad" }
     : hero.stationedCityName ? { text: `Stationed in ${hero.stationedCityName}`, cls: "go" }
     : { text: "Unassigned", cls: "muted" };
@@ -579,7 +601,10 @@ function HeroSummary({ heroes, cityId, now, onOpen, onChanged, setErr }: {
           <div className="hf-xp-row"><span>Experience</span><span>{xpPct}%</span>{hero.unspentAttributePoints > 0 && <span className="nav-pip">{hero.unspentAttributePoints}</span>}</div>
           <div className="hf-xp"><i style={{ width: xpPct + "%", background: theme.accent }} /></div>
           {arriving != null
-            ? <button className="btn hf-action" disabled>🕐 Arriving in {clock(arriving)}</button>
+            ? <div className="hf-assigning">
+                <button className="btn hf-action" disabled>🕐 Arriving at {hero.stationedCityName ?? "city"} in {clock(arriving)}</button>
+                <button className="hf-cancel-x" title="Cancel assignment" disabled={busy} onClick={run(() => deassignHero(hero.id))}>✕</button>
+              </div>
             : hereIdle
               ? <button className="btn ghost hf-action" disabled={busy} onClick={run(() => deassignHero(hero.id))}>Deassign from city</button>
               : unassigned && idle
@@ -593,11 +618,11 @@ function HeroSummary({ heroes, cityId, now, onOpen, onChanged, setErr }: {
   );
 }
 
-function TempleSection({ cityId, now }: { cityId: number; now: number }) {
-  const [t, setT] = useState<TempleState | null>(null);
+function AltarSection({ cityId, now }: { cityId: number; now: number }) {
+  const [t, setT] = useState<AltarState | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setLocalErr] = useState("");
-  const load = () => getTemple(cityId).then(setT).catch(() => {});
+  const load = () => getAltar(cityId).then(setT).catch(() => {});
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [cityId]);
   if (!t) return <div className="bld-section"><h3>⛧ Rituals</h3><p className="muted">Loading…</p></div>;
   const pr = t.progression;
@@ -637,8 +662,8 @@ function TempleSection({ cityId, now }: { cityId: number; now: number }) {
     <div className="bld-section">
       <h3>⛧ Rituals <small className="muted" style={{ marginLeft: 6 }}>⚔ {t.combatPoints} Combat Points</small></h3>
       {err && <div className="hero-inline-err">{err}</div>}
-      <div className="temple-prog">
-        <div className="temple-prog-row"><b>Level {pr.level} / {pr.maxLevel}</b><span className="muted">Cities {pr.citiesOwned} / {pr.maxCities}</span></div>
+      <div className="altar-prog">
+        <div className="altar-prog-row"><b>Level {pr.level} / {pr.maxLevel}</b><span className="muted">Cities {pr.citiesOwned} / {pr.maxCities}</span></div>
         {pr.cultureForNextLevel != null ? (
           <>
             <div className="hf-xp"><i style={{ width: Math.min(100, Math.round((pr.culturePoints / pr.cultureForNextLevel) * 100)) + "%" }} /></div>
@@ -785,9 +810,9 @@ function AlliancePanel({ onChanged, setErr }: { player: PlayerDto; onChanged: ()
   );
 }
 
-function PlayerCrest({ player }: { player: PlayerDto }) {
+function PlayerCrest({ player, onClick }: { player: PlayerDto; onClick?: () => void }) {
   return (
-    <div className="crest" title={player.username}>
+    <div className="crest clickable" title={`${player.username} — open profile`} onClick={onClick} role="button">
       <div className="crest-shield">
         <svg viewBox="0 0 60 64" width="58" height="62">
           <defs>
@@ -840,11 +865,12 @@ function ResourceBar({ active, gold }: { active: CityDetail; gold: number }) {
   );
 }
 
-function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, onFinish, onFound }: {
+function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, onFinish, onFound, onCallGuard }: {
   active: CityDetail; now: number; counts: Record<string, number>;
   setCounts: (c: Record<string, number>) => void;
   onBuild: (t: string) => void; onTrain: (t: string, c: number) => void;
   onCancel: (j: number) => void; onFinish: (j: number) => void; onFound: () => void;
+  onCallGuard: () => void;
 }) {
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -872,8 +898,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
     EXTRACTOR: "Extract your race's special resource — needed to train elite units.",
     TIMBER: "Harvest timber to fuel construction across the city.",
     MARKET: "Trade resources for gold. A higher level carries more per convoy, runs more convoys at once, and delivers faster.",
-    WALL: "Fortify your city against attacks and invasions.",
-    TEMPLE: "Perform Rituals at the Altar to earn Influence — raise your level to unlock more city slots.",
+    ALTAR: "Perform Rituals at the Altar to earn Influence — raise your level to unlock more city slots.",
     WATCHTOWER: "Spy enemy cities before attacking. A higher Watchtower is more likely to spy successfully and to catch enemy spies scouting you.",
     GARRISON: "Hold troops and reinforce your city defenses.",
   };
@@ -1024,6 +1049,21 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
               })()}
             </div>
 
+            {selected.type === "FARM" && active.cityGuardEnabled && (() => {
+              const readyAt = active.cityGuardReadyAt ? new Date(active.cityGuardReadyAt).getTime() : 0;
+              const remaining = Math.max(0, Math.round((readyAt - now) / 1000));
+              const ready = remaining <= 0;
+              return (
+                <div className="bld-section city-guard">
+                  <h3>🧑‍🌾 City Guard</h3>
+                  <p className="muted">Rally the farmers into a militia that joins this city's garrison. They're weak, but they buy time when raided.</p>
+                  <button className="btn" disabled={!ready} onClick={onCallGuard}>
+                    {ready ? "🧑‍🌾 Call the Guard" : `Resting — ready in ${clock(remaining)}`}
+                  </button>
+                </div>
+              );
+            })()}
+
             {(selected.type === "BARRACKS" || selected.type === "HARBOR") && (
               <div className="bld-section barracks-layout">
                 <div className="barracks-train">
@@ -1087,11 +1127,11 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
                   <div className="train-queue">
                     <h4>In training</h4>
                     {(() => { const tq = selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR;
-                      return tq.map((j, i) => {
+                      return tq.map((j) => {
                       const rem = remaining(j.finishAt, now);
                       const pct = rem != null ? Math.round((1 - rem / j.totalSeconds) * 100) : 0;
-                      // rushable unless an earlier batch trains the SAME unit
-                      const canRush = !tq.slice(0, i).some(x => x.label === j.label);
+                      // troop batches are independent — any batch in the queue can be rushed with gold
+                      const canRush = true;
                       const rushSecs = rem ?? j.totalSeconds;
                       return (
                         <div className="tq-row" key={j.id}>
@@ -1129,8 +1169,8 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
               </div>
             )}
 
-            {selected.type === "TEMPLE" && selected.level > 0 && (
-              <TempleSection cityId={active.id} now={now} />
+            {selected.type === "ALTAR" && selected.level > 0 && (
+              <AltarSection cityId={active.id} now={now} />
             )}
 
             {selected.type === "WATCHTOWER" && (
@@ -1224,21 +1264,24 @@ function RaidAgainModal({ originCityId, originName, myUnits, heroes, target, onC
   originCityId: number; originName: string; myUnits: UnitDto[];
   heroes: Hero[];
   target: { id: number; name: string }; onClose: () => void;
-  onSend: (units: Record<string, number>, heroId: number | null) => void;
+  onSend: (units: Record<string, number>, heroId: number | null, intent?: string) => void;
 }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [heroId, setHeroId] = useState<number | null>(null);
   const [transportOk, setTransportOk] = useState(true);
+  const [siege, setSiege] = useState(false);
+  // a siege must be hero-led; the backend also enforces Conquest research + a Defense ship
+  const siegeBlocked = siege && heroId == null;
   const send = () => {
     const units = Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0));
-    if (Object.keys(units).length === 0 || !transportOk) return;
-    onSend(units, heroId);
+    if (Object.keys(units).length === 0 || !transportOk || siegeBlocked) return;
+    onSend(units, heroId, siege ? "SIEGE" : undefined);
   };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-window" onClick={e => e.stopPropagation()} style={{ width: "min(460px,100%)" }}>
         <div className="modal-header">
-          <h2>Attack {target.name}</h2>
+          <h2>{siege ? "Lay siege to" : "Attack"} {target.name}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
@@ -1247,7 +1290,13 @@ function RaidAgainModal({ originCityId, originName, myUnits, heroes, target, onC
               <p className="muted">No troops in {originName}. Train some first, or switch to a city with an army.</p>
             ) : (
               <>
-                <p className="muted">Send troops from <b>{originName}</b>:</p>
+                <div className="raid-allrow">
+                  <span className="muted">Send troops from <b>{originName}</b>:</span>
+                  <span className="raid-allbtns">
+                    <button type="button" className="btn ghost tiny" onClick={() => setCounts(Object.fromEntries(myUnits.map(u => [u.type, u.count])))}>Select all</button>
+                    <button type="button" className="btn ghost tiny" onClick={() => setCounts({})}>Clear</button>
+                  </span>
+                </div>
                 {myUnits.map(u => (
                   <div key={u.type} className="raid-row">
                     <span>{titleCase(u.type)} <small className="muted">({u.count} available)</small></span>
@@ -1256,9 +1305,20 @@ function RaidAgainModal({ originCityId, originName, myUnits, heroes, target, onC
                   </div>
                 ))}
                 <HeroPicker heroes={heroes} value={heroId} onChange={setHeroId} />
+                <label className="siege-toggle">
+                  <input type="checkbox" checked={siege} onChange={e => setSiege(e.target.checked)} />
+                  <span>⚑ Lay siege (Conquest)</span>
+                </label>
+                {siege && (
+                  <p className="muted siege-note">
+                    If this attack wins, an 8-hour siege begins and your <b>hero is locked in the siege</b> for the full duration.
+                    Requires the <b>Conquest</b> research, your hero, and at least one <b>Defense ship</b> to anchor the blockade.
+                    {siegeBlocked && <span className="siege-warn"> · Select your hero to lead the siege.</span>}
+                  </p>
+                )}
                 <TravelPreview originCityId={originCityId} targetCityId={target.id} units={counts} heroId={heroId} onState={setTransportOk} />
-                <button className="btn" disabled={!transportOk} onClick={send}>
-                  {transportOk ? "⚔ Send attack" : "🚢 Need more transport"}</button>
+                <button className="btn" disabled={!transportOk || siegeBlocked} onClick={send}>
+                  {!transportOk ? "🚢 Need more transport" : siege ? "⚑ Begin the siege" : "⚔ Send attack"}</button>
               </>
             )}
           </div>

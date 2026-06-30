@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { getLibrary, startLibraryResearch, respecLibrary, callCityGuard } from "../api";
 import type { LibraryData, LibraryNode } from "../types";
 
@@ -31,13 +31,6 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
   const load = () => getLibrary(cityId).then(d => { setData(d); setErr(""); }).catch(e => setErr(e.message));
   useEffect(() => { load(); }, [cityId]);
 
-  // id → node, so we can render prerequisite chips with their live state
-  const byId = useMemo(() => {
-    const m: Record<string, LibraryNode> = {};
-    data?.tree.forEach(n => { m[n.id] = n; });
-    return m;
-  }, [data]);
-
   const research = async (n: LibraryNode) => {
     setErr(""); setBusy(true);
     try { await startLibraryResearch(cityId, n.id); await load(); onChanged?.(); }
@@ -63,8 +56,7 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
   const lockReason = (n: LibraryNode): string => {
     if (!data) return "";
     if (data.level < n.minLibraryLevel) return `Needs Library level ${n.minLibraryLevel}`;
-    const missing = n.prereqs.map(p => byId[p]).filter(p => p && p.state !== "COMPLETED");
-    if (missing.length) return `Needs ${missing.map(p => p!.name).join(" + ")}`;
+    if (!n.tierOk) return `Needs any Tier ${n.tier - 1} research in this branch`;
     if (data.tree.some(x => x.state === "RESEARCHING")) return "Another research in progress";
     if (data.availablePoints < n.pointCost) return `Needs ${n.pointCost - data.availablePoints} more point(s)`;
     return "Locked";
@@ -99,7 +91,7 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
                         <div className="lib-tier-label">Tier {tier}</div>
                         <div className="lib-tier">
                           {nodes.map(n => (
-                            <LibNode key={n.id} n={n} byId={byId} busy={busy}
+                            <LibNode key={n.id} n={n} busy={busy}
                               reason={lockReason(n)} onResearch={() => research(n)} />
                           ))}
                         </div>
@@ -127,8 +119,8 @@ export default function LibraryPanel({ cityId, onClose, onChanged }: {
   );
 }
 
-function LibNode({ n, byId, reason, busy, onResearch }: {
-  n: LibraryNode; byId: Record<string, LibraryNode>; reason: string; busy: boolean; onResearch: () => void;
+function LibNode({ n, reason, busy, onResearch }: {
+  n: LibraryNode; reason: string; busy: boolean; onResearch: () => void;
 }) {
   const stateCls = n.state === "COMPLETED" ? "done"
     : n.state === "RESEARCHING" ? "busy"
@@ -138,17 +130,6 @@ function LibNode({ n, byId, reason, busy, onResearch }: {
     <div className={cls}>
       <div className="lib-node-head"><b>{n.name}</b><span className="lib-cost">{n.pointCost}◈</span></div>
       <div className="muted lib-effect">{n.effect}</div>
-
-      {/* prerequisite chips, ticked once satisfied — makes the branch dependencies explicit */}
-      {n.prereqs.length > 0 && (
-        <div className="lib-prereqs">
-          {n.prereqs.map(p => {
-            const pre = byId[p];
-            const ok = pre && pre.state === "COMPLETED";
-            return <span key={p} className={"lib-prereq " + (ok ? "ok" : "")}>{ok ? "✓" : "•"} {pre ? pre.name : p}</span>;
-          })}
-        </div>
-      )}
 
       {n.state === "COMPLETED" ? <div className="lib-done">✓ Researched</div>
         : n.state === "RESEARCHING" ? <div className="lib-researching">⏳ {countdown(n.completesAt)}</div>

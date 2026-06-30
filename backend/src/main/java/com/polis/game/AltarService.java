@@ -9,19 +9,19 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * The Temple hosts Festivals. A festival burns one of two fuels (resources OR Combat Points) and,
+ * The Altar hosts Festivals. A festival burns one of two fuels (resources OR Combat Points) and,
  * on completion, grants account-wide Culture Points (→ levels → city slots). Completed by the
  * scheduled resolver. Festivals are run from a city but progress the player, not the city.
  */
 @Service
-public class TempleService {
+public class AltarService {
   private final CityRepo cities;
   private final CityService cityService;
   private final PlayerRepo players;
   private final FestivalRepo festivals;
   private final ProgressionService progression;
 
-  public TempleService(CityRepo cities, CityService cityService, PlayerRepo players,
+  public AltarService(CityRepo cities, CityService cityService, PlayerRepo players,
                        FestivalRepo festivals, ProgressionService progression){
     this.cities = cities; this.cityService = cityService; this.players = players;
     this.festivals = festivals; this.progression = progression;
@@ -36,7 +36,7 @@ public class TempleService {
   @Transactional
   public Festival start(Long playerId, Long cityId, Festival.Type type, Festival.Fuel fuel){
     City c = owned(playerId, cityId);
-    if (cityService.level(cityId, BuildingType.TEMPLE) <= 0)
+    if (cityService.level(cityId, BuildingType.ALTAR) <= 0)
       throw new IllegalStateException("Build an Altar first");
     // Both rites may run together (one Offering + one Blood); only block a second of the SAME rite.
     if (festivals.countByCityIdAndFestivalTypeAndStatus(cityId, type, Festival.Status.RUNNING) > 0)
@@ -62,7 +62,8 @@ public class TempleService {
     Festival f = new Festival();
     f.setCityId(cityId); f.setPlayerId(playerId);
     f.setFestivalType(type); f.setFuelType(fuel); f.setStatus(Festival.Status.RUNNING);
-    f.setStartedAt(now); f.setCompletesAt(now.plusSeconds(GameRules.FESTIVAL_SECONDS));
+    int ritualSecs = GameRules.altarRitualSeconds(cityService.level(cityId, BuildingType.ALTAR));
+    f.setStartedAt(now); f.setCompletesAt(now.plusSeconds(ritualSecs));
     f.setCulturePointsReward(GameRules.FESTIVAL_CULTURE_REWARD);
     return festivals.save(f);
   }
@@ -78,19 +79,19 @@ public class TempleService {
   }
 
   @Transactional
-  public Map<String,Object> templeState(Long playerId, Long cityId){
+  public Map<String,Object> altarState(Long playerId, Long cityId){
     City c = owned(playerId, cityId);
-    int level = cityService.level(cityId, BuildingType.TEMPLE);
+    int level = cityService.level(cityId, BuildingType.ALTAR);
     Player p = players.findById(playerId).orElseThrow();
     List<Festival> running = festivals.findByCityIdAndStatusOrderByStartedAtDesc(cityId, Festival.Status.RUNNING);
 
     Map<String,Object> m = new LinkedHashMap<>();
-    m.put("templeLevel", level);
+    m.put("altarLevel", level);
     m.put("combatPoints", p.getCombatPoints());
     m.put("resourceCost", GameRules.FESTIVAL_RESOURCE_COST);
     m.put("combatCost", GameRules.FESTIVAL_COMBAT_COST);
     m.put("cultureReward", GameRules.FESTIVAL_CULTURE_REWARD);
-    m.put("durationSeconds", GameRules.FESTIVAL_SECONDS);
+    m.put("durationSeconds", GameRules.altarRitualSeconds(level));
     // affordability of each option from this city / account
     m.put("canAffordResources", c.getWood() >= GameRules.FESTIVAL_RESOURCE_COST
         && c.getStone() >= GameRules.FESTIVAL_RESOURCE_COST && c.getWheat() >= GameRules.FESTIVAL_RESOURCE_COST);

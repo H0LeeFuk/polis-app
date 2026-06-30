@@ -28,6 +28,7 @@ public class ResourceNode {
   @Enumerated(EnumType.STRING) @Column(nullable=false) private NodeStatus status = NodeStatus.UNCLAIMED;
 
   @Column(name="controlling_player_id")   private Long controllingPlayerId;
+  @Column(name="origin_city_id")          private Long originCityId;   // city that claimed it → recall target
   @Column(name="controlling_alliance_id") private Long controllingAllianceId;   // snapshot at claim time
 
   @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition="json")

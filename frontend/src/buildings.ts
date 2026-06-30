@@ -13,7 +13,7 @@ const wallBox = (x: number, y: number, w: number, h: number, fill = C.ivory) =>
 const col = (x: number, y: number, h: number) =>
   `<rect x="${x}" y="${y}" width="5" height="${h}" rx="2" fill="${C.stone}" stroke="${C.slip}" stroke-width="1"/>`;
 
-function temple(s: number) {
+function altar(s: number) {
   let cols = "";
   for (let i = 0; i < 5; i++) cols += col(34 + i * 12, 56, 30);
   return `<rect x="28" y="86" width="64" height="6" fill="${C.stone}" stroke="${C.slip}"/>${cols}
@@ -23,20 +23,14 @@ function house(fill: string, s: number) {
   return `${wallBox(40, 60, 40, 30, fill)}${roof(36, 60, 48, 14 + s * 2)}
     <rect x="55" y="72" width="10" height="18" fill="${C.dark}"/>`;
 }
-function tower(s: number) {
-  return `${wallBox(48, 40, 24, 50, C.stone)}<rect x="46" y="34" width="28" height="8" fill="${C.ivory}" stroke="${C.slip}"/>
-    <rect x="49" y="34" width="5" height="6" fill="${C.slip}"/><rect x="58" y="34" width="5" height="6" fill="${C.slip}"/>
-    <rect x="67" y="34" width="5" height="6" fill="${C.slip}"/><rect x="56" y="60" width="8" height="30" fill="${C.dark}"/>`;
-}
 
 const ART: Record<string, (s: number) => string> = {
-  SENATE: (s) => temple(s + 2),
-  TEMPLE: (s) => temple(s + 1),
+  SENATE: (s) => altar(s + 2),
+  ALTAR: (s) => altar(s + 1),
   LIBRARY: (s) => `${house(C.ivory, s)}<circle cx="60" cy="50" r="6" fill="${C.gold}" stroke="${C.slip}"/>`,
   BARRACKS: (s) => `${house(C.terracotta, s)}<rect x="44" y="64" width="32" height="4" fill="${C.slip}"/>`,
   HARBOR: (s) => `<rect x="30" y="78" width="60" height="12" fill="${C.teal}" stroke="${C.slip}"/>${house(C.stone, s)}
     <rect x="74" y="40" width="4" height="40" fill="${C.dark}"/><polygon points="78,42 78,64 60,52" fill="${C.ivory}" stroke="${C.slip}"/>`,
-  WALL: (s) => `${tower(s)}`,
   WAREHOUSE: (s) => `${wallBox(38, 58, 44, 32, C.stone)}${roof(34, 58, 52, 12)}<rect x="46" y="66" width="28" height="16" fill="${C.dark}"/>`,
   FARM: (s) => `${house(C.ivory, s)}<rect x="40" y="84" width="40" height="6" fill="${C.gold}"/>
     <circle cx="48" cy="80" r="3" fill="${C.terracotta}"/><circle cx="60" cy="80" r="3" fill="${C.terracotta}"/><circle cx="72" cy="80" r="3" fill="${C.terracotta}"/>`,

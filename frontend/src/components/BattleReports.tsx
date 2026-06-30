@@ -112,8 +112,11 @@ function TroopTable({ title, present, lost, survived, presentLabel }: {
   title: string; present: Record<string, number>; lost: Record<string, number>;
   survived: Record<string, number>; presentLabel: string;
 }) {
-  const types = Object.keys(UNIT_GLYPH).filter(t =>
-    (present[t] ?? 0) > 0 || (lost[t] ?? 0) > 0 || (survived[t] ?? 0) > 0);
+  // iterate the unit keys actually present in the data (not a hardcoded catalog) so any unit —
+  // race ships like FIRE_RAM/GALLEY, summons, future units — always shows. glyph() falls back to ⚔.
+  const types = Array.from(new Set([
+    ...Object.keys(present ?? {}), ...Object.keys(lost ?? {}), ...Object.keys(survived ?? {}),
+  ])).filter(t => (present[t] ?? 0) > 0 || (lost[t] ?? 0) > 0 || (survived[t] ?? 0) > 0);
   return (
     <div className="br-army">
       <h4>{title}</h4>
@@ -177,16 +180,11 @@ export function ReportDetail({ report, onClose, onDeleted, onAttackAgain }: {
             : "— Both sides withdrew"}</small>
       </div>
 
-      {(() => { const sea = report.combatLayer === "SEA";
-        return <div className="br-layer">{sea
-          ? "⛵ Naval battle — fleets engaged (the land garrison was untouched)"
-          : "⚔ Land battle — garrison engaged (ships in port were untouched)"}</div>; })()}
-
       <div className="br-section-label">Forces</div>
       <div className="br-armies">
-        <TroopTable title={report.combatLayer === "SEA" ? (attacker ? "Your fleet" : "Enemy fleet") : (attacker ? "Your army" : "Enemy army")} presentLabel="Sent"
+        <TroopTable title={attacker ? "Your forces" : "Enemy forces"} presentLabel="Sent"
           present={report.attackerTroopsSent} lost={report.attackerTroopsLost} survived={report.attackerTroopsSurvived} />
-        <TroopTable title={report.combatLayer === "SEA" ? (attacker ? "Defender fleet" : "Your fleet") : (attacker ? "Defender troops" : "Your troops")} presentLabel="Present"
+        <TroopTable title={attacker ? "Defender forces" : "Your forces"} presentLabel="Present"
           present={report.defenderTroopsPresent} lost={report.defenderTroopsLost} survived={report.defenderTroopsSurvived} />
       </div>
       <div className="br-powers">

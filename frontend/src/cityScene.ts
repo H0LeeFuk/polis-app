@@ -2,14 +2,14 @@
 // fixed ground point on terrain.svg (viewBox 0 0 1000 760). Coordinates come
 // straight from the asset pack's placements.json; the data layer is untouched.
 import terrainUrl from "./assets/terrain.svg";
-import townHallUrl from "./assets/town-hall.svg";
-import templeUrl from "./assets/altar.png";
-import barracksUrl from "./assets/barracks.svg";
+import townHallUrl from "./assets/town-hall.png";
+import altarUrl from "./assets/altar.png";
+import barracksUrl from "./assets/barracks.png";
 import marketUrl from "./assets/market.png";
 import libraryUrl from "./assets/library.png";
-import lumberUrl from "./assets/lumber-mill.svg";
+import lumberUrl from "./assets/lunder_mill.png";
 import wheatUrl from "./assets/wheat-farm.svg";
-import farmUrl from "./assets/farm.svg";
+import farmUrl from "./assets/farm.png";
 import quarryUrl from "./assets/quarry.svg";
 import warehouseUrl from "./assets/warehouse.svg";
 import harborUrl from "./assets/harbor.svg";
@@ -35,7 +35,7 @@ export const ICON_BASE = 0.786;
 
 export const PLACEMENTS: Placement[] = [
   { type: "SENATE",    name: "Town Hall",   icon: townHallUrl,  tag: "Civic",     resource: null,    x: 570, y: 322, w: 142 },
-  { type: "TEMPLE",    name: "Altar",       icon: templeUrl,    tag: "Ritual",    resource: null,    x: 480, y: 254, w: 104 },
+  { type: "ALTAR",     name: "Altar",       icon: altarUrl,     tag: "Ritual",    resource: null,    x: 480, y: 254, w: 104 },
   { type: "BARRACKS",  name: "Barracks",    icon: barracksUrl,  tag: "Military",  resource: null,    x: 658, y: 256, w: 108 },
   { type: "MARKET",    name: "Market",      icon: marketUrl,    tag: "Trade",     resource: null,    x: 498, y: 392, w: 106 },
   { type: "LIBRARY",   name: "Library",     icon: libraryUrl,   tag: "Knowledge", resource: null,    x: 658, y: 394, w: 104 },
@@ -46,6 +46,7 @@ export const PLACEMENTS: Placement[] = [
   { type: "WAREHOUSE", name: "Warehouse",   icon: warehouseUrl, tag: "Storage",   resource: null,    x: 758, y: 548, w: 108 },
   { type: "HARBOR",    name: "Harbor",      icon: harborUrl,    tag: "Naval",     resource: null,    x: 606, y: 666, w: 128 },
   { type: "WATCHTOWER",name: "Watchtower",  icon: watchTowerUrl,tag: "Espionage", resource: null,    x: 392, y: 452, w: 124, base: 0.85 },
+  { type: "EXTRACTOR", name: "Extractor",   icon: quarryUrl,    tag: "Special",   resource: null,    x: 168, y: 232, w: 104 },
 ];
 
 export const PLACEMENT_BY_TYPE: Record<string, Placement> =

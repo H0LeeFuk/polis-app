@@ -139,7 +139,7 @@ function HeroDashboard({ hero, onChanged }: {
   const act = async (fn: () => Promise<Hero>) => { setErr(""); try { onChanged(await fn()); setAlloc({ leadership: 0, cunning: 0, valor: 0 }); } catch (e: any) { setErr(e.message); } };
 
   const stateBadge = hero.state === "IDLE" ? `IDLE — in ${hero.stationedCityName ?? "—"}`
-    : hero.state === "MARCHING" ? "MARCHING with an army"
+    : hero.state === "MARCHING" ? (hero.stationedCityName ? `MARCHING to ${hero.stationedCityName}` : "MARCHING with an army")
       : hero.state === "SETTLING" ? "FOUNDING a city"
         : `WOUNDED — recovers in ${countdown(hero.woundedUntil)}`;
 

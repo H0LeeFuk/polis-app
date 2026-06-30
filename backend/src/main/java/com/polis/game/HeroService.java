@@ -91,8 +91,16 @@ public class HeroService {
     if (h.getState() != HeroState.IDLE) throw new IllegalStateException("The hero is not available right now");
     City c = cities.findById(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
     if (!Objects.equals(c.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
+    requireNoOtherHero(playerId, cityId, heroId);
     h.setStationedCityId(cityId);
     return heroes.save(h);
+  }
+
+  /** A city holds at most ONE hero — reject assigning/stationing if another hero already sits there. */
+  private void requireNoOtherHero(Long playerId, Long cityId, Long thisHeroId){
+    boolean taken = heroes.findByOwnerPlayerId(playerId).stream()
+        .anyMatch(o -> !Objects.equals(o.getId(), thisHeroId) && Objects.equals(o.getStationedCityId(), cityId));
+    if (taken) throw new IllegalStateException("That city already has a hero assigned — only one hero per city");
   }
 
   /** Time a hero spends marching to its newly-assigned city before it can act. */
@@ -110,20 +118,28 @@ public class HeroService {
     if (h.getStationedCityId() != null) throw new IllegalStateException("Deassign the hero from its current city first");
     City c = cities.findById(cityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
     if (!Objects.equals(c.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");
+    requireNoOtherHero(playerId, cityId, heroId);
     h.setStationedCityId(cityId);
     h.setActiveMovementId(null);
     h.setState(HeroState.MARCHING);
-    h.setWoundedUntil(Instant.now().plusSeconds(ASSIGN_SECONDS));   // reused as "available at"
+    h.setWoundedUntil(Instant.now().plusSeconds(GameRules.fast(ASSIGN_SECONDS)));   // reused as "available at" (TIME_SCALE for test)
     return heroes.save(h);
   }
 
-  /** Remove a hero from its city so it can be reassigned elsewhere. Only while idle. */
+  /**
+   * Unassign a hero from its city so it can be reassigned. Works while IDLE, and also CANCELS an
+   * in-progress assignment march (MARCHING to a city with no army — i.e. activeMovementId is null):
+   * the hero immediately becomes idle and unassigned. A hero marching WITH an army can't be recalled.
+   */
   @Transactional
   public Hero deassign(Long playerId, Long heroId){
     Hero h = requireOwned(playerId, heroId);
-    if (h.getState() != HeroState.IDLE) throw new IllegalStateException("The hero is busy right now");
-    if (h.getStationedCityId() == null) throw new IllegalStateException("The hero isn't assigned to a city");
+    boolean assigning = h.getState() == HeroState.MARCHING && h.getActiveMovementId() == null;
+    if (h.getState() != HeroState.IDLE && !assigning) throw new IllegalStateException("The hero is busy right now");
+    if (h.getStationedCityId() == null && !assigning) throw new IllegalStateException("The hero isn't assigned to a city");
     h.setStationedCityId(null);
+    h.setState(HeroState.IDLE);
+    h.setWoundedUntil(null);     // clear the assignment ETA when cancelling mid-march
     return heroes.save(h);
   }
 

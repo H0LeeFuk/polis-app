@@ -79,7 +79,7 @@ public class TravelTimeService {
     City o = cities.findById(originCityId).orElseThrow(() -> new IllegalArgumentException("Origin city not found"));
     City t = cities.findById(targetCityId).orElseThrow(() -> new IllegalArgumentException("Target city not found"));
     boolean water = crossesWater(o.getIslandId(), t.getIslandId());
-    return Duration.ofSeconds(seconds(o.getIslandId(), t.getIslandId(), effectiveMinutesPerTile(units, water)));
+    return Duration.ofSeconds(GameRules.fast(seconds(o.getIslandId(), t.getIslandId(), effectiveMinutesPerTile(units, water))));
   }
 
   // --- movement class: water crossing + terrain-aware pace + transport capacity --------------
@@ -186,9 +186,11 @@ public class TravelTimeService {
    * water with the transports included.
    */
   public TransportCheck checkTransport(Map<String,Integer> units, boolean crossesWater, int extraLandPop){
-    if (!crossesWater) return new TransportCheck(false, 0, 0, true, 0, null);
-    int required = landPopulation(units) + Math.max(0, extraLandPop);
     int provided = transportCapacityProvided(units);
+    // still report the ships' carrying capacity on a land route so the dispatch UI can show it
+    // (e.g. a Galley selected for a same-island target reads "0 / 30") — no crossing required.
+    if (!crossesWater) return new TransportCheck(false, 0, provided, true, 0, null);
+    int required = landPopulation(units) + Math.max(0, extraLandPop);
     if (required <= 0) return new TransportCheck(true, 0, provided, true, 0, null);   // flyers/swimmers only
     // total capacity shortfall (covers the common "no ships at all" case) — report first
     if (provided < required){

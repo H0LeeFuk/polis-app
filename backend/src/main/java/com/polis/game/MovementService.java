@@ -86,6 +86,17 @@ public class MovementService {
     return out;
   }
 
+  /** Every unresolved movement heading TO a city (attacks, supports, siege reinforcements), from the
+   *  viewer's perspective — enemy compositions stay hidden. Used by the siege drill-down. */
+  @Transactional(readOnly = true)
+  public List<MovementDTO> movementsToCity(Long viewerId, Long cityId){
+    Map<Long,String> nameCache = new HashMap<>(), islNameCache = new HashMap<>(), ownerCache = new HashMap<>();
+    List<MovementDTO> out = new ArrayList<>();
+    for (Movement m : movements.findByTargetCityIdAndResolvedFalse(cityId))
+      out.add(toDto(m, viewerId, nameCache, islNameCache, ownerCache));
+    return out;
+  }
+
   /** All unresolved movements involving a city the player owns: outgoing, returning, and incoming hostile. */
   @Transactional(readOnly = true)
   public List<MovementDTO> cityMovements(Long playerId, Long cityId){

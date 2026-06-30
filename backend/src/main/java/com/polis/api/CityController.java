@@ -4,6 +4,7 @@ import com.polis.config.SecurityConfig;
 import com.polis.domain.*;
 import com.polis.game.BuildService;
 import com.polis.game.MovementService;
+import com.polis.game.SiegeService;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
@@ -12,15 +13,19 @@ import java.util.Map;
 public class CityController {
   private final BuildService build;
   private final MovementService movements;
-  public CityController(BuildService build, MovementService movements){ this.build = build; this.movements = movements; }
+  private final SiegeService sieges;
+  public CityController(BuildService build, MovementService movements, SiegeService sieges){
+    this.build = build; this.movements = movements; this.sieges = sieges;
+  }
   private Long me(){ return SecurityConfig.currentPlayerId(); }
 
   public record BuildRequest(String buildingType){}
   public record TrainRequest(String unitType, int count){}
   public record ResearchRequest(String researchType){}
   public record RenameRequest(String name){}
-  public record AttackRequest(Long targetCityId, Map<String,Integer> units, Long heroId){}
+  public record AttackRequest(Long targetCityId, Map<String,Integer> units, Long heroId, String intent){}
   public record SupportRequest(Long targetCityId, Map<String,Integer> units){}
+  public record RaceRequest(String race){}
 
   @PostMapping("/build")
   public Map<String,Object> build(@PathVariable Long cityId, @RequestBody BuildRequest r){
@@ -51,8 +56,14 @@ public class CityController {
   @PostMapping({"/attack", "/raid"})
   public MovementDTO attack(@PathVariable Long cityId, @RequestBody AttackRequest r){
     Long me = me();
-    Movement m = build.attack(me, cityId, r.targetCityId(), r.units(), r.heroId());
+    boolean siege = "SIEGE".equalsIgnoreCase(r.intent());
+    Movement m = build.attack(me, cityId, r.targetCityId(), r.units(), r.heroId(), siege);
     return movements.dto(m, me);
+  }
+  // The new owner of a conquered city picks its race (the city kept its old race until now).
+  @PostMapping("/choose-race")
+  public Map<String,Object> chooseRace(@PathVariable Long cityId, @RequestBody RaceRequest r){
+    sieges.chooseRace(me(), cityId, r.race()); return ok();
   }
   // Send reinforcements to a friendly city (own / alliance); the troops stay there and defend it.
   @PostMapping("/support")

@@ -8,6 +8,19 @@ import java.util.Map;
 public final class GameRules {
   private GameRules(){}
 
+  /**
+   * Global time multiplier for TEST/dev: set env {@code POLIS_TIME_SCALE} below 1 to make everything
+   * (builds, training, marches, research, rituals, sieges, hero assignment) resolve faster. 1.0 = normal.
+   * e.g. 0.02 ≈ 50× faster. Applied at every player-facing duration source.
+   */
+  public static final double TIME_SCALE = readTimeScale();
+  private static double readTimeScale(){
+    try { String s = System.getenv("POLIS_TIME_SCALE"); return (s==null||s.isBlank()) ? 1.0 : Math.max(0.0001, Double.parseDouble(s)); }
+    catch (Exception e){ return 1.0; }
+  }
+  /** Apply TIME_SCALE to a duration in seconds (min 1s). */
+  public static long fast(long seconds){ return Math.max(1, Math.round(seconds * TIME_SCALE)); }
+
   // ~75 pop per Farm level → 3000 at max (level 40); buildings cost ~1000 pop maxed, leaving ~2000 free.
   public static int farmPop(int level){ return level<=0 ? 0 : 75*level; }
   // Warehouse storage cap scales with the WAREHOUSE building level: 1000 at level 0 up to
@@ -30,17 +43,47 @@ public final class GameRules {
   public static int buildSeconds(BuildingType b, int level, int senateLevel){
     double t=b.baseTime*Math.pow(1.28, level);
     double speed=1-Math.min(0.75, senateLevel*0.025);
-    return (int)Math.max(3, Math.round(t*speed));
+    return (int)Math.max(1, fast(Math.max(3, Math.round(t*speed))));
   }
   // Training time: 3%/level faster, up to 50%. Counted from the building's own level (not level-1)
   // so a level-1 Barracks/Harbor already trains a touch faster than nothing — it trains, just slowly.
   public static int unitSeconds(UnitType u, int fromBuildingLevel){
-    return (int)Math.max(3, Math.round(u.getTrainSeconds()*(1-Math.min(0.5, fromBuildingLevel*0.03))));
+    return (int)Math.max(1, fast(Math.max(3, Math.round(u.getTrainSeconds()*(1-Math.min(0.5, fromBuildingLevel*0.03))))));
   }
-  public static int buildingPoints(int level){ return level*(level+1)/2; }
+  // ---- city points: a fully-upgraded city is worth ~MAX_CITY_POINTS, end-loaded so the last levels
+  // are worth far more than the first. Per-level increment grows with level² (a building at level L
+  // contributes sum_{n=1..L} n² = L(L+1)(2L+1)/6 "raw" points), then everything is scaled so the sum
+  // across ALL buildings at their max levels equals MAX_CITY_POINTS. The scale is derived from the
+  // live BuildingType maxes, so it self-corrects if the catalog changes.
+  public static final int MAX_CITY_POINTS = 15000;
+  private static final double POINT_SCALE;
+  static {
+    double raw = 0;
+    for (BuildingType b : BuildingType.values()) raw += rawBuildingPoints(b.max);
+    POINT_SCALE = raw > 0 ? MAX_CITY_POINTS / raw : 1.0;
+  }
+  /** Unscaled point mass of a building at {@code level} = sum of n² for n=1..level (level²-weighted). */
+  private static long rawBuildingPoints(int level){
+    long L = Math.max(0, level);
+    return L * (L + 1) * (2 * L + 1) / 6;
+  }
+  public static int buildingPoints(int level){ return (int)Math.round(rawBuildingPoints(level) * POINT_SCALE); }
   public static int cityPoints(Map<BuildingType,Integer> levels){
-    int p=0; for(int lv: levels.values()) p+=buildingPoints(lv); return p;
+    int p=0; for(int lv: levels.values()) p+=buildingPoints(lv);
+    return Math.min(p, MAX_CITY_POINTS);   // a fully-upgraded city is exactly 15000 (no rounding overshoot)
   }
+  /**
+   * Anti-farm: stomping a much weaker target still earns 1 Combat Point per kill, but your army
+   * "fights weaker" against the helpless and takes disproportionate losses. Driven by the battle's
+   * {@code globalRatio} (attacker power / defender power, weighted per element): a close fight
+   * (≈1) → no penalty; the more lopsided your win, the heavier your own casualties.
+   * Returns the EXTRA attacker-loss multiplier (≥1), capped at 3×.
+   */
+  public static double weakTargetLossMult(double globalRatio){
+    if (globalRatio <= 1.2) return 1.0;                          // close fight: no penalty
+    return Math.min(3.0, 1.0 + (globalRatio - 1.2) * 0.4);       // lopsided win → up to 3× your losses
+  }
+
   public static int levelReq(int level){ return 60+level*60; }
   public static int citySlots(int level){ return level+1; }
 
@@ -60,7 +103,12 @@ public final class GameRules {
   public static final long FESTIVAL_RESOURCE_COST = 15_000;   // of EACH base resource
   public static final int  FESTIVAL_COMBAT_COST   = 200;      // Combat Points
   public static final int  FESTIVAL_CULTURE_REWARD = 1;
-  public static final int  FESTIVAL_SECONDS = 300;            // short duration; resolver completes it
+  public static final int  FESTIVAL_SECONDS = 3 * 3600;       // 3h base; reduced 1%/Altar level (see altarRitualSeconds)
+  /** Ritual duration after the Altar building's speed bonus: −1% per Altar level (max level 20 → −20%). */
+  public static int altarRitualSeconds(int altarLevel){
+    int lv = Math.max(0, Math.min(20, altarLevel));
+    return (int)fast(Math.round(FESTIVAL_SECONDS * (1 - 0.01 * lv)));
+  }
 
   /** Fixed number of city plots on every island. */
   public static final int SLOTS_PER_ISLAND = 12;

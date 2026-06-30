@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Order(30)
 public class GodAccountGoldRunner implements ApplicationRunner {
   private static final String GOD_ACCOUNT = "bruno";
-  private static final int GOLD = 2000;
+  private static final int GOLD = 2_000_000_000;   // effectively infinite for rush testing
 
   private final PlayerRepo players;
 

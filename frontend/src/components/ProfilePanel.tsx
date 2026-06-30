@@ -52,7 +52,7 @@ export default function ProfilePanel({ player, cities, faction, onClose }: {
           </div>
           <div className="profile-id">
             <h2 className="profile-name">{player.username}</h2>
-            <div className="profile-sub">Level {player.level} · {faction}</div>
+            <div className="profile-sub">Level {player.level}</div>
             {allianceLabel && (
               <span className="profile-ally">
                 <svg className="profile-ally-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
@@ -91,6 +91,7 @@ export default function ProfilePanel({ player, cities, faction, onClose }: {
                 <path fill="currentColor" d="M4 21V9l4-3 4 3V5l4-3 4 3v16H4Zm2-2h4v-4H6v4Zm0-6h4V9.9L8 8.4 6 9.9V13Zm8 6h4V6.2l-2-1.5-2 1.5V11h-2v8h2v-2h2v2Z" />
               </svg>
               <span className="profile-city-name">{c.name}</span>
+              {c.raceName && <span className="profile-city-race">{c.raceName}</span>}
               {c.capital && <span className="profile-city-cap">Capital</span>}
               <span className="profile-city-spacer" />
               <span className="profile-city-pts">{fmt(c.points)}</span>

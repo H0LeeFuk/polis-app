@@ -22,6 +22,8 @@ public class Reinforcement {
   @Column(name="world_id") private Long worldId;
   @Column(name="host_city_id", nullable=false) private Long hostCityId;
   @Column(name="owner_player_id", nullable=false) private Long ownerPlayerId;
+  /** The owner's city these troops marched FROM — they return here on recall/withdraw/dismiss. */
+  @Column(name="origin_city_id") private Long originCityId;
 
   @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition="json")
   private Map<String,Integer> units = new HashMap<>();

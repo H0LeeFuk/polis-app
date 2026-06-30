@@ -5,7 +5,7 @@ import lombok.*;
 import java.time.Instant;
 
 /**
- * A running/completed Temple festival. Festivals are run from a city but their Culture Points
+ * A running/completed Altar festival. Festivals are run from a city but their Culture Points
  * accrue to the PLAYER (account-wide progression). Completed by the scheduled resolver.
  */
 @Entity @Table(name="festivals")

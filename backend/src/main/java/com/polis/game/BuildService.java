@@ -36,15 +36,16 @@ public class BuildService {
   private final MissionService missions;
   private final LibraryService library;
   private final CombatEngine combat;
+  private final com.polis.repo.SiegeRepo sieges;
 
   public BuildService(CityService cityService, CityRepo cities, BuildingRepo buildings, UnitRepo units,
                       ResearchRepo research, JobRepo jobs, MovementRepo movements, PlayerRepo players,
                       TravelTimeService travel, UnitCatalog catalog, HeroService heroes, MissionService missions,
-                      LibraryService library, CombatEngine combat){
+                      LibraryService library, CombatEngine combat, com.polis.repo.SiegeRepo sieges){
     this.cityService=cityService; this.cities=cities; this.buildings=buildings; this.units=units;
     this.research=research; this.jobs=jobs; this.movements=movements; this.players=players;
     this.travel=travel; this.catalog=catalog; this.heroes=heroes; this.missions=missions; this.library=library;
-    this.combat=combat;
+    this.combat=combat; this.sieges=sieges;
   }
 
   private City owned(Long playerId, Long cityId){
@@ -56,9 +57,18 @@ public class BuildService {
   private void pay(City c, long w, long s, long wh){ c.setWood(c.getWood()-w); c.setStone(c.getStone()-s); c.setWheat(c.getWheat()-wh); }
 
   private void enqueue(City c, BuildJob job, QueueType qt, int totalSeconds){
-    int pos = (int) jobs.countByCityIdAndQueueType(c.getId(), qt);
+    // Lock the city row FIRST so this enqueue can't race the background tick / a rush / another
+    // enqueue — then finalize any finished head so the queue is current. Computing the position from
+    // the LIVE queue length (not a bare count()) under the lock guarantees no two jobs ever land on
+    // position 0, which is what produced duplicate "running" slots and out-of-order numbers.
+    cities.findByIdForUpdate(c.getId());
+    cityService.finalizeJobs(c, Instant.now());
+    List<BuildJob> q = jobs.findByCityIdAndQueueTypeOrderByPositionAsc(c.getId(), qt);
+    int pos = q.size();
     job.setCityId(c.getId()); job.setQueueType(qt); job.setPosition(pos); job.setTotalSeconds(totalSeconds);
-    if (pos == 0){ Instant now=Instant.now(); job.setStartedAt(now); job.setFinishAt(now.plusSeconds(totalSeconds)); }
+    // start (set finish time) only when this is the head AND nothing is already running on this queue
+    boolean headRunning = !q.isEmpty() && q.get(0).getFinishAt() != null;
+    if (pos == 0 && !headRunning){ Instant now=Instant.now(); job.setStartedAt(now); job.setFinishAt(now.plusSeconds(totalSeconds)); }
     jobs.save(job);
   }
 
@@ -151,30 +161,37 @@ public class BuildService {
     missions.record(playerId, MissionObjectiveType.RESEARCH_COMPLETE, 1);
   }
 
+  /** Resources refunded when an order is cancelled: 70% of what was paid (30% is forfeit). */
+  private static final double CANCEL_REFUND_PCT = 0.70;
+  private static long refund(long paid){ return Math.round(paid * CANCEL_REFUND_PCT); }
+  /** Credit resources up to the warehouse cap — anything above the cap is wasted. */
+  private void gainCapped(City c, ResourceType rt, long amt, long cap){ if (amt>0) c.set(rt, Math.min(cap, c.get(rt)+amt)); }
+
   @Transactional
   public void cancel(Long playerId, Long cityId, Long jobId){
     owned(playerId, cityId);
     BuildJob j = jobs.findById(jobId).orElseThrow(() -> new IllegalArgumentException("Job not found"));
     if (!Objects.equals(j.getCityId(), cityId)) throw new IllegalStateException("Wrong city");
     City c = cities.findById(cityId).orElseThrow();
+    // Cancelling forfeits 30% of the order's resources — only 70% is refunded, and never above the
+    // warehouse cap (any refund that would exceed it is wasted).
+    long cap = cityService.capacity(cityId);
     if (j.getQueueType()==QueueType.BUILDING){
       long[] r = GameRules.buildCost(j.getBuildingType(), j.getToLevel()-1);
-      c.setWood(c.getWood()+r[0]); c.setStone(c.getStone()+r[1]); c.setWheat(c.getWheat()+r[2]);
+      gainCapped(c, ResourceType.WOOD,  refund(r[0]), cap);
+      gainCapped(c, ResourceType.STONE, refund(r[1]), cap);
+      gainCapped(c, ResourceType.WHEAT, refund(r[2]), cap);
     } else {
       UnitType u=catalog.get(j.getUnitType());
-      c.setWood(c.getWood()+(long)u.getCostWood()*j.getBatch());
-      c.setStone(c.getStone()+(long)u.getCostStone()*j.getBatch());
-      c.setWheat(c.getWheat()+(long)u.getCostWheat()*j.getBatch());
-      if (u.getCostSpecial()>0 && c.getRace()!=null) c.add(c.getRace().specialResource, (long)u.getCostSpecial()*j.getBatch());
+      gainCapped(c, ResourceType.WOOD,  refund((long)u.getCostWood()*j.getBatch()),  cap);
+      gainCapped(c, ResourceType.STONE, refund((long)u.getCostStone()*j.getBatch()), cap);
+      gainCapped(c, ResourceType.WHEAT, refund((long)u.getCostWheat()*j.getBatch()), cap);
+      if (u.getCostSpecial()>0 && c.getRace()!=null)
+        gainCapped(c, c.getRace().specialResource, refund((long)u.getCostSpecial()*j.getBatch()), cap);
     }
     cities.save(c);
-    QueueType qt=j.getQueueType(); jobs.delete(j); jobs.flush();   // flush so the requery excludes j
-    List<BuildJob> q = jobs.findByCityIdAndQueueTypeOrderByPositionAsc(cityId, qt);
-    q.removeIf(b -> Objects.equals(b.getId(), j.getId()));          // never re-save the deleted job (would un-delete it)
-    Instant now=Instant.now();
-    for (int i=0;i<q.size();i++){ BuildJob b=q.get(i); b.setPosition(i);
-      if (i==0 && b.getFinishAt()==null){ b.setStartedAt(now); b.setFinishAt(now.plusSeconds(b.getTotalSeconds())); } }
-    jobs.saveAll(q);
+    jobs.delete(j); jobs.flush();                 // flush so finalize's requery excludes the cancelled job
+    cityService.finalizeJobs(c, Instant.now());   // lock-first resequence + single-runner normalization
   }
 
   /** Gold cost to instantly finish a job: 1 gold per minute of remaining time, min 1. */
@@ -191,12 +208,16 @@ public class BuildService {
     cityService.finalizeJobs(c, Instant.now());
     BuildJob j = jobs.findById(jobId).orElseThrow(() -> new IllegalStateException("That upgrade has already finished"));
     if (!Objects.equals(j.getCityId(), cityId)) throw new IllegalStateException("Wrong city");
-    // A job can be rushed only if no EARLIER job in the same queue targets the same building/unit —
-    // e.g. you may gold a Barracks upgrade while the Farm is upgrading, but not Farm→21 before Farm→20.
-    String key = jobKey(j);
-    for (BuildJob other : jobs.findByCityIdAndQueueTypeOrderByPositionAsc(cityId, j.getQueueType()))
-      if (other.getPosition() < j.getPosition() && key.equals(jobKey(other)))
-        throw new IllegalStateException("Finish the earlier " + key + " upgrade first");
+    // BUILDING jobs are level-chained: a job can be rushed only if no EARLIER job in the queue targets
+    // the same building — you may gold a Barracks upgrade while the Farm is upgrading, but not Farm→21
+    // before Farm→20. Troop queues (BARRACKS/HARBOR) have no such dependency — each batch is independent,
+    // so any queued batch may be rushed regardless of what's ahead of it.
+    if (j.getQueueType()==QueueType.BUILDING){
+      String key = jobKey(j);
+      for (BuildJob other : jobs.findByCityIdAndQueueTypeOrderByPositionAsc(cityId, j.getQueueType()))
+        if (other.getPosition() < j.getPosition() && key.equals(jobKey(other)))
+          throw new IllegalStateException("Finish the earlier " + key + " upgrade first");
+    }
     Instant now = Instant.now();
     long rem = j.getFinishAt()==null ? j.getTotalSeconds() : Math.max(0, Duration.between(now, j.getFinishAt()).getSeconds());
     int cost = rushCost(rem);
@@ -220,14 +241,22 @@ public class BuildService {
 
   @Transactional
   public Movement attack(Long playerId, Long cityId, Long targetCityId, Map<String,Integer> army, Long heroId){
+    return attack(playerId, cityId, targetCityId, army, heroId, false);
+  }
+
+  @Transactional
+  public Movement attack(Long playerId, Long cityId, Long targetCityId, Map<String,Integer> army, Long heroId, boolean siege){
     City src = owned(playerId, cityId);
     City tgt = cities.findById(targetCityId).orElseThrow(() -> new IllegalArgumentException("Target not found"));
     if (Objects.equals(tgt.getPlayerId(), playerId)) throw new IllegalStateException("Cannot attack your own city");
     // an army OR a lone hero may march — but never an empty order
     if (army.isEmpty() && heroId == null) throw new IllegalArgumentException("Select at least one unit or a hero");
+    if (siege) validateSiegeAttempt(playerId, cityId, tgt, army, heroId);
     // Two-layer rule: one dispatch is one layer. SEA attack (ships/aquatic) hits the enemy fleet;
-    // LAND attack (ground troops) hits the garrison. Reject mixing combatant layers in one send.
-    combat.attackLayer(army);
+    // LAND attack (ground troops) hits the garrison. Reject mixing combatant layers in one send —
+    // EXCEPT a siege attempt, which deliberately carries both layers (it must establish a land camp
+    // AND a sea blockade in one strike); each layer is resolved separately on arrival.
+    if (!siege) combat.attackLayer(army);
     // LAND troops — and a land (non-flying/swimming) hero — can't cross open water without transport ships
     Hero hero = heroId != null ? heroes.requireOwned(playerId, heroId) : null;
     int heroLoad = hero != null ? travel.heroLandLoad(hero.getRace()) : 0;
@@ -246,7 +275,7 @@ public class BuildService {
     if (hero != null) secs = (long)(secs * heroes.travelMult(hero));                  // Cunning / Forced March
     Movement m = new Movement();
     m.setWorldId(src.getWorldId()); m.setPlayerId(playerId); m.setSourceCityId(cityId);
-    m.setTargetCityId(targetCityId); m.setPhase(MovementPhase.OUT);
+    m.setTargetCityId(targetCityId); m.setPhase(MovementPhase.OUT); m.setSiegeIntent(siege);
     m.setUnits(new HashMap<>(army)); m.setArriveAt(Instant.now().plusSeconds(Math.max(5, secs)));
     Movement saved = movements.save(m);
     if (heroId != null) heroes.sendHero(playerId, heroId, cityId, saved.getId());
@@ -254,6 +283,34 @@ public class BuildService {
     if (tgt.getPlayerId() != null && !Objects.equals(tgt.getPlayerId(), playerId))
       missions.record(playerId, MissionObjectiveType.ATTACK_PLAYER, 1);
     return saved;
+  }
+
+  /**
+   * Gate a siege attempt at dispatch: the source city must have the Conquest research; the attack
+   * must lead with an IDLE hero and carry at least one Defense-role ship; and the player must have a
+   * free city slot to receive the conquered city (mirrors founding). Combat still decides whether the
+   * siege actually begins — this only blocks attempts that can never become a valid siege.
+   */
+  private void validateSiegeAttempt(Long playerId, Long sourceCityId, City target, Map<String,Integer> army, Long heroId){
+    if (!library.effects(sourceCityId).has("dominion"))
+      throw new IllegalStateException("Researching Conquest (Library, Warpath) is required to lay a siege");
+    if (target.getPlayerId() == null)
+      throw new IllegalStateException("Only player cities can be besieged");
+    if (heroId == null) throw new IllegalStateException("A siege must be led by your hero");
+    Hero hero = heroes.requireOwned(playerId, heroId);
+    if (hero.getState() != HeroState.IDLE)
+      throw new IllegalStateException("Your hero must be idle in the origin city to lead a siege");
+    boolean hasDefenseShip = army.entrySet().stream().anyMatch(e ->
+        e.getValue()!=null && e.getValue()>0 && catalog.get(e.getKey()).getShipRole()==ShipRole.DEFENSE);
+    if (!hasDefenseShip)
+      throw new IllegalStateException("A siege needs at least one Defense ship to anchor the blockade");
+    // require a free city slot (like founding): owned + pending settles + active sieges < cap
+    Player p = players.findById(playerId).orElseThrow();
+    long owned = cities.countByPlayerId(playerId);
+    long pendingSettle = movements.findByPlayerIdAndPhaseAndResolvedFalse(playerId, MovementPhase.SETTLE).size();
+    long activeSieges = sieges.findByBesiegingPlayerIdAndStatus(playerId, com.polis.domain.SiegeStatus.ACTIVE).size();
+    if (owned + pendingSettle + activeSieges >= GameRules.maxCities(p.getLevel()))
+      throw new IllegalStateException("No free city slot — a conquest needs an open slot (raise your level via Rituals)");
   }
 
   /**

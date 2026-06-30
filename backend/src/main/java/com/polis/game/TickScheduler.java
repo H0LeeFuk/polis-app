@@ -31,26 +31,29 @@ public class TickScheduler {
   private final LibraryService library;
   private final TradeService trade;
   private final ProgressionService progression;
-  private final TempleService temple;
+  private final AltarService altar;
   private final WonderService wonders;
   private final ColossusService colossi;
   private final SpyService spyService;
   private final ReinforcementRepo reinforcements;
+  private final SiegeService siege;
 
   public TickScheduler(CityService cityService, CityFactory cityFactory, CityRepo cities, UnitRepo units,
                        JobRepo jobs, MovementRepo movements, PlayerRepo players, BattleReportService reports,
                        CombatEngine combat, UnitCatalog catalog, HeroService heroService, HeroRepo heroRepo,
                        NodeService nodeService, ResourceNodeRepo resourceNodes, SettleService settleService,
                        LibraryService library, TradeService trade,
-                       ProgressionService progression, TempleService temple, WonderService wonders,
-                       ColossusService colossi, SpyService spyService, ReinforcementRepo reinforcements){
+                       ProgressionService progression, AltarService altar, WonderService wonders,
+                       ColossusService colossi, SpyService spyService, ReinforcementRepo reinforcements,
+                       SiegeService siege){
     this.wonders=wonders; this.colossi=colossi; this.spyService=spyService; this.reinforcements=reinforcements;
+    this.siege=siege;
     this.cityService=cityService; this.cityFactory=cityFactory; this.cities=cities; this.units=units;
     this.jobs=jobs; this.movements=movements; this.players=players; this.reports=reports;
     this.combat=combat; this.catalog=catalog; this.heroService=heroService; this.heroRepo=heroRepo;
     this.nodeService=nodeService; this.resourceNodes=resourceNodes; this.settleService=settleService;
     this.library=library; this.trade=trade;
-    this.progression=progression; this.temple=temple;
+    this.progression=progression; this.altar=altar;
   }
 
   @Scheduled(fixedDelayString = "${polis.tick.interval-ms}")
@@ -67,8 +70,8 @@ public class TickScheduler {
     heroService.recoverHealed(now);
     // complete any due Library research
     library.completeDue(now);
-    // complete any due Temple festivals (grant Culture Points → level-ups)
-    temple.completeDue(now);
+    // complete any due Altar festivals (grant Culture Points → level-ups)
+    altar.completeDue(now);
 
     // resolve movements
     for (Movement m : movements.findDue(now)){
@@ -80,10 +83,13 @@ public class TickScheduler {
           if (m.getTargetColossusId()!=null) colossi.onArrive(m, now);
           else if (m.getTargetWonderId()!=null) wonders.resolveAttack(m, now);
           else if (m.getTargetNodeId()!=null) resolveNodeAttack(m, now);
+          else if (m.isSiegeIntent()) siege.resolveSiegeStart(m, now);   // siege attempt → lay or fail the siege
           else resolveRaid(m, now);
         }
         case RETURN  -> resolveReturn(m);
         case SUPPORT -> resolveSupport(m);
+        case SIEGE_REINFORCE -> siege.onReinforceArrive(m);              // join the besieging force
+        case SIEGE_ATTACK    -> siege.onSiegeAttackArrive(m, now);       // try to break a lock
         case OCCUPY  -> { if (m.getTargetWonderId()!=null) wonders.resolveOccupy(m, now); else nodeService.resolveOccupy(m, now); }
         default      -> {}
       }
@@ -102,6 +108,9 @@ public class TickScheduler {
 
     // resolve any due spy missions (the espionage contest)
     spyService.resolveDue(now);
+
+    // sieges that survived their full duration → conquest
+    siege.resolveDue(now);
   }
 
   /** Daily roaming Colossus: spawns at 21:00 server time (despawns at 22:00 via the tick sweep). */
@@ -375,9 +384,11 @@ public class TickScheduler {
   private void resolveSupport(Movement m){
     City host = cities.findById(m.getTargetCityId()).orElse(null);
     if (host == null){ returnArmy(m, m.getUnits(), null); return; }   // target vanished → march the troops home
-    Reinforcement r = reinforcements.findByHostCityIdAndOwnerPlayerId(host.getId(), m.getPlayerId())
+    // key by origin city too, so each contributing city's troops return to where they came from
+    Reinforcement r = reinforcements.findByHostCityIdAndOwnerPlayerIdAndOriginCityId(host.getId(), m.getPlayerId(), m.getSourceCityId())
         .orElseGet(() -> { Reinforcement n = new Reinforcement();
           n.setWorldId(m.getWorldId()); n.setHostCityId(host.getId()); n.setOwnerPlayerId(m.getPlayerId());
+          n.setOriginCityId(m.getSourceCityId());
           return n; });
     Map<String,Integer> u = r.getUnits()==null ? new LinkedHashMap<>() : new LinkedHashMap<>(r.getUnits());
     for (var e : m.getUnits().entrySet())

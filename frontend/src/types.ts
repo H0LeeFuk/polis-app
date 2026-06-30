@@ -3,7 +3,7 @@ export interface PlayerDto {
   combatPoints: number; combatToNext: number;
   citySlots: number; ownedCities: number; totalPoints: number; gold: number; alliance?: string;
 }
-export interface CitySummary { id: number; name: string; points: number; capital: boolean; island: string; }
+export interface CitySummary { id: number; name: string; points: number; capital: boolean; island: string; raceId?: string | null; raceName?: string | null; }
 export type ResourceId = "WOOD" | "STONE" | "WHEAT" | "COAL" | "CRYSTALS" | "IRON" | "PEARLS";
 export interface Resources {
   wood: number; stone: number; wheat: number; capacity: number;
@@ -95,8 +95,8 @@ export interface Progression {
   culturePoints: number; cultureForNextLevel: number | null; culturePointsTotal: number;
   combatPoints: number; citiesOwned: number; maxCities: number; cap: number; atMax: boolean;
 }
-export interface TempleState {
-  templeLevel: number; combatPoints: number;
+export interface AltarState {
+  altarLevel: number; combatPoints: number;
   resourceCost: number; combatCost: number; cultureReward: number; durationSeconds: number;
   canAffordResources: boolean; canAffordCombat: boolean;
   running: { festivalType: string; fuelType: string; completesAt: string; culturePointsReward: number }[];
@@ -106,15 +106,17 @@ export interface MovementsSummary { attacksOut: number; incomingThreats: number;
 export interface PlayerMovements { summary: MovementsSummary; movements: Movement[]; }
 export interface CityDetail {
   id: number; name: string; capital: boolean; island: string; points: number; race: RaceInfo | null;
+  conqueredPendingRace?: boolean;
   resources: Resources; pop: number; maxPop: number;
   buildings: BuildingDto[];
   queues: { BUILDING: QueueJob[]; BARRACKS: QueueJob[]; HARBOR: QueueJob[] };
   units: UnitDto[]; trainable: Trainable[]; research: ResearchDto[]; movements: MovementDto[];
+  cityGuardEnabled?: boolean; cityGuardReadyAt?: string | null;
 }
 export interface GameState { player: PlayerDto; cities: CitySummary[]; active: CityDetail; }
 
 export interface WorldCity { id: number; slot: number; name: string; points: number; power: number; faction: string; playerId: number | null; owner: string; race: RaceId | null; }
-export interface WorldIsland { id: number; name: string; px: number; py: number; cities: WorldCity[]; resource?: boolean; tier?: number; }
+export interface WorldIsland { id: number; name: string; px: number; py: number; cities: WorldCity[]; resource?: boolean; tier?: number; spawnable?: boolean; clusterId?: number; resourceLevel?: number; }
 export interface WorldPlayer { id: number; name: string; level: number; combatPoints: number; }
 export interface WorldData { islands: WorldIsland[]; players: WorldPlayer[]; }
 export interface InboxMsg { id: number; from: string; body: string; sentAt: string; read: boolean; }
@@ -266,12 +268,37 @@ export interface Hero {
 // --- library / research tree ---
 export interface LibraryNode {
   id: string; branch: "WAR" | "WARDS" | "LORE"; tier: number; name: string; effect: string;
-  pointCost: number; durationSeconds: number; minLibraryLevel: number; prereqs: string[];
+  pointCost: number; durationSeconds: number; minLibraryLevel: number; tierOk: boolean;
   state: "LOCKED" | "RESEARCHING" | "COMPLETED"; available: boolean; completesAt?: string;
 }
 export interface LibraryData {
   level: number; maxLevel: number; totalPoints: number; spentPoints: number; availablePoints: number;
   fullTreeCost: number; race: string | null; raceAffinity: string | null; tree: LibraryNode[];
+}
+
+// --- siege & conquest ---
+export interface SiegeData {
+  id: number;
+  cityId: number;
+  cityName: string;
+  status: "ACTIVE" | "SUCCEEDED" | "BROKEN";
+  startedAt: string | null;
+  endsAt: string | null;
+  besiegingPlayerId: number;
+  besiegingPlayer: string | null;
+  defenderPlayerId: number | null;
+  besiegingTroops: Record<string, number>;
+  besiegingShips: Record<string, number>;
+  troopsRemaining: number;
+  shipsRemaining: number;
+  heroName: string | null;
+  heroLevel: number | null;
+  isBesieger: boolean;
+  isDefender: boolean;
+  isAllianceSiege: boolean;
+  canReinforce: boolean;
+  canBreak: boolean;
+  canWithdraw: boolean;
 }
 
 // --- missions ---

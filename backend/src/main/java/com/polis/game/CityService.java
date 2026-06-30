@@ -147,7 +147,26 @@ public class CityService {
           changed = true;
         }
       }
+      // INVARIANT NORMALIZATION (self-heals any corruption from any path): positions are contiguous
+      // 0..n and ONLY the head (position 0) is running. This runs on every read/sync under the city
+      // lock, so a queue can never display two "running" slots or out-of-order numbers for long.
+      normalizeQueue(q, now);
     }
+  }
+
+  /** Enforce: contiguous positions 0..n, exactly the head running (finishAt set), all others idle. */
+  private void normalizeQueue(List<BuildJob> q, Instant now){
+    boolean dirty = false;
+    for (int i = 0; i < q.size(); i++){
+      BuildJob b = q.get(i);
+      if (b.getPosition() != i){ b.setPosition(i); dirty = true; }
+      if (i == 0){
+        if (b.getFinishAt() == null){ b.setStartedAt(now); b.setFinishAt(now.plusSeconds(b.getTotalSeconds())); dirty = true; }
+      } else if (b.getFinishAt() != null || b.getStartedAt() != null){
+        b.setFinishAt(null); b.setStartedAt(null); dirty = true;   // only the head may run
+      }
+    }
+    if (dirty) jobs.saveAll(q);
   }
 
   /**

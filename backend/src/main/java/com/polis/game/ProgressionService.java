@@ -47,8 +47,11 @@ public class ProgressionService {
   public record CombatAward(int points, String reason){}
 
   /**
-   * Compute the (anti-farmed) Combat Points the {@code winnerId} earns for beating {@code loser}.
-   * Zero from NPC/barbarian/self/alliance targets; scaled down for weaker and repeat targets.
+   * Combat Points the {@code winnerId} earns for beating {@code loser}: a flat <b>1 point per enemy
+   * troop destroyed</b>, regardless of how strong or weak the target was. Anti-farming no longer
+   * lives here (we don't scale the reward) — instead, stomping a much weaker target costs you
+   * disproportionate troops in {@link CombatEngine} (see {@link GameRules#weakTargetLossMult}).
+   * Still zero from NPC/barbarian/self/alliance targets.
    */
   public CombatAward combatAward(Long winnerId, Player loser, int killedPop, double winnerPower, double loserPower){
     if (winnerId == null) return new CombatAward(0, null);
@@ -57,18 +60,9 @@ public class ProgressionService {
     Player winner = players.findById(winnerId).orElse(null);
     if (winner != null && winner.getAllianceId() != null && winner.getAllianceId().equals(loser.getAllianceId()))
       return new CombatAward(0, "Alliance member — no Combat Points");
-    int base = Math.max(0, killedPop);                 // bigger real fights → more points
-    if (base == 0) return new CombatAward(0, null);
-    List<String> notes = new ArrayList<>();
-    // strength parity: full value only vs a comparable target; stomping the weak → near 0
-    double parity = winnerPower <= 0 ? 1.0 : Math.min(1.0, loserPower / Math.max(1.0, winnerPower));
-    if (parity < 0.9) notes.add("Much weaker target: −" + Math.round((1 - parity) * 100) + "%");
-    // diminishing returns vs the SAME player over a rolling 24h window
-    long recent = reports.countRecentWins(winnerId, loser.getId(), Instant.now().minus(Duration.ofHours(24)));
-    double dim = Math.pow(0.5, recent);
-    if (recent > 0) notes.add((recent + 1) + nth(recent + 1) + " win vs this player (24h): −" + Math.round((1 - dim) * 100) + "%");
-    int pts = (int) Math.round(base * parity * dim);
-    return new CombatAward(pts, notes.isEmpty() ? null : String.join(" · ", notes));
+    int pts = Math.max(0, killedPop);                  // 1 Combat Point per enemy troop destroyed
+    if (pts == 0) return new CombatAward(0, null);
+    return new CombatAward(pts, "+1 per enemy troop destroyed");
   }
 
   private static String nth(long n){ long m = n % 10, h = n % 100; return (m==1&&h!=11)?"st":(m==2&&h!=12)?"nd":(m==3&&h!=13)?"rd":"th"; }

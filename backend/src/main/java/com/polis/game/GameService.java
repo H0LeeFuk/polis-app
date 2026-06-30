@@ -14,14 +14,15 @@ public class GameService {
   private final PlayerRepo players; private final CityRepo cities; private final IslandRepo islands;
   private final BuildingRepo buildings; private final UnitRepo units; private final ResearchRepo research;
   private final JobRepo jobs; private final AllianceRepo alliances; private final MovementRepo movements;
-  private final UnitCatalog catalog;
+  private final UnitCatalog catalog; private final LibraryService library;
 
   public GameService(CityService cityService, RankingService ranking, PlayerRepo players, CityRepo cities,
                      IslandRepo islands, BuildingRepo buildings, UnitRepo units, ResearchRepo research,
-                     JobRepo jobs, AllianceRepo alliances, MovementRepo movements, UnitCatalog catalog){
+                     JobRepo jobs, AllianceRepo alliances, MovementRepo movements, UnitCatalog catalog,
+                     LibraryService library){
     this.cityService=cityService; this.ranking=ranking; this.players=players; this.cities=cities; this.islands=islands;
     this.buildings=buildings; this.units=units; this.research=research; this.jobs=jobs; this.alliances=alliances; this.movements=movements;
-    this.catalog=catalog;
+    this.catalog=catalog; this.library=library;
   }
 
   @Transactional
@@ -61,6 +62,8 @@ public class GameService {
     Map<String,Object> m=new LinkedHashMap<>();
     m.put("id",c.getId()); m.put("name",c.getName()); m.put("points",c.getPoints());
     m.put("capital",c.isCapital()); m.put("island",islName.get(String.valueOf(c.getIslandId())));
+    m.put("raceId", c.getRace()==null ? null : c.getRace().name());
+    m.put("raceName", c.getRace()==null ? null : c.getRace().displayName);
     return m;
   }
 
@@ -155,7 +158,10 @@ public class GameService {
     m.put("id",id); m.put("name",c.getName()); m.put("capital",c.isCapital());
     m.put("island",islName.get(String.valueOf(c.getIslandId()))); m.put("points",c.getPoints());
     m.put("race", c.getRace()==null ? null : c.getRace().dto());
-    long cap=GameRules.storeCap(lv.get(BuildingType.WAREHOUSE));
+    m.put("conqueredPendingRace", c.isConqueredPendingRace());
+    // the TRUE warehouse cap includes Library storage research (War Stores / Deep Vaults / Burrow
+    // Stores) — production accrues up to it, so the bar must show it too (else stored > shown cap).
+    long cap=cityService.capacity(id);
     Race rRace = c.getRace()==null ? Race.HUMANS : c.getRace();
     ResourceType special = rRace.specialResource;
     Map<String,Object> res=new LinkedHashMap<>();
@@ -175,6 +181,9 @@ public class GameService {
     m.put("pop", cityService.popUsed(id)); m.put("maxPop", cityService.maxPop(id, bounty));
     m.put("buildings",bld); m.put("queues",queues); m.put("units",us);
     m.put("trainable",trainable); m.put("research",rsr); m.put("movements",moves);
+    // Bastion "City Guard" research → the Farm can summon militia (with a cooldown)
+    m.put("cityGuardEnabled", library.effects(id).has("cityGuard"));
+    m.put("cityGuardReadyAt", c.getCityGuardReadyAt()==null ? null : c.getCityGuardReadyAt().toString());
     return m;
   }
 
@@ -192,14 +201,14 @@ public class GameService {
       case HARBOR    -> "Ship training +" + trainPct(l) + "% → +" + trainPct(n) + "% faster";
       case WAREHOUSE -> "Storage capacity " + GameRules.storeCap(l) + " → " + GameRules.storeCap(n) + " per resource";
       case LIBRARY   -> "Research speed +" + libPct(l) + "% → +" + libPct(n) + "% (unlocks research up to level " + n + ")";
-      case WALL      -> "Strengthens the city's defences";
       case WATCHTOWER -> "Spy success " + pct1(GameRules.spySuccessChance(l)) + " → " + pct1(GameRules.spySuccessChance(n))
                         + " · catch enemy spies " + pct1(GameRules.spyDefenseChance(l)) + " → " + pct1(GameRules.spyDefenseChance(n));
       case MARKET    -> "Trade capacity " + marketCap(l) + " → " + marketCap(n)
                         + " · " + marketConvoys(l) + " → " + marketConvoys(n) + " convoys at once";
-      case TEMPLE    -> "Perform Rituals → Influence (level up → +1 city slot)";
+      case ALTAR     -> "Ritual speed +" + ritualPct(l) + "% → +" + ritualPct(n) + "% faster rituals";
     };
   }
+  private static int ritualPct(int level){ return Math.min(20, Math.max(0, level)); }   // −1%/level ritual time, cap 20%
   private static String pct1(double frac){ return Math.round(frac * 1000) / 10.0 + "%"; }
   private static int senatePct(int level){ return (int)Math.round(Math.min(0.75, level * 0.025) * 100); }
   private static int trainPct(int level){ return (int)Math.round(Math.min(0.5, level * 0.03) * 100); }

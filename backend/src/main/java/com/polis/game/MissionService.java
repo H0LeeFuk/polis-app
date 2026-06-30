@@ -23,11 +23,13 @@ public class MissionService {
   private final CityRepo cities;
   private final HeroService heroService;
   private final HeroRepo heroes;
+  private final LibraryService library;
+  private final BuildingRepo buildings;
 
   public MissionService(MissionRepo missions, PlayerMissionRepo playerMissions, CityRepo cities,
-                        HeroService heroService, HeroRepo heroes){
+                        HeroService heroService, HeroRepo heroes, LibraryService library, BuildingRepo buildings){
     this.missions = missions; this.playerMissions = playerMissions; this.cities = cities;
-    this.heroService = heroService; this.heroes = heroes;
+    this.heroService = heroService; this.heroes = heroes; this.library = library; this.buildings = buildings;
   }
 
   // --- seeding ----------------------------------------------------------------
@@ -134,17 +136,26 @@ public class MissionService {
     return out;
   }
 
+  /** Warehouse cap for a city (raised by Library storage research) — mirrors CityService.capacity. */
+  private long capacity(City c){
+    int wh = buildings.findByCityId(c.getId()).stream()
+        .filter(b -> b.getType()==BuildingType.WAREHOUSE).map(CityBuilding::getLevel).findFirst().orElse(0);
+    return Math.round(GameRules.storeCap(wh) * library.effects(c.getId()).storageMult());
+  }
+
   private void applyRewards(Long playerId, Map<String,Integer> rewards){
     if (rewards == null || rewards.isEmpty()) return;
     City capital = cities.findByPlayerIdAndCapitalTrue(playerId)
         .orElseGet(() -> { var l = cities.findByPlayerId(playerId); return l.isEmpty() ? null : l.get(0); });
+    // resource rewards never push a city above its warehouse cap — overflow is wasted
+    long cap = capital != null ? capacity(capital) : 0;
     long heroXp = 0;
     for (var e : rewards.entrySet()){
       int amt = e.getValue() == null ? 0 : e.getValue();
       switch (e.getKey().toLowerCase()){
-        case "wood"   -> { if (capital!=null) capital.setWood(capital.getWood()+amt); }
-        case "stone"  -> { if (capital!=null) capital.setStone(capital.getStone()+amt); }
-        case "silver", "wheat" -> { if (capital!=null) capital.setWheat(capital.getWheat()+amt); }
+        case "wood"   -> { if (capital!=null) capital.setWood(Math.min(cap,  capital.getWood()+amt)); }
+        case "stone"  -> { if (capital!=null) capital.setStone(Math.min(cap, capital.getStone()+amt)); }
+        case "silver", "wheat" -> { if (capital!=null) capital.setWheat(Math.min(cap, capital.getWheat()+amt)); }
         case "heroxp" -> heroXp += amt;
         default -> {}
       }
@@ -155,20 +166,17 @@ public class MissionService {
         .ifPresent(leo -> heroService.grantXp(playerId, leo.getId(), xp));
   }
 
-  /** Flip a hero to unlocked, creating/stationing it in the capital if needed. */
+  /** Flip a hero to unlocked. It starts UNASSIGNED — the player chooses which city to station it in. */
   @Transactional
   public Hero unlockHero(Long playerId, HeroKey key){
-    Long capitalId = cities.findByPlayerIdAndCapitalTrue(playerId).map(City::getId)
-        .orElseGet(() -> { var l = cities.findByPlayerId(playerId); return l.isEmpty() ? null : l.get(0).getId(); });
     Hero h = heroes.findByOwnerPlayerIdAndHeroKey(playerId, key).orElse(null);
     if (h == null){
       Race race = key == HeroKey.TITANIA ? Race.FAIRIES : Race.HUMANS;
       String name = key == HeroKey.TITANIA ? "Titania" : "Leo";
-      return heroService.create(playerId, key, race, name, true, capitalId);
+      return heroService.create(playerId, key, race, name, true, null);   // unassigned: no stationed city
     }
     if (!h.isUnlocked()){
-      h.setUnlocked(true);
-      if (h.getStationedCityId() == null && h.getState() == HeroState.IDLE) h.setStationedCityId(capitalId);
+      h.setUnlocked(true);   // leave stationedCityId as-is (null = unassigned) so the player picks a city
       heroes.save(h);
     }
     return h;

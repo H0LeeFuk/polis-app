@@ -31,6 +31,9 @@ public class City {
   @Column(name="blitz_ready_at") private Instant blitzReadyAt;
   // Library "City Guard" (Bastion): farm militia summon is on cooldown until this time.
   @Column(name="city_guard_ready_at") private Instant cityGuardReadyAt;
+  // Just conquered via siege: the new owner must pick this city's race before it produces normally.
+  // Until chosen the city keeps its previous race. Cleared once the owner chooses.
+  @Column(name="conquered_pending_race") private boolean conqueredPendingRace = false;
   // NOTE: optimistic @Version removed — the per-read sync() + 5s background tick
   // both write cities, so version checks lost frequent races (500s on build/train).
   // Last-write-wins is acceptable here; the DB 'version' column is left unused.

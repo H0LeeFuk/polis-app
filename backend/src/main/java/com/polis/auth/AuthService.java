@@ -65,30 +65,41 @@ public class AuthService {
     List<Island> isls = new ArrayList<>(islands.findByWorldId(worldId));
     isls.sort(Comparator.comparingLong(Island::getId));   // deterministic order for empty-island pick
     int SLOTS = com.polis.game.GameRules.SLOTS_PER_ISLAND;
-    for (int tier = 3; tier >= 1; tier--){
-      Island chosen = null; int chosenFree = Integer.MAX_VALUE; boolean chosenPopulated = false;
-      for (Island i : isls){
-        if (i.getTier() != tier || i.isResource()) continue;
-        int occupied = cities.findByIslandId(i.getId()).size();
-        int free = SLOTS - occupied;
-        if (free <= 0) continue;                                   // full — skip
-        boolean populated = occupied > 0;
-        // prefer a populated island; among equals take the fewest free (closest to full); only fall
-        // back to an empty island when no populated one in this tier has room
-        boolean better = chosen == null
-            || (populated && !chosenPopulated)
-            || (populated == chosenPopulated && free < chosenFree);
-        if (better){ chosen = i; chosenFree = free; chosenPopulated = populated; }
-      }
-      if (chosen != null)
-        for (int s=0; s<SLOTS; s++)
-          if (cities.findByIslandIdAndSlot(chosen.getId(), s).isEmpty()) return new long[]{chosen.getId(), s};
-    }
-    // fallback: any island with a free plot (covers worlds without tier data)
-    for (Island i : isls)
+
+    // CLUSTERED SPAWN: players enter only on Tier-1 GREEN (spawnable) islands. Fill the most-populated
+    // green island that still has room (so a cluster fills up beside recent players before opening a
+    // fresh one) — only when no green island is partly-filled do we start a new (empty) green island.
+    long[] green = pickFromIslands(isls.stream().filter(i -> i.isSpawnable() && i.getTier() == 1).toList(), SLOTS);
+    if (green != null) return green;
+    // fallback A: any spawnable island (covers worlds where Tier-1 green is full)
+    long[] anyGreen = pickFromIslands(isls.stream().filter(Island::isSpawnable).toList(), SLOTS);
+    if (anyGreen != null) return anyGreen;
+    // fallback B: any non-resource island with a free plot (legacy/pre-cluster worlds)
+    for (Island i : isls){
+      if (i.isResource()) continue;
       for (int s=0; s<SLOTS; s++)
         if (cities.findByIslandIdAndSlot(i.getId(), s).isEmpty()) return new long[]{i.getId(), s};
+    }
     throw new IllegalStateException("No free city plots remain in this world");
+  }
+
+  /** Pick the most-populated-but-not-full island in the candidate set, then its first free slot. */
+  private long[] pickFromIslands(List<Island> candidates, int SLOTS){
+    Island chosen = null; int chosenFree = Integer.MAX_VALUE; boolean chosenPopulated = false;
+    for (Island i : candidates){
+      int occupied = cities.findByIslandId(i.getId()).size();
+      int free = SLOTS - occupied;
+      if (free <= 0) continue;
+      boolean populated = occupied > 0;
+      boolean better = chosen == null
+          || (populated && !chosenPopulated)
+          || (populated == chosenPopulated && free < chosenFree);
+      if (better){ chosen = i; chosenFree = free; chosenPopulated = populated; }
+    }
+    if (chosen == null) return null;
+    for (int s=0; s<SLOTS; s++)
+      if (cities.findByIslandIdAndSlot(chosen.getId(), s).isEmpty()) return new long[]{chosen.getId(), s};
+    return null;
   }
 
   /** Give a city-less account a fresh capital on a tier-3 island (new spawn / lost-everything respawn). */

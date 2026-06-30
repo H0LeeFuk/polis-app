@@ -182,10 +182,13 @@ public class NodeService {
       if (take <= 0) continue;
       if (take >= have) n.getGarrison().remove(k); else n.getGarrison().put(k, have - take);
     }
-    if (n.getGarrison().isEmpty()){ n.setStatus(NodeStatus.UNCLAIMED); n.setControllingPlayerId(null); n.setControllingAllianceId(null); }
+    Long originCity = n.getOriginCityId();
+    if (n.getGarrison().isEmpty()){ n.setStatus(NodeStatus.UNCLAIMED); n.setControllingPlayerId(null); n.setControllingAllianceId(null); n.setOriginCityId(null); }
     nodes.save(n);
-    // march survivors home to the player's capital
-    City home = cities.findByPlayerIdAndCapitalTrue(playerId).orElseGet(() -> cities.findByPlayerId(playerId).get(0));
+    // march survivors back to the city that claimed the node (fall back to the capital for legacy nodes)
+    City home = (originCity != null ? cities.findById(originCity) : java.util.Optional.<City>empty())
+        .filter(c -> Objects.equals(c.getPlayerId(), playerId))
+        .orElseGet(() -> cities.findByPlayerIdAndCapitalTrue(playerId).orElseGet(() -> cities.findByPlayerId(playerId).get(0)));
     Movement ret = new Movement();
     ret.setWorldId(home.getWorldId()); ret.setPlayerId(playerId); ret.setSourceCityId(home.getId());
     ret.setTargetNodeId(nodeId); ret.setPhase(MovementPhase.RETURN);
@@ -210,6 +213,7 @@ public class NodeService {
     for (var e : m.getUnits().entrySet()) n.getGarrison().merge(catalog.get(e.getKey()).getName(), e.getValue(), Integer::sum);
     n.setStatus(NodeStatus.CONTROLLED);
     n.setControllingPlayerId(m.getPlayerId());
+    if (n.getOriginCityId() == null) n.setOriginCityId(m.getSourceCityId());   // recall target
     n.setControllingAllianceId(players.findById(m.getPlayerId()).map(Player::getAllianceId).orElse(null));
     if (n.getClaimedAt() == null) n.setClaimedAt(now);
     n.setContestedUntil(null);
