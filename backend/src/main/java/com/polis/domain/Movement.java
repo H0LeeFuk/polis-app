@@ -21,6 +21,7 @@ public class Movement {
   @Column(name="target_camp_id") private Long targetCampId;   // bandit-camp raids (OUT / RETURN)
   @Column(name="target_wonder_id") private Long targetWonderId; // Wonder captures (OUT assault / OCCUPY claim)
   @Column(name="target_colossus_id") private Long targetColossusId; // Colossus strikes (OUT) / march home (RETURN)
+  @Column(name="target_boss_id") private Long targetBossId; // resource-island boss strikes (OUT) / march home (RETURN)
   @Column(name="target_siege_id") private Long targetSiegeId;   // SIEGE_REINFORCE / SIEGE_ATTACK target
   /** OUT attack flagged as a siege attempt: on a winning land assault with a surviving fleet it
    *  begins an 8h siege instead of looting-and-returning. Validated at dispatch. */

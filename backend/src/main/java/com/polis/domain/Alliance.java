@@ -10,6 +10,8 @@ public class Alliance {
   @Column(name="world_id") private Long worldId;
   private String tag;
   private String name;
+  /** Alliance crest shown above resource buildings it controls (an emoji from a selectable set). */
+  @Column(name="emblem") private String emblem = "🛡";
   @Column(name="leader_id") private Long leaderId;
   // shared treasury fed by held resource nodes; officers distribute to members
   @Column(name="treasury_wood")  private long treasuryWood = 0;

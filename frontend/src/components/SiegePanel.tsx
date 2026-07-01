@@ -22,6 +22,7 @@ export default function SiegePanel({ originCityId, originName, myUnits, heroes, 
   onClose: () => void; onChanged?: () => void;
 }) {
   const [sieges, setSieges] = useState<SiegeData[] | null>(null);
+  const [tab, setTab] = useState<"mine" | "ally">("mine");
   const [err, setErr] = useState("");
   const [, force] = useState(0);
   useEffect(() => { const t = setInterval(() => force(x => x + 1), 1000); return () => clearInterval(t); }, []);
@@ -41,24 +42,26 @@ export default function SiegePanel({ originCityId, originName, myUnits, heroes, 
         <div className="modal-body">
           {err && <div className="hero-inline-err">{err}</div>}
           {!sieges ? <p className="muted">Loading…</p>
-            : sieges.length === 0 ? <p className="muted">No active sieges. Launch one from the World map by attacking with a hero and choosing “⚑ Lay siege”.</p>
-              : (() => {
+            : (() => {
                 const mine = sieges.filter(s => !s.isAllianceSiege);
                 const ally = sieges.filter(s => s.isAllianceSiege);
                 const card = (s: SiegeData) => (
                   <SiegeCard key={s.id} s={s} originCityId={originCityId} originName={originName}
                     myUnits={myUnits} heroes={heroes} setErr={setErr} onChanged={refresh} />
                 );
+                const shown = tab === "mine" ? mine : ally;
                 return (
                   <>
-                    <div className="siege-group-head">⚔ My sieges</div>
-                    {mine.length ? mine.map(card) : <p className="muted siege-group-empty">None — you're neither besieging nor besieged.</p>}
-                    {ally.length > 0 && (
-                      <>
-                        <div className="siege-group-head">🤝 Alliance sieges</div>
-                        {ally.map(card)}
-                      </>
-                    )}
+                    <div className="siege-tabs">
+                      <button className={"siege-tab" + (tab === "mine" ? " active" : "")} onClick={() => setTab("mine")}>
+                        ⚔ My sieges{mine.length ? ` (${mine.length})` : ""}</button>
+                      <button className={"siege-tab" + (tab === "ally" ? " active" : "")} onClick={() => setTab("ally")}>
+                        🤝 Alliance sieges{ally.length ? ` (${ally.length})` : ""}</button>
+                    </div>
+                    {shown.length ? shown.map(card)
+                      : <p className="muted siege-group-empty">{tab === "mine"
+                          ? "None — you're neither besieging nor besieged. Launch one from the World map by attacking with a hero and choosing “⚑ Lay siege”."
+                          : "No alliance sieges right now."}</p>}
                   </>
                 );
               })()}

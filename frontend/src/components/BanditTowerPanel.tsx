@@ -117,6 +117,10 @@ export default function BanditTowerPanel({ active, heroes, onClose, onChanged }:
                   <p className="muted">No troops in this city. Train some, or switch to a city with an army.</p>
                 ) : (
                   <>
+                    <div className="raid-selectall">
+                      <button className="btn ghost tiny" onClick={() => setCounts(Object.fromEntries(active.units.map(u => [u.type, u.count])))}>Select all</button>
+                      <button className="btn ghost tiny" onClick={() => setCounts({})}>Clear</button>
+                    </div>
                     {active.units.map(u => (
                       <div key={u.type} className="raid-row">
                         <span>{glyph(u.type)} {titleCase(u.type)} <small className="muted">({u.count})</small></span>

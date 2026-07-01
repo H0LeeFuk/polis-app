@@ -34,13 +34,15 @@ public class SettleService {
   private final TravelTimeService travel;
   private final CityFactory cityFactory;
   private final MissionService missions;
+  private final AllianceTierService tierGate;
 
   public SettleService(CityRepo cities, PlayerRepo players, IslandRepo islands, AllianceRepo alliances,
                        HeroService heroes, HeroRepo heroRepo, MovementRepo movements,
-                       TravelTimeService travel, CityFactory cityFactory, MissionService missions){
+                       TravelTimeService travel, CityFactory cityFactory, MissionService missions,
+                       AllianceTierService tierGate){
     this.cities=cities; this.players=players; this.islands=islands; this.alliances=alliances;
     this.heroes=heroes; this.heroRepo=heroRepo; this.movements=movements; this.travel=travel;
-    this.cityFactory=cityFactory; this.missions=missions;
+    this.cityFactory=cityFactory; this.missions=missions; this.tierGate=tierGate;
   }
 
   // --- dispatch: send the hero to found a city -------------------------------
@@ -50,9 +52,12 @@ public class SettleService {
     Player p = players.findById(playerId).orElseThrow();
     if (slotIndex < 0 || slotIndex >= GameRules.SLOTS_PER_ISLAND)
       throw new IllegalArgumentException("Invalid slot");
-    islands.findById(islandId).orElseThrow(() -> new IllegalArgumentException("Island not found"));
+    Island target = islands.findById(islandId).orElseThrow(() -> new IllegalArgumentException("Island not found"));
     if (cities.findByIslandIdAndSlot(islandId, slotIndex).isPresent())
       throw new IllegalStateException("That slot is already occupied");
+    // Alliance Tier Gate: founding in Tier 2/3 requires the alliance's prior-tier progress
+    if (target.getTier() > 1 && !tierGate.canActInTier(p.getAllianceId(), target.getTier()))
+      throw new IllegalStateException(tierGate.gateReason(p.getAllianceId(), target.getTier()));
 
     City from = cities.findById(fromCityId).orElseThrow(() -> new IllegalArgumentException("City not found"));
     if (!Objects.equals(from.getPlayerId(), playerId)) throw new IllegalStateException("Not your city");

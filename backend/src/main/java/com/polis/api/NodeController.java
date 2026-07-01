@@ -31,9 +31,10 @@ public class NodeController {
     nodes.occupy(me(), nodeId, r.cityId(), r.troops(), r.heroId()); return ok();
   }
 
-  @PostMapping("/api/nodes/{nodeId}/reinforce")
-  public Map<String,Object> reinforce(@PathVariable Long nodeId, @RequestBody TroopMove r){
-    nodes.reinforce(me(), nodeId, r.cityId(), r.troops()); return ok();
+  // ally reinforcement — kept both paths for compatibility; both require the controlling alliance
+  @PostMapping({"/api/nodes/{nodeId}/support", "/api/nodes/{nodeId}/reinforce"})
+  public Map<String,Object> support(@PathVariable Long nodeId, @RequestBody TroopMove r){
+    nodes.support(me(), nodeId, r.cityId(), r.troops()); return ok();
   }
 
   @PostMapping("/api/nodes/{nodeId}/withdraw")

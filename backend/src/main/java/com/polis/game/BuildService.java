@@ -37,15 +37,18 @@ public class BuildService {
   private final LibraryService library;
   private final CombatEngine combat;
   private final com.polis.repo.SiegeRepo sieges;
+  private final IslandRepo islands;
+  private final AllianceTierService tierGate;
 
   public BuildService(CityService cityService, CityRepo cities, BuildingRepo buildings, UnitRepo units,
                       ResearchRepo research, JobRepo jobs, MovementRepo movements, PlayerRepo players,
                       TravelTimeService travel, UnitCatalog catalog, HeroService heroes, MissionService missions,
-                      LibraryService library, CombatEngine combat, com.polis.repo.SiegeRepo sieges){
+                      LibraryService library, CombatEngine combat, com.polis.repo.SiegeRepo sieges,
+                      IslandRepo islands, AllianceTierService tierGate){
     this.cityService=cityService; this.cities=cities; this.buildings=buildings; this.units=units;
     this.research=research; this.jobs=jobs; this.movements=movements; this.players=players;
     this.travel=travel; this.catalog=catalog; this.heroes=heroes; this.missions=missions; this.library=library;
-    this.combat=combat; this.sieges=sieges;
+    this.combat=combat; this.sieges=sieges; this.islands=islands; this.tierGate=tierGate;
   }
 
   private City owned(Long playerId, Long cityId){
@@ -296,6 +299,11 @@ public class BuildService {
       throw new IllegalStateException("Researching Conquest (Library, Warpath) is required to lay a siege");
     if (target.getPlayerId() == null)
       throw new IllegalStateException("Only player cities can be besieged");
+    // Alliance Tier Gate: conquering in Tier 2/3 requires the alliance's prior-tier progress
+    int targetTier = islands.findById(target.getIslandId()).map(com.polis.domain.Island::getTier).orElse(1);
+    Long myAlliance = players.findById(playerId).map(Player::getAllianceId).orElse(null);
+    if (targetTier > 1 && !tierGate.canActInTier(myAlliance, targetTier))
+      throw new IllegalStateException(tierGate.gateReason(myAlliance, targetTier));
     if (heroId == null) throw new IllegalStateException("A siege must be led by your hero");
     Hero hero = heroes.requireOwned(playerId, heroId);
     if (hero.getState() != HeroState.IDLE)

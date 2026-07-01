@@ -10,8 +10,9 @@ import java.util.*;
 @RequestMapping("/api/world")
 public class WorldController {
   private final PlayerRepo players; private final IslandRepo islands; private final CityRepo cities; private final AllianceRepo alliances;
-  public WorldController(PlayerRepo players, IslandRepo islands, CityRepo cities, AllianceRepo alliances){
-    this.players=players; this.islands=islands; this.cities=cities; this.alliances=alliances;
+  private final ResourceNodeRepo nodes;
+  public WorldController(PlayerRepo players, IslandRepo islands, CityRepo cities, AllianceRepo alliances, ResourceNodeRepo nodes){
+    this.players=players; this.islands=islands; this.cities=cities; this.alliances=alliances; this.nodes=nodes;
   }
 
   @GetMapping
@@ -19,7 +20,8 @@ public class WorldController {
     Long me = SecurityConfig.currentPlayerId();
     Long worldId = players.findById(me).orElseThrow().getWorldId();
     Map<Long,String> allyTag = new HashMap<>();
-    alliances.findByWorldId(worldId).forEach(a->allyTag.put(a.getId(), a.getName()));
+    Map<Long,String> allyEmblem = new HashMap<>();
+    alliances.findByWorldId(worldId).forEach(a->{ allyTag.put(a.getId(), a.getName()); allyEmblem.put(a.getId(), a.getEmblem()); });
     Map<Long,Long> playerAlliance = new HashMap<>();
     Map<Long,Player> playerById = new HashMap<>();
     players.findByWorldId(worldId).forEach(p->{
@@ -51,6 +53,15 @@ public class WorldController {
         slots.add(mc);
       }
       mi.put("cities", slots);
+      // Phase 4: emblems of alliances controlling this island's resource buildings (for the map badge)
+      if (i.isResource()){
+        LinkedHashSet<String> emblems = new LinkedHashSet<>();
+        for (ResourceNode n : nodes.findByIslandId(i.getId())){
+          Long aId = n.getControllingAllianceId();
+          if (aId != null && allyEmblem.get(aId) != null) emblems.add(allyEmblem.get(aId));
+        }
+        if (!emblems.isEmpty()) mi.put("controlEmblems", new ArrayList<>(emblems));
+      }
       isl.add(mi);
     }
 

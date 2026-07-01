@@ -30,11 +30,17 @@ public class BattleReportService {
   // --- creation (called from TickScheduler within the tick transaction) --------
 
   @Transactional
-  public void createReport(Movement m, BattleResult res){ createReport(m, res, null, CombatLayer.LAND, 0, null); }
+  public void createReport(Movement m, BattleResult res){ createReport(m, res, null, CombatLayer.LAND, 0, null, false); }
 
   @Transactional
   public void createReport(Movement m, BattleResult res, HeroParticipation hero, CombatLayer layer,
                            int combatPointsEarned, String combatPointsReason){
+    createReport(m, res, hero, layer, combatPointsEarned, combatPointsReason, false);
+  }
+
+  @Transactional
+  public void createReport(Movement m, BattleResult res, HeroParticipation hero, CombatLayer layer,
+                           int combatPointsEarned, String combatPointsReason, boolean siegeStarted){
     City atkCity = cities.findById(m.getSourceCityId()).orElse(null);
     City defCity = cities.findById(m.getTargetCityId()).orElse(null);
     Long defPlayerId = defCity != null ? defCity.getPlayerId() : null;
@@ -68,6 +74,7 @@ public class BattleReportService {
     r.setAttackerTotalAttackPower(res.attackerAttackPower());
     r.setDefenderTotalDefencePower(res.defenderDefencePower());
     r.setSiegeDamage(res.siegeDamage());
+    r.setSiegeStarted(siegeStarted);
     r.setAttackByElement(res.attackByElement()==null?new HashMap<>():new HashMap<>(res.attackByElement()));
     r.setDefenseByElement(res.defenseByElement()==null?new HashMap<>():new HashMap<>(res.defenseByElement()));
 
@@ -250,7 +257,7 @@ public class BattleReportService {
         r.getDefenderCityId(), r.getDefenderCityName(),
         r.getAttackerPlayerName(), r.getDefenderPlayerName(),
         sum(r.getAttackerTroopsSent()), sum(r.getAttackerTroopsLost()), sum(r.getDefenderTroopsLost()),
-        r.getResourcesStolen(), unread(r, attacker));
+        r.getResourcesStolen(), unread(r, attacker), r.isSiegeStarted());
   }
 
   private BattleReportDTO toFull(BattleReport r, Long me){
@@ -267,6 +274,6 @@ public class BattleReportService {
         r.getCombatPointsEarned(), r.getCombatPointsReason(),
         r.getHeroName(), r.getHeroLevel(), r.getHeroAttackBonusPct(), r.getHeroLossReductionPct(),
         r.getHeroSkillUsed(), r.getHeroXpGained(), r.getHeroLeveledTo(), r.isHeroWounded(),
-        unread(r, attacker));
+        unread(r, attacker), r.isSiegeStarted());
   }
 }

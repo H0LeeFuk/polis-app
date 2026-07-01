@@ -67,13 +67,15 @@ public class NodeSeeder implements ApplicationRunner {
           nodes.save(node);
         }
 
-        // one guardian boss; stronger toward the core (T3)
+        // one guardian boss; stronger toward the core (T3) — Colossus-style shared HP pool, per-player rewards
         if (bosses.findByIslandId(ri.getId()).isEmpty()){
           int level = (switch (tier){ case 3 -> 5; case 2 -> 3; default -> 2; }) + rnd.nextInt(2);
           IslandBoss boss = new IslandBoss();
           boss.setWorldId(wid); boss.setIslandId(ri.getId());
           boss.setRace(race); boss.setName(bossService.bossName(race)); boss.setLevel(level);
+          boss.setTier(tier);
           boss.setDefenderTroops(IslandBossService.defendersFor(level));
+          bossService.initSpawn(boss);   // HP from level + rolled elemental profile
           bosses.save(boss);
         }
       }

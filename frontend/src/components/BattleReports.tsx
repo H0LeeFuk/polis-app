@@ -71,6 +71,7 @@ export function ReportCard({ r, active, onOpen }: {
       onClick={onOpen}>
       <div className="br-card-top">
         <span className="br-verdict">{lens.icon} {lens.label}</span>
+        {r.siegeStarted && <span className="br-siege-badge" title={attacker ? "This attack laid a siege" : "This attack laid a siege on your city"}>🏰 Siege begun</span>}
         <span className="br-route"><b>{r.attackerCityName}</b> → <b>{r.defenderCityName}</b></span>
       </div>
       <div className="br-card-sub">
@@ -179,6 +180,11 @@ export function ReportDetail({ report, onClose, onDeleted, onAttackAgain }: {
             ? (attacker ? "— Your army was routed" : "— You held your ground")
             : "— Both sides withdrew"}</small>
       </div>
+      {report.siegeStarted && (
+        <div className="br-siege-note">🏰 This assault laid a <b>siege</b> — {attacker
+          ? "hold it to conquer the city."
+          : "your city is under siege. Break it before it falls."}</div>
+      )}
 
       <div className="br-section-label">Forces</div>
       <div className="br-armies">

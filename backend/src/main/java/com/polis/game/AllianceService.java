@@ -26,6 +26,20 @@ public class AllianceService {
     this.alliances = alliances; this.players = players; this.invites = invites; this.forum = forum;
   }
 
+  /** Selectable alliance crests (shown above controlled resource buildings). */
+  public static final List<String> EMBLEM_CHOICES = List.of("🛡","⚔","🦅","🐺","🐉","🦁","🔱","☀","🌙","⚓","🔥","🏛");
+
+  /** Leader-only: change the alliance crest. */
+  @Transactional
+  public void setEmblem(Long playerId, String emblem){
+    Player p = players.findById(playerId).orElseThrow(() -> new IllegalArgumentException("Player not found"));
+    if (p.getAllianceId() == null) throw new IllegalStateException("You are not in an alliance");
+    Alliance a = alliances.findById(p.getAllianceId()).orElseThrow();
+    if (!Objects.equals(a.getLeaderId(), playerId)) throw new IllegalStateException("Only the alliance leader can change the crest");
+    if (emblem == null || emblem.isBlank() || emblem.length() > 8) throw new IllegalStateException("Pick a valid crest");
+    a.setEmblem(emblem.trim()); alliances.save(a);
+  }
+
   @Transactional
   public Map<String,Object> create(Long playerId, String tag, String name){
     Player p = players.findById(playerId).orElseThrow(() -> new IllegalArgumentException("Player not found"));
@@ -81,6 +95,8 @@ public class AllianceService {
     boolean leader = Objects.equals(a.getLeaderId(), playerId);
     out.put("inAlliance", true);
     out.put("id", a.getId()); out.put("tag", a.getTag()); out.put("name", a.getName());
+    out.put("emblem", a.getEmblem());
+    out.put("emblemChoices", EMBLEM_CHOICES);
     out.put("isLeader", leader);
 
     List<Map<String,Object>> members = new ArrayList<>();

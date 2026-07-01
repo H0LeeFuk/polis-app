@@ -107,12 +107,12 @@ public class SiegeService {
     int shipsLeft = countCombatants(seaSurv, CombatLayer.SEA);
     boolean siegeBegins = land.outcome()==BattleOutcome.VICTORY && shipsLeft > 0;
 
-    // report the assault (land layer is the headline)
+    // report the assault (land layer is the headline); flag it as siege-initiating when the siege begins
     reports.createReport(m, new BattleResult(land.outcome(),
         landAtk, land.attackerLost(), land.attackerSurvived(),
         defLand, land.defenderLost(), land.defenderSurvived(),
         emptyLoot(), land.attackerAttackPower(), land.defenderDefencePower(), land.siegeDamage(),
-        land.attackByElement(), land.defenseByElement()), null, CombatLayer.LAND, 0, null);
+        land.attackByElement(), land.defenseByElement()), null, CombatLayer.LAND, 0, null, siegeBegins);
 
     if (!siegeBegins){
       // failed assault: survivors of both layers (and the hero) march home; no plunder

@@ -60,6 +60,8 @@ public class BattleReport {
   @Column(name="attacker_attack_power") private int attackerTotalAttackPower;
   @Column(name="defender_defence_power") private int defenderTotalDefencePower;
   @Column(name="siege_damage") private int siegeDamage;
+  /** True when this winning assault laid a siege — lets the UI flag the siege-initiating attack. */
+  @Column(name="siege_started", nullable=false) private boolean siegeStarted = false;
 
   // PART 1: combat composition by element (FIRE/WIND/EARTH/WATER) for both sides
   @JdbcTypeCode(SqlTypes.JSON) @Column(name="attack_by_element", columnDefinition="json")

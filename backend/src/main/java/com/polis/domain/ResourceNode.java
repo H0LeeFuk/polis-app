@@ -10,10 +10,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * A contested map location that generates resources while a player garrisons it. Production
- * accrues lazily (settle on read / attack / sweep), is delivered to the controller's alliance
- * treasury, and may drop a {@link HeroItem}. Held with troops, so guarding is an allocation
- * trade-off against defending or attacking with those same units.
+ * A contested resource building on a resource island — a siege-style control point. Players garrison
+ * it with troops; while controlled it generates resources every payout cycle, auto-delivered to the
+ * controlling players' cities split by each player's troop share. Allies (same alliance as the
+ * controller) may SUPPORT (reinforce and share the payout); enemies must ATTACK to seize it (the
+ * winner's troops become the new garrison and their alliance takes control).
  */
 @Entity @Table(name="resource_nodes")
 @Getter @Setter @NoArgsConstructor
@@ -27,15 +28,19 @@ public class ResourceNode {
   private int level = 1;                                   // 1..5
   @Enumerated(EnumType.STRING) @Column(nullable=false) private NodeStatus status = NodeStatus.UNCLAIMED;
 
-  @Column(name="controlling_player_id")   private Long controllingPlayerId;
-  @Column(name="origin_city_id")          private Long originCityId;   // city that claimed it → recall target
-  @Column(name="controlling_alliance_id") private Long controllingAllianceId;   // snapshot at claim time
+  @Column(name="controlling_player_id")   private Long controllingPlayerId;   // the player who first took it
+  @Column(name="origin_city_id")          private Long originCityId;
+  @Column(name="controlling_alliance_id") private Long controllingAllianceId; // the alliance that currently holds it
 
+  /** Per-player garrison: playerId (as String) -> (unit name -> quantity). All stacks defend together;
+   *  the payout is split by each player's share of total garrison population. */
   @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition="json")
-  private Map<String,Integer> garrison = new HashMap<>();   // unit name -> quantity
+  private Map<String,Map<String,Integer>> garrison = new HashMap<>();
 
-  @Column(name="accumulated_resources") private long accumulatedResources = 0;
+  @Column(name="accumulated_resources") private long accumulatedResources = 0;   // legacy, unused now
   @Column(name="last_tick_at") private Instant lastTickAt = Instant.now();
+  @Column(name="last_payout_at") private Instant lastPayoutAt;                    // 10-min payout cycle
+  @Column(name="control_since") private Instant controlSince;                     // when the current alliance took it
   @Column(name="claimed_at") private Instant claimedAt;
   @Column(name="contested_until") private Instant contestedUntil;
 }

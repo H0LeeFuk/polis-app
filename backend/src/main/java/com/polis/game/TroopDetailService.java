@@ -73,14 +73,15 @@ public class TroopDetailService {
       row.put("troops", e.getValue());
       out.add(row);
     }
-    // resource nodes I control
+    // resource buildings I control — my own stack (per-player garrison)
     for (ResourceNode n : nodes.findByControllingPlayerId(playerId)){
-      if (!any(n.getGarrison())) continue;
+      Map<String,Integer> myStack = n.getGarrison().get(String.valueOf(playerId));
+      if (!any(myStack)) continue;
       Map<String,Object> row = new LinkedHashMap<>();
       row.put("locationType", "NODE");
       row.put("locationId", n.getId());
       row.put("locationName", titleCase(n.getNodeType().name()) + " (Lv " + n.getLevel() + ")");
-      row.put("troops", new LinkedHashMap<>(n.getGarrison()));
+      row.put("troops", new LinkedHashMap<>(myStack));
       out.add(row);
     }
     // sieges I am running (the besieging force is locked away)

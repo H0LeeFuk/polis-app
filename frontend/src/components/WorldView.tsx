@@ -21,8 +21,9 @@ export const ISLAND_SIZE = 150;
 const WORLD_CENTER = 2900;
 const TIER_ROMAN = ["I", "II", "III"];
 
-export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, onChanged, setErr }: {
+export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, onChanged, setErr, focusCityId }: {
   activeCityId: number; myUnits: UnitDto[]; heroes: Hero[]; myPlayerId: number; onChanged: () => void; setErr: (s: string) => void;
+  focusCityId?: number | null;
 }) {
   const [data, setData] = useState<WorldData | null>(null);
   const [sel, setSel] = useState<WorldIsland | null>(null);
@@ -113,21 +114,33 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
   useEffect(() => { const t = setInterval(() => getWorld().then(setData).catch(() => {}), 10000); return () => clearInterval(t); }, []);
   const wonderByIsland = new Map(wonders.map(w => [w.islandId, w]));
 
-  function centerOnMyCity() {
-    if (!data || !scroller.current) return;
-    // center on the island holding the currently SELECTED city, not just any of mine
-    const mine = data.islands.find(i => i.cities.some(c => c.id === activeCityId))
-      ?? data.islands.find(i => i.cities.some(c => c.faction === "self"));
-    if (!mine) return;
+  // Scroll the map to centre the island holding a given city id.
+  function centerOnCity(cityId: number | null | undefined) {
+    if (!data || !scroller.current || cityId == null) return false;
+    const isl = data.islands.find(i => i.cities.some(c => c.id === cityId));
+    if (!isl) return false;
     const sc = scaleRef.current;
-    scroller.current.scrollLeft = (mine.px + PAD_X) * sc - scroller.current.clientWidth / 2;
-    scroller.current.scrollTop = (mine.py + PAD_Y) * sc - scroller.current.clientHeight / 2;
+    scroller.current.scrollLeft = (isl.px + PAD_X) * sc - scroller.current.clientWidth / 2;
+    scroller.current.scrollTop = (isl.py + PAD_Y) * sc - scroller.current.clientHeight / 2;
+    return true;
+  }
+  function centerOnMyCity() {
+    if (!centerOnCity(activeCityId)) {
+      const mine = data?.islands.find(i => i.cities.some(c => c.faction === "self"));
+      if (mine && scroller.current) {
+        const sc = scaleRef.current;
+        scroller.current.scrollLeft = (mine.px + PAD_X) * sc - scroller.current.clientWidth / 2;
+        scroller.current.scrollTop = (mine.py + PAD_Y) * sc - scroller.current.clientHeight / 2;
+      }
+    }
   }
   // center once when the map first loads, and again whenever the SELECTED city changes — but NOT on
   // every background data refresh (that would yank the map out from under the player every 10s).
   const didCenter = useRef(false);
   useEffect(() => { if (data && !didCenter.current) { didCenter.current = true; setTimeout(centerOnMyCity, 30); } }, [data]);
   useEffect(() => { if (data) setTimeout(centerOnMyCity, 30); }, [activeCityId]);
+  // jump to an arbitrary city (e.g. clicked from a profile) — own OR foreign
+  useEffect(() => { if (data && focusCityId != null) setTimeout(() => centerOnCity(focusCityId), 30); }, [focusCityId, data]);
 
   if (!data) return <p className="muted">Charting the seas…</p>;
 
@@ -295,6 +308,11 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                   <div className="island-land sanctuary" style={{ borderRadius: blobRadius(isl.id) }}>
                     <span className="sanctuary-ico">⛩</span>
                   </div>
+                  {isl.controlEmblems && isl.controlEmblems.length > 0 && (
+                    <div className="res-emblems" title="Alliances controlling this island's resource buildings">
+                      {isl.controlEmblems.map((em, i) => <span key={i}>{em}</span>)}
+                    </div>
+                  )}
                   <div className="nm">{isl.name}</div>
                 </div>
               );
@@ -390,14 +408,14 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
             <div className="modal-body">
               {!slots ? <p className="muted">Surveying the island…</p> : (
                 <table>
-                  <thead><tr><th>Plot</th><th>City</th><th>Owner</th><th>Race</th><th></th></tr></thead>
+                  <thead><tr><th>Plot</th><th>City</th><th>Owner</th><th>Race</th><th>Points</th><th></th></tr></thead>
                   <tbody>
                     {slots.slots.map(s => {
                       if (s.status === "EMPTY") return (
                         <tr key={s.slotIndex}>
                           <td>{s.slotIndex + 1}</td>
                           <td className={"muted" + (s.canSettle ? " slot-open" : "")}>empty plot</td>
-                          <td></td><td></td>
+                          <td></td><td></td><td></td>
                           <td>{s.canSettle
                             ? <button className="btn" onClick={() => { setFoundSlot({ islandId: sel.id, islandName: sel.name, slotIndex: s.slotIndex }); }}>🏛 Found city</button>
                             : <small className="muted" title={s.reason ?? ""}>{s.reason ?? "—"}</small>}</td>
@@ -412,6 +430,7 @@ export default function WorldView({ activeCityId, myUnits, heroes, myPlayerId, o
                           </td>
                           <td className="muted">{s.ownerName}{s.alliance ? ` · ${s.alliance}` : ""}</td>
                           <td title={s.race?.name}>{s.race ? `${s.race.icon} ${s.race.name}` : "—"}</td>
+                          <td>{(s.points ?? 0).toLocaleString()}</td>
                           <td>{wc && s.faction !== "self" && s.faction !== "ally" &&
                             <button className="btn" onClick={() => { setSel(null); openRaid(wc); setSelCity(wc); }}>Attack</button>}</td>
                         </tr>

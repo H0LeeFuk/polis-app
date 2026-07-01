@@ -37,6 +37,7 @@ public class TickScheduler {
   private final SpyService spyService;
   private final ReinforcementRepo reinforcements;
   private final SiegeService siege;
+  private final IslandBossService islandBoss;
 
   public TickScheduler(CityService cityService, CityFactory cityFactory, CityRepo cities, UnitRepo units,
                        JobRepo jobs, MovementRepo movements, PlayerRepo players, BattleReportService reports,
@@ -45,9 +46,9 @@ public class TickScheduler {
                        LibraryService library, TradeService trade,
                        ProgressionService progression, AltarService altar, WonderService wonders,
                        ColossusService colossi, SpyService spyService, ReinforcementRepo reinforcements,
-                       SiegeService siege){
+                       SiegeService siege, IslandBossService islandBoss){
     this.wonders=wonders; this.colossi=colossi; this.spyService=spyService; this.reinforcements=reinforcements;
-    this.siege=siege;
+    this.siege=siege; this.islandBoss=islandBoss;
     this.cityService=cityService; this.cityFactory=cityFactory; this.cities=cities; this.units=units;
     this.jobs=jobs; this.movements=movements; this.players=players; this.reports=reports;
     this.combat=combat; this.catalog=catalog; this.heroService=heroService; this.heroRepo=heroRepo;
@@ -81,6 +82,7 @@ public class TickScheduler {
         case COLONY -> resolveColony(m);
         case OUT     -> {
           if (m.getTargetColossusId()!=null) colossi.onArrive(m, now);
+          else if (m.getTargetBossId()!=null) islandBoss.onArrive(m, now);   // resource-island boss strike
           else if (m.getTargetWonderId()!=null) wonders.resolveAttack(m, now);
           else if (m.getTargetNodeId()!=null) resolveNodeAttack(m, now);
           else if (m.isSiegeIntent()) siege.resolveSiegeStart(m, now);   // siege attempt → lay or fail the siege
@@ -105,6 +107,9 @@ public class TickScheduler {
 
     // Colossus: time out any whose 1-hour window has elapsed (defeated ones already paid out)
     colossi.sweepDespawns(now);
+
+    // resource-island bosses: respawn any whose cooldown has elapsed
+    islandBoss.respawnDue(now);
 
     // resolve any due spy missions (the espionage contest)
     spyService.resolveDue(now);
@@ -288,14 +293,14 @@ public class TickScheduler {
     if (attackerHero != null){ attackerHero.setActiveMovementId(savedRet.getId()); heroRepo.save(attackerHero); }
   }
 
-  /** A node attack arrives: fight the node garrison, and on a win flip the node to CONTESTED. */
+  /** An enemy strike on a resource building arrives: fight the whole garrison; on a win the attacker
+   *  SEIZES it (their survivors become the new garrison, their alliance takes control). */
   private void resolveNodeAttack(Movement m, Instant now){
     ResourceNode node = resourceNodes.findById(m.getTargetNodeId()).orElse(null);
     if (node == null){ returnArmy(m, m.getUnits(), null); return; }
-    nodeService.settle(node, now);
 
     Map<String,Integer> attackerSent = new LinkedHashMap<>(m.getUnits());
-    Map<String,Integer> defenderPresent = new LinkedHashMap<>(node.getGarrison());
+    Map<String,Integer> defenderPresent = nodeService.flatGarrisonPublic(node);
 
     Hero attackerHero = heroRepo.findByActiveMovementId(m.getId()).orElse(null);
     CombatEngine.Mods mods = attackerHero != null ? heroService.offenseMods(attackerHero) : CombatEngine.Mods.none();
@@ -306,20 +311,10 @@ public class TickScheduler {
     CombatEngine.Result r = combat.resolve(attackerSent, nElement, defenderPresent, mods, fx, nHeroAtk);
 
     Long formerController = node.getControllingPlayerId();
-    if (r.outcome() == BattleOutcome.VICTORY){
-      // defender routed: garrison reduced to survivors, node opens up as CONTESTED
-      node.setGarrison(new HashMap<>(r.defenderSurvived()));
-      node.setStatus(NodeStatus.CONTESTED);
-      node.setControllingPlayerId(null);
-      node.setControllingAllianceId(null);
-      node.setContestedUntil(now.plusSeconds(NodeService.CONTESTED_WINDOW_SECONDS));
-    } else {
-      // attack repelled: garrison takes its losses, node holds
-      node.setGarrison(new HashMap<>(r.defenderSurvived()));
-    }
-    resourceNodes.save(node);
+    boolean won = r.outcome() == BattleOutcome.VICTORY;
+    nodeService.applyAttackResult(node, m.getPlayerId(),
+        new LinkedHashMap<>(r.attackerSurvived()), new LinkedHashMap<>(r.defenderLost()), won, now);
 
-    // Resource nodes are PvE — no Combat Points (anti-farming: zero from NPC targets).
     HeroParticipation hp = resolveHero(attackerHero, null, r, r.outcome(), now);
     reports.createNodeReport(m, new BattleResult(r.outcome(), attackerSent, r.attackerLost(), r.attackerSurvived(),
         defenderPresent, r.defenderLost(), r.defenderSurvived(),
@@ -327,6 +322,11 @@ public class TickScheduler {
         r.attackByElement(), r.defenseByElement()),
         hp, nodeService.label(node), formerController);
 
+    // On a WIN the attacker's survivors GARRISON the seized building (they stay). On a loss, survivors march home.
+    if (won){
+      if (attackerHero != null) heroService.arriveHome(attackerHero, m.getSourceCityId());
+      return;
+    }
     if (r.attackerSurvived().isEmpty() && attackerHero == null) return;
     Movement ret = new Movement();
     ret.setWorldId(m.getWorldId()); ret.setPlayerId(m.getPlayerId()); ret.setSourceCityId(m.getSourceCityId());

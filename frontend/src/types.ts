@@ -116,7 +116,7 @@ export interface CityDetail {
 export interface GameState { player: PlayerDto; cities: CitySummary[]; active: CityDetail; }
 
 export interface WorldCity { id: number; slot: number; name: string; points: number; power: number; faction: string; playerId: number | null; owner: string; race: RaceId | null; }
-export interface WorldIsland { id: number; name: string; px: number; py: number; cities: WorldCity[]; resource?: boolean; tier?: number; spawnable?: boolean; clusterId?: number; resourceLevel?: number; }
+export interface WorldIsland { id: number; name: string; px: number; py: number; cities: WorldCity[]; resource?: boolean; tier?: number; spawnable?: boolean; clusterId?: number; resourceLevel?: number; controlEmblems?: string[]; }
 export interface WorldPlayer { id: number; name: string; level: number; combatPoints: number; }
 export interface WorldData { islands: WorldIsland[]; players: WorldPlayer[]; }
 export interface InboxMsg { id: number; from: string; body: string; sentAt: string; read: boolean; }
@@ -149,7 +149,19 @@ export interface BuyPreview {
   perConvoy: { sourceCity: string; units: number; convoys: number; etaSeconds: number }[];
   splitReason: string | null;
 }
-export interface RankRow { name: string; value: number; sub: string; }
+export interface RankRow { name: string; value: number; sub: string; playerId?: number | null; }
+
+export interface PublicProfile {
+  id: number;
+  username: string;
+  level: number;
+  totalPoints: number;
+  combatPoints: number;
+  alliance: string | null;
+  pointsRank: number | null;
+  combatRank: number | null;
+  cities: { id: number; name: string; points: number; raceName: string | null; capital: boolean }[];
+}
 
 // --- alliances ---
 export interface AllianceMember { id: number; name: string; level: number; leader: boolean; }
@@ -158,9 +170,13 @@ export interface AllianceInviteDto { allianceId: number; tag: string; name: stri
 export interface AllianceView {
   inAlliance: boolean;
   id?: number; tag?: string; name?: string; isLeader?: boolean;
+  emblem?: string; emblemChoices?: string[];
   members?: AllianceMember[]; pendingInvites?: { name: string }[]; forum?: AllianceForumPostDto[];
   invites?: AllianceInviteDto[];
 }
+
+export interface TierProgressRow { tier: number; unlocksTier: number; bossKills: number; bossKillsRequired: number; controlHours: number; controlHoursRequired: number; unlocked: boolean; }
+export interface TierProgress { tier1: TierProgressRow; tier2: TierProgressRow; tier2Unlocked: boolean; tier3Unlocked: boolean; }
 
 // --- battle reports ---
 export type BattleOutcome = "VICTORY" | "DEFEAT" | "DRAW";
@@ -182,6 +198,7 @@ export interface BattleReportSummary {
   defenderLost: number;
   resourcesStolen: Record<string, number>;
   unread: boolean;
+  siegeStarted: boolean;
 }
 
 export interface BattleReport {
@@ -221,6 +238,7 @@ export interface BattleReport {
   heroLeveledTo: number | null;
   heroWounded: boolean;
   unread: boolean;
+  siegeStarted: boolean;
 }
 
 export interface BattleReportPage {
@@ -313,14 +331,16 @@ export interface MissionsData { missions: Mission[]; starterDone: number; starte
 // --- resource nodes ---
 export type NodeStatus = "UNCLAIMED" | "CONTROLLED" | "CONTESTED";
 export type NodeType = "SACRED_GROVE" | "MARBLE_QUARRY" | "WHEAT_FIELD";
+export interface NodeHolder { playerId: number; playerName: string; troops: Record<string, number>; pop: number; sharePct: number; }
 export interface ResourceNode {
-  id: number; islandId: number; islandName: string; x: number; y: number;
+  id: number; islandId: number; islandName: string; tier: number; x: number; y: number;
   nodeType: NodeType; producedResource: "WOOD" | "STONE" | "WHEAT";
   level: number; status: NodeStatus;
-  controllingPlayerId: number | null; controllingPlayerName: string | null;
-  controllingAllianceId: number | null; controllingAllianceName: string | null;
-  garrison: Record<string, number>; garrisonPop: number; garrisonCap: number;
-  accumulated: number; ratePerHour: number; contestedUntil: string | null; name: string;
+  controllingPlayerId: number | null;
+  controllingAllianceId: number | null; controllingAllianceName: string | null; controllingAllianceEmblem: string | null;
+  garrisonPop: number; garrisonCap: number; ratePerHour: number;
+  controlSince: string | null;
+  holders: NodeHolder[]; myPop: number; mySharePct: number; viewerControls: boolean; name: string;
 }
 
 // --- endgame: Wonders of the Aegean ---
@@ -425,18 +445,15 @@ export interface BanditTowerAttackResult {
   highestCleared: number;
 }
 
-// --- island boss (resource islands) ---
+// --- island boss (resource islands) — Colossus-style shared HP, per-player rewards ---
+export interface IslandBossDamageRow { rank: number; playerId: number; playerName: string; damage: number; sharePct: number; }
 export interface IslandBoss {
   exists: boolean;
-  islandId?: number; name?: string; race?: RaceId; level?: number;
+  id?: number; islandId?: number; name?: string; race?: RaceId; level?: number; tier?: number;
   status?: "ACTIVE" | "DEFEATED"; respawnAt?: string | null;
-  defenderTroops?: Record<string, number>;
+  maxHealth?: number; currentHealth?: number;
+  attackElement?: string; defense?: Record<string, number>;
+  totalDamage?: number; myDamage?: number; mySharePct?: number; rewardPoolPerResource?: number;
+  leaderboard?: IslandBossDamageRow[];
 }
-export interface BossAttackResult {
-  outcome: "WIN" | "LOSS";
-  troopsLost: Record<string, number>;
-  reward?: Record<string, any>;
-  heroXp?: number;
-  status: "ACTIVE" | "DEFEATED";
-  respawnAt: string | null;
-}
+export interface BossDispatch { ok: boolean; status: string; movementId: number; travelSeconds: number; arriveAt: string; }

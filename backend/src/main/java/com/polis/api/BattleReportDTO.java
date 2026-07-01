@@ -46,5 +46,6 @@ public record BattleReportDTO(
     Integer heroLeveledTo,
     boolean heroWounded,
 
-    boolean unread
+    boolean unread,
+    boolean siegeStarted       // this winning assault laid a siege
 ){}

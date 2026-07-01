@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   getState, doBuild, doTrain, doCancel, doRename, doFinish, getInbox, getMyMovements,
   getUnreadReportCount, doAttack, getHeroes, getFoundingStatus, getMissions, getTradeDeliveries, assignHero,
-  createAlliance, getServerTime, getMyAlliance, inviteToAlliance, acceptAllianceInvite, declineAllianceInvite, postAllianceForum,
+  createAlliance, getServerTime, getMyAlliance, getMyTierProgress, setAllianceEmblem, inviteToAlliance, acceptAllianceInvite, declineAllianceInvite, postAllianceForum,
   deassignHero, getAltar, runFestival, callCityGuard,
 } from "../api";
-import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements, UnitDto, Hero, FoundingStatus, Trainable, ShipRole, AltarState, AllianceView, BuildingDto } from "../types";
+import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements, UnitDto, Hero, FoundingStatus, Trainable, ShipRole, AltarState, AllianceView, TierProgress, BuildingDto } from "../types";
 import { FoundingBanner, FoundCityModal, RaceBadge, RACES } from "./FoundCity";
 import MissionsPanel from "./MissionsPanel";
 import InventoryModal from "./InventoryModal";
@@ -123,6 +123,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [claimable, setClaimable] = useState(0);
   const [activeMission, setActiveMission] = useState<string | null>(null);
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
+  const [focusCityId, setFocusCityId] = useState<number | null>(null);   // jump-to-city on world map (from profile)
   const polling = useRef<number>();
   // Monotonic refresh sequence: getState calls from the 3s poll, a rush/cancel action, and city
   // switches run concurrently and resolve out of order. Without this guard a slow poll that captured
@@ -182,6 +183,23 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
     return () => { clearInterval(polling.current); clearInterval(t); };
   }, [activeCityId]);
 
+  // The instant a running queue head's timer elapses, pull fresh state so the completed job clears
+  // immediately instead of lingering at "0:00" (which read as a stuck / duplicate "running" slot)
+  // until the next 3s poll. Guarded per (jobId, finishAt) so it fires once, never in a loop.
+  const lastExpiryKey = useRef("");
+  useEffect(() => {
+    if (!state) return;
+    const heads = [state.active.queues.BUILDING[0], state.active.queues.BARRACKS[0], state.active.queues.HARBOR[0]];
+    for (const j of heads) {
+      if (j?.finishAt && new Date(j.finishAt).getTime() <= now) {
+        const key = `${j.id}:${j.finishAt}`;
+        if (lastExpiryKey.current !== key) { lastExpiryKey.current = key; refresh(); }
+        break;
+      }
+    }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [now, state]);
+
   // empire-wide movement feed: drives the nav badge and the global overview
   useEffect(() => {
     const f = () => getMyMovements().then(setMoves).catch(() => {});
@@ -229,6 +247,11 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const goToCity = (id: number | null) => {
     if (id == null) return;
     if (cities.some(c => c.id === id)) { setShowMoves(false); setTab("city"); switchCity(id); }
+  };
+  // jump to ANY city (own or another player's) on the world map — used from profile city rows
+  const goToCityOnMap = (id: number) => {
+    setModal(null); setShowMoves(false); setTab("world");
+    setFocusCityId(null); setTimeout(() => setFocusCityId(id), 0);   // re-trigger even if same id
   };
   const moveCount = moves?.movements.length ?? 0;
   const hostileInbound = (moves?.summary.incomingThreats ?? 0) > 0;
@@ -305,7 +328,9 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
             </div>
           </div>
           <div className="stage-body">
-            {tab === "city" && <CityTab key={active.id} active={active} now={now} counts={counts} setCounts={setCounts}
+            {/* NO key on active.id: keep the open building panel/drawer across city switches — it
+                re-scopes to the current city (selected building is re-derived from `active`). */}
+            {tab === "city" && <CityTab active={active} now={now} counts={counts} setCounts={setCounts}
               onBuild={(t) => action(() => doBuild(active.id, t))()}
               onTrain={(t, c) => action(() => doTrain(active.id, t, c))()}
               onCancel={(j) => action(() => doCancel(active.id, j))()}
@@ -313,7 +338,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
               onFound={() => setTab("world")}
               onCallGuard={action(() => callCityGuard(active.id))} />}
 
-            {tab === "world" && <WorldView activeCityId={active.id} myUnits={active.units} heroes={heroes} myPlayerId={player.id} onChanged={() => { refresh(); refreshHeroes(); bumpMoves(); }} setErr={setErr} />}
+            {tab === "world" && <WorldView activeCityId={active.id} myUnits={active.units} heroes={heroes} myPlayerId={player.id} focusCityId={focusCityId} onChanged={() => { refresh(); refreshHeroes(); bumpMoves(); }} setErr={setErr} />}
           </div>
         </div>
 
@@ -372,9 +397,9 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
       {active.conqueredPendingRace && <RaceChoiceModal cityId={active.id} cityName={active.name}
         onChosen={() => refresh()} />}
 
-      {modal === "rankings" && <Modal title="Rankings" onClose={() => setModal(null)}><Rankings /></Modal>}
+      {modal === "rankings" && <Modal title="Rankings" onClose={() => setModal(null)}><Rankings onGoCity={goToCityOnMap} /></Modal>}
       {modal === "profile" && <ProfilePanel player={player} cities={cities}
-        faction={active.race?.name ?? "—"} onClose={() => setModal(null)} />}
+        faction={active.race?.name ?? "—"} onClose={() => setModal(null)} onGoCity={goToCityOnMap} />}
       {modal === "alliance" && <Modal title="Alliance" onClose={() => setModal(null)}>
         <AlliancePanel player={player} onChanged={() => refresh()} setErr={setErr} />
       </Modal>}
@@ -461,7 +486,7 @@ function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onM
       <Item icon="🏆" label="Rankings" onClick={() => onModal("rankings")} />
       <Item icon="⚑" label="Sieges" onClick={() => onModal("sieges")} />
       <Item icon="⚔" label="Endgame" onClick={() => onModal("endgame")} />
-      <Item icon="⚔📜" label="Simulator" onClick={onSimulator} />
+      <Item icon="⚔" label="Combat Simulator" onClick={onSimulator} />
       <div className="nav-foot">{serverLine}</div>
     </nav>
   );
@@ -703,6 +728,7 @@ function Inbox() {
 
 function AlliancePanel({ onChanged, setErr }: { player: PlayerDto; onChanged: () => void; setErr: (s: string) => void }) {
   const [view, setView] = useState<AllianceView | null>(null);
+  const [tp, setTp] = useState<TierProgress | null>(null);
   const [creating, setCreating] = useState(false);
   const [tag, setTag] = useState("");
   const [name, setName] = useState("");
@@ -710,7 +736,10 @@ function AlliancePanel({ onChanged, setErr }: { player: PlayerDto; onChanged: ()
   const [post, setPost] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = () => getMyAlliance().then(setView).catch(e => setErr(e.message));
+  const load = () => {
+    getMyAlliance().then(setView).catch(e => setErr(e.message));
+    getMyTierProgress().then(setTp).catch(() => setTp(null));
+  };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
   const act = async (fn: () => Promise<any>) => { setErr(""); setBusy(true); try { await fn(); await load(); onChanged(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); } };
 
@@ -757,10 +786,44 @@ function AlliancePanel({ onChanged, setErr }: { player: PlayerDto; onChanged: ()
     );
   }
 
-  // --- in an alliance: members, invite (leader), forum ---
+  // --- in an alliance: emblem, tier gate, members, invite (leader), forum ---
+  const tierBar = (row: TierProgress["tier1"]) => (
+    <div className="tier-prog" key={row.tier}>
+      <h4>{row.unlocked ? "✅" : "🔒"} Unlock Tier {row.unlocksTier}</h4>
+      <div className="tier-prog-row"><span>👹 Bosses</span><span>{row.bossKills} / {row.bossKillsRequired}</span></div>
+      <div className={"tier-prog-bar" + (row.bossKills >= row.bossKillsRequired ? " done" : "")}>
+        <i style={{ width: Math.min(100, row.bossKillsRequired ? row.bossKills / row.bossKillsRequired * 100 : 0) + "%" }} /></div>
+      <div className="tier-prog-row"><span>🏰 Control</span><span>{row.controlHours}h / {row.controlHoursRequired}h</span></div>
+      <div className={"tier-prog-bar" + (row.controlHours >= row.controlHoursRequired ? " done" : "")}>
+        <i style={{ width: Math.min(100, row.controlHoursRequired ? row.controlHours / row.controlHoursRequired * 100 : 0) + "%" }} /></div>
+    </div>
+  );
   return (
     <div className="popup-panel ally-panel">
-      <h3>[{view.tag}] {view.name}{view.isLeader && <small className="muted"> · you lead</small>}</h3>
+      <h3>{view.emblem} [{view.tag}] {view.name}{view.isLeader && <small className="muted"> · you lead</small>}</h3>
+
+      {/* Phase 4: crest (leader can change) — shown above buildings the alliance controls */}
+      {view.isLeader && view.emblemChoices && (
+        <div className="ally-section">
+          <strong className="ally-sub">Alliance crest</strong>
+          <div className="emblem-picker">
+            {view.emblemChoices.map(em => (
+              <button key={em} className={"emblem-opt" + (em === view.emblem ? " active" : "")}
+                disabled={busy} onClick={() => act(() => setAllianceEmblem(em))}>{em}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Phase 3: tier gate progress — expansion into Tier 2/3 is gated per alliance */}
+      {tp && (
+        <div className="ally-section">
+          <strong className="ally-sub">Expansion (Tier Gate)</strong>
+          <p className="muted" style={{ margin: "2px 0 6px" }}>Found/conquer in a tier once your alliance earns the prior tier's boss kills + control hours.</p>
+          {tierBar(tp.tier1)}
+          {tierBar(tp.tier2)}
+        </div>
+      )}
 
       <div className="ally-section">
         <strong className="ally-sub">Members ({view.members?.length ?? 0})</strong>
@@ -997,8 +1060,16 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
         <button className="cab-btn" onClick={() => setShowSpy(true)}><span className="cab-ico">🕵</span>Spy</button>
       </div>
 
+      {/* Barracks/Harbor: dedicated dark training modal (own look, not the parchment drawer) */}
+      {selected && drawerOpen && (selected.type === "BARRACKS" || selected.type === "HARBOR") && (
+        <BarracksPanel active={active} building={selected} freePop={freePop} buildQueueFull={buildQueueFull}
+          queuedSame={queuedSame(selected.type)} counts={counts} setCounts={setCounts} now={now}
+          onTrain={onTrain} onCancel={onCancel} onFinish={onFinish} onBuild={onBuild}
+          onClose={() => setDrawerOpen(false)} />
+      )}
+
       {/* building detail drawer (opened via the info panel's "Enter") */}
-      {selected && drawerOpen && (
+      {selected && drawerOpen && selected.type !== "BARRACKS" && selected.type !== "HARBOR" && (
         <div className="bld-drawer-backdrop" onClick={() => setDrawerOpen(false)}>
           <div className="bld-drawer" onClick={e => e.stopPropagation()}>
             <button className="bld-drawer-close" onClick={() => setDrawerOpen(false)}>✕</button>
@@ -1064,92 +1135,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
               );
             })()}
 
-            {(selected.type === "BARRACKS" || selected.type === "HARBOR") && (
-              <div className="bld-section barracks-layout">
-                <div className="barracks-train">
-                {(() => {
-                  const isHarbor = selected.type === "HARBOR";
-                  if (selected.level === 0)
-                    return <p className="muted">Build the {isHarbor ? "Harbor" : "Barracks"} first, then you can {isHarbor ? "build ships here" : "train troops here"}.</p>;
-                  const list = active.trainable.filter(u => u.from === selected.type);
-                  const card = (u: Trainable) => {
-                    const specShort = u.elite && u.specialResource ? r.special < u.costSpecial : false;
-                    const atkLabel = u.siege ? "💥 Siege" : (u.attackElement ? `${ELEMENT_GLYPH[u.attackElement]} ${ELEMENT_NAME[u.attackElement]}` : "");
-                    return (
-                    <div className={"card" + (u.elite ? " elite-unit" : "")} key={u.type}>
-                      <h3><UnitTooltip type={u.type}>{titleCase(u.type)}</UnitTooltip>{u.elite ? " ⭐" : ""}</h3>
-                      <div className="muted">{atkLabel} · ⚔ {u.atk}</div>
-                      <div className="muted" title="Defence by element">🔥 {u.defFire} · 🌬 {u.defWind} · 🌍 {u.defEarth} · 💧 {u.defWater} · 🐢 {u.speed}{u.carry ? ` · 🎒${u.carry}` : ""}</div>
-                      <div className="muted unit-move">
-                        <span className={"move-badge mv-" + u.movementClass.toLowerCase()} title={MOVE_LABEL[u.movementClass]}>
-                          {MOVE_BADGE[u.movementClass]} {titleCase(u.movementClass)}</span>
-                        <span title="Population cost">👥 {u.pop} pop</span>
-                        {u.transportCapacity > 0 && <span title="Carries land troops across water">🛳 carries {u.transportCapacity} pop</span>}
-                      </div>
-                      <div className="cost">🪵 {u.cost[0]} · 🪨 {u.cost[1]} · 🌾 {u.cost[2]}
-                        {u.elite && u.specialResource ? <> · <span className={specShort ? "lack" : ""}>{RES_GLYPH[resKey(u.specialResource)]} {u.costSpecial}</span></> : null}
-                        {" "}· ⏱ {clock(u.seconds)}/ea</div>
-                      {u.unlocked ? (
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <input type="number" min={1} value={counts[u.type] || 1} style={{ width: 56 }}
-                            onChange={e => setCounts({ ...counts, [u.type]: Math.max(1, +e.target.value) })} />
-                          <button className="btn" disabled={specShort} onClick={() => onTrain(u.type, counts[u.type] || 1)}>
-                            {specShort ? `Need ${RES_GLYPH[resKey(u.specialResource!)]}` : "Train"}</button>
-                        </div>
-                      ) : <button className="btn" disabled>🔒 Research {titleCase(String(u.type))}</button>}
-                    </div>
-                    );
-                  };
-                  const grid = (items: Trainable[]) => <div className="grid">{items.map(card)}</div>;
-                  // LAND races' harbor fleets group by ship role; Newt harbors hold an aquatic army.
-                  if (isHarbor && list.some(u => u.shipRole)) {
-                    const roles: { role: ShipRole; label: string; desc: string }[] = [
-                      { role: "TRANSPORT", label: "⛴ Transport ships", desc: "Ferry ground troops across water — carry, don't fight" },
-                      { role: "DEFENSE",   label: "🛡 Defense ships",   desc: "Guard the harbor against enemy fleets" },
-                      { role: "ATTACK",    label: "⚔ Attack ships",    desc: "Hunt and sink enemy fleets" },
-                    ];
-                    const aquatic = list.filter(u => !u.shipRole);
-                    return (<>
-                      <h3>⛵ Build ships</h3>
-                      {roles.map(rg => { const items = list.filter(u => u.shipRole === rg.role); if (!items.length) return null;
-                        return (<div key={rg.role} className="ship-role-group">
-                          <div className="ship-role-head">{rg.label} <small className="muted">— {rg.desc}</small></div>
-                          {grid(items)}
-                        </div>); })}
-                      {aquatic.length > 0 && <div className="ship-role-group"><div className="ship-role-head">🌊 Aquatic army</div>{grid(aquatic)}</div>}
-                    </>);
-                  }
-                  return (<><h3>{isHarbor ? "🌊 Train aquatic army" : "Train troops"}</h3>{grid(list)}</>);
-                })()}
-                </div>
-                <div className="barracks-aside">
-                {(selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR).length > 0 ? (
-                  <div className="train-queue">
-                    <h4>In training</h4>
-                    {(() => { const tq = selected.type === "BARRACKS" ? active.queues.BARRACKS : active.queues.HARBOR;
-                      return tq.map((j) => {
-                      const rem = remaining(j.finishAt, now);
-                      const pct = rem != null ? Math.round((1 - rem / j.totalSeconds) * 100) : 0;
-                      // troop batches are independent — any batch in the queue can be rushed with gold
-                      const canRush = true;
-                      const rushSecs = rem ?? j.totalSeconds;
-                      return (
-                        <div className="tq-row" key={j.id}>
-                          <span>{j.batch}× {titleCase(j.label)} {j.position > 0 && <em className="muted">#{j.position}</em>}</span>
-                          <span className="tq-actions">
-                            <span className="muted">{rem != null ? clock(rem) : "queued"}</span>
-                            {canRush && <button className="btn ghost gold-btn" onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rushSecs / 60))}</button>}
-                            <a className="tq-cancel" onClick={() => onCancel(j.id)}>✕</a>
-                          </span>
-                          <div className="bar" style={{ gridColumn: "1 / -1" }}><i style={{ width: pct + "%" }} /></div>
-                        </div>
-                      );
-                    }); })()}
-                  </div>
-                ) : <p className="muted tq-empty">Nothing in training yet — pick a unit and hit Train.</p>}
-                </div>
-              </div>
-            )}
+            {/* BARRACKS/HARBOR training is handled by the dedicated <BarracksPanel> modal (below). */}
 
             {selected.type === "MARKET" && (
               <div className="bld-section">
@@ -1211,16 +1197,19 @@ function ConstructionBar({ jobs, now, onCancel, onFinish }: { jobs: any[]; now: 
         const j = shown[i];
         if (!j) return <div className="cbslot empty" key={i}><HammerIcon /></div>;
         const rem = remaining(j.finishAt, now);
-        const pct = rem != null ? Math.round((1 - rem / j.totalSeconds) * 100) : 0;
-        // rushable unless an earlier slot upgrades the SAME building
-        const canRush = !shown.slice(0, i).some(x => x.label === j.label);
+        // a running head whose timer has elapsed is DONE (awaiting the server sweep) — never show it
+        // as a 0:00 slot with a live rush button, which read as a second "running" job.
+        const done = i === 0 && rem != null && rem <= 0;
+        const pct = done ? 100 : rem != null ? Math.round((1 - rem / j.totalSeconds) * 100) : 0;
+        // rushable unless an earlier slot upgrades the SAME building — and never a job that's finished
+        const canRush = !done && !shown.slice(0, i).some(x => x.label === j.label);
         const rushSecs = rem ?? j.totalSeconds;
         return (
-          <div className={"cbslot" + (i === 0 ? " active" : "")} key={j.id} title={`${titleCase(j.label)} → Lv ${j.toLevel}`}>
+          <div className={"cbslot" + (i === 0 ? " active" : "") + (done ? " done" : "")} key={j.id} title={`${titleCase(j.label)} → Lv ${j.toLevel}`}>
             {PLACEMENT_BY_TYPE[j.label]
               ? <span className="cbart"><img src={PLACEMENT_BY_TYPE[j.label].icon} alt={titleCase(j.label)} /></span>
               : <span className="cbart" dangerouslySetInnerHTML={{ __html: buildingSvg(j.label, j.toLevel || 1) }} />}
-            <span className="cbtime">{i === 0 ? (rem != null ? clock(rem) : "…") : `#${i}`}</span>
+            <span className="cbtime">{i === 0 ? (done ? "✓" : rem != null ? clock(rem) : "…") : `#${i}`}</span>
             <div className="cbbar"><i style={{ width: pct + "%" }} /></div>
             {canRush && <button className="cbrush" title={`Rush for ${Math.max(1, Math.ceil(rushSecs / 60))} gold`} onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rushSecs / 60))}</button>}
             <a className="cbcancel" onClick={() => onCancel(j.id)}>✕</a>
@@ -1251,6 +1240,247 @@ function Queue({ title, jobs, now, onCancel, suffix }: {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ===== Barracks / Harbor — dedicated dark-fantasy training modal =====
+const BP_EL_COLOR: Record<string, string> = { FIRE: "#e2683c", WIND: "#7ec6b4", EARTH: "#c6924e", WATER: "#5aa6d6" };
+const BP_EL_GLYPH: Record<string, string> = { FIRE: "🔥", WIND: "🌪", EARTH: "⛰", WATER: "💧" };
+const BP_EL_NAME: Record<string, string> = { FIRE: "Fire", WIND: "Wind", EARTH: "Earth", WATER: "Water" };
+const BP_NOTES: Record<string, string> = {
+  HOPLITE: "Cheap, sturdy defender.", SPEARMAN: "Anti-cavalry.", SWORDSMAN: "Line attacker.",
+  ARCHER: "Ranged.", HORSEMAN: "Cavalry, fast but fragile.", CATAPULT: "Siege engine — batters walls.",
+  FLAME_LEGION: "Elite Fire infantry.", EARTHSHAKER: "Elite Earth breaker.", STORMCALLER: "Elite Wind caster.",
+  LEVIATHAN_RIDER: "Elite amphibious lancer.", RAIDER: "Fast plunderer.", WARDEN: "Defensive wall.",
+  OUTRIDER: "Flying scout-raider.", TROLL: "Brawler.", BOULDER_THROWER: "Ranged siege support.",
+  STONE_GIANT: "Heavy infantry.", COLOSSUS: "Living siege engine.", SPRITE: "Cheap flyer.",
+  GLIMMER_GUARD: "Flying defender.", PIXIE_ARCHER: "Flying ranged, fragile.", MOTH_RIDER: "Fast flying striker.",
+  DRAGONFLY_SKIFF: "Flying naval carrier.", MUDLING: "Cheap ground swimmer.", NEWT_SPEAR: "Ground line.",
+  SNAPPER: "Sea striker.", TIDE_RAIDER: "Sea raider.", LEVIATHAN: "Capital sea beast.",
+  GALLEY: "Transport ship.", TRIREME: "Defense ship.", FIRE_RAM: "Attack ship.",
+  WAR_BARGE: "Heavy transport.", BULWARK_SHIP: "Defense ship.", SIEGE_GALLEON: "Attack ship.",
+};
+
+function BarracksPanel({ active, building, freePop, buildQueueFull, queuedSame, counts, setCounts, now, onTrain, onCancel, onFinish, onBuild, onClose }: {
+  active: CityDetail; building: BuildingDto; freePop: number; buildQueueFull: boolean; queuedSame: number;
+  counts: Record<string, number>; setCounts: (c: Record<string, number>) => void; now: number;
+  onTrain: (t: string, c: number) => void; onCancel: (j: number) => void; onFinish: (j: number) => void;
+  onBuild: (t: string) => void; onClose: () => void;
+}) {
+  const isHarbor = building.type === "HARBOR";
+  const r = active.resources;
+  const race = active.race;
+  const QMAX = 8;
+  const list = active.trainable.filter(u => u.from === building.type);
+  const tq = [...(isHarbor ? active.queues.HARBOR : active.queues.BARRACKS)].sort((a, b) => a.position - b.position);
+  const [hover, setHover] = useState<string | null>(null);
+  const [showUp, setShowUp] = useState(false);
+
+  const INF = Number.POSITIVE_INFINITY;
+  const compute = (u: Trainable) => {
+    const req = counts[u.type] || 0;
+    const limits: { by: string; max: number }[] = [
+      { by: "population", max: u.pop > 0 ? Math.floor(freePop / u.pop) : INF },
+      { by: "wood",  max: u.cost[0] > 0 ? Math.floor(r.wood  / u.cost[0]) : INF },
+      { by: "stone", max: u.cost[1] > 0 ? Math.floor(r.stone / u.cost[1]) : INF },
+      { by: "wheat", max: u.cost[2] > 0 ? Math.floor(r.wheat / u.cost[2]) : INF },
+    ];
+    if (u.elite && u.specialResource && u.costSpecial > 0)
+      limits.push({ by: u.specialResource.toLowerCase(), max: Math.floor(r.special / u.costSpecial) });
+    const maxTrain = Math.max(0, Math.min(...limits.map(l => l.max)));
+    const actual = Math.min(req, maxTrain);
+    const binding = limits.filter(l => l.max === maxTrain).map(l => l.by);
+    return { req, maxTrain, actual, binding };
+  };
+  const setQty = (t: string, n: number) => setCounts({ ...counts, [t]: Math.max(0, n || 0) });
+
+  const glyph = (t: string) => UNIT_GLYPH[t?.toUpperCase()] || "⚔";
+  const noteOf = (u: Trainable) => BP_NOTES[u.type] || `${titleCase(u.movementClass)} ${u.combatLayer === "SEA" ? "naval" : "unit"}.`;
+
+  const costChips = (u: Trainable) => (<>
+    <span className={"bp-chip" + (r.wood  < u.cost[0] ? " over" : "")}>🪵 {u.cost[0]}</span>
+    <span className={"bp-chip" + (r.stone < u.cost[1] ? " over" : "")}>🪨 {u.cost[1]}</span>
+    <span className={"bp-chip" + (r.wheat < u.cost[2] ? " over" : "")}>🌾 {u.cost[2]}</span>
+    {u.elite && u.specialResource && u.costSpecial > 0
+      ? <span className={"bp-chip" + (r.special < u.costSpecial ? " over" : "")}>{RES_GLYPH[resKey(u.specialResource)]} {u.costSpecial}</span> : null}
+  </>);
+
+  const statPop = (u: Trainable) => {
+    const el = (u.attackElement || race?.element || "FIRE") as string;
+    const { maxTrain, binding } = compute(u);
+    return (
+      <div className="bp-pop" onMouseEnter={() => setHover(u.type)}>
+        <div className="bp-pop-atk" style={{ color: BP_EL_COLOR[el] }}>
+          ⚔ {u.atk} · {u.siege ? "💥 Siege damage" : `${BP_EL_GLYPH[el]} ${BP_EL_NAME[el]} attack`}</div>
+        <div className="bp-pop-def">
+          <span style={{ color: BP_EL_COLOR.FIRE }}>🔥 {u.defFire}</span>
+          <span style={{ color: BP_EL_COLOR.WIND }}>🌪 {u.defWind}</span>
+          <span style={{ color: BP_EL_COLOR.EARTH }}>⛰ {u.defEarth}</span>
+          <span style={{ color: BP_EL_COLOR.WATER }}>💧 {u.defWater}</span>
+        </div>
+        <div className="bp-pop-line">🐢 {u.speed} spd · 🎒 {u.carry} carry · 👥 {u.pop} pop · ⏱ {clock(u.seconds)}</div>
+        {u.unlocked
+          ? <div className={"bp-pop-cap" + (maxTrain <= 0 ? " over" : "")}>{maxTrain > 0
+              ? <>Trainable <b>{maxTrain}</b> — limited by {binding.join(" / ")}</>
+              : <>Can't train — need {binding.join(" / ")}</>}</div>
+          : <div className="bp-pop-cap over">{u.siege ? "Requires Catapult research + Library “Breach Engines”." : "Requires a Library research unlock."}</div>}
+        <div className="bp-pop-note">{noteOf(u)}</div>
+      </div>
+    );
+  };
+
+  const unitRow = (u: Trainable) => {
+    const { req, maxTrain, actual } = compute(u);
+    const over = req > maxTrain;
+    return (
+      <div className={"bp-row" + (u.elite ? " elite" : "") + (!u.unlocked ? " locked" : "")}
+        key={u.type} onMouseEnter={() => setHover(u.type)} onMouseLeave={() => setHover(h => h === u.type ? null : h)}>
+        <span className="bp-med">{u.unlocked ? glyph(u.type) : "🔒"}</span>
+        <div className="bp-mid">
+          <div className="bp-name-line">
+            <span className="bp-name">{titleCase(u.type)}</span>
+            {u.elite && <span className="bp-badge elite">Elite</span>}
+            {u.siege && <span className="bp-badge siege">Siege</span>}
+          </div>
+          <div className="bp-cost">{costChips(u)}</div>
+        </div>
+        {u.unlocked ? (
+          <div className="bp-ctrl">
+            <div className="bp-step">
+              <button onClick={() => setQty(u.type, req - 1)} disabled={req <= 0}>−</button>
+              <input className={over ? "over" : ""} type="number" min={0} value={req}
+                onChange={e => setQty(u.type, +e.target.value)} />
+              <button onClick={() => setQty(u.type, req + 1)} disabled={maxTrain > 0 && req >= maxTrain}>+</button>
+            </div>
+            <button className="bp-max" disabled={maxTrain <= 0} onClick={() => setQty(u.type, maxTrain)}>MAX</button>
+            <button className="bp-train" disabled={req <= 0 || over || maxTrain <= 0}
+              onClick={() => onTrain(u.type, actual)}>Train</button>
+          </div>
+        ) : <span className="bp-research">🔒 Research needed</span>}
+        {hover === u.type && statPop(u)}
+      </div>
+    );
+  };
+
+  // left column body — ship-role groups for LAND-race harbors, flat list otherwise
+  let rows: JSX.Element;
+  if (isHarbor && list.some(u => u.shipRole)) {
+    const roles: { role: ShipRole; label: string }[] = [
+      { role: "TRANSPORT", label: "Transport" }, { role: "DEFENSE", label: "Defense" }, { role: "ATTACK", label: "Attack" },
+    ];
+    const aquatic = list.filter(u => !u.shipRole);
+    rows = (<>
+      {roles.map(rg => { const items = list.filter(u => u.shipRole === rg.role); if (!items.length) return null;
+        return <div className="bp-group" key={rg.role}><div className="bp-group-head">{rg.label} ships</div>{items.map(unitRow)}</div>; })}
+      {aquatic.length > 0 && <div className="bp-group"><div className="bp-group-head">Aquatic army</div>{aquatic.map(unitRow)}</div>}
+    </>);
+  } else rows = <>{list.map(unitRow)}</>;
+
+  // footer batch summary
+  const planned = list.filter(u => u.unlocked && (counts[u.type] || 0) > 0);
+  let tn = 0, tw = 0, ts = 0, twh = 0, tsp = 0, tsec = 0;
+  planned.forEach(u => { const { actual } = compute(u); tn += actual; tw += u.cost[0] * actual; ts += u.cost[1] * actual; twh += u.cost[2] * actual; tsp += u.costSpecial * actual; tsec += u.seconds * actual; });
+  const addAll = () => { planned.forEach(u => { const { actual } = compute(u); if (actual > 0) onTrain(u.type, actual); }); setCounts({}); };
+
+  // upgrade popover
+  const targetLv = building.level + queuedSame + 1;
+  const maxed = building.atMax || targetLv > building.max;
+  const popShort = building.pop > 0 && freePop < building.pop;
+  const canAfford = r.wood >= building.cost[0] && r.stone >= building.cost[1] && r.wheat >= building.cost[2];
+  const upDisabled = maxed || buildQueueFull || popShort || !canAfford;
+
+  return (
+    <div className="bp-backdrop" onClick={onClose}>
+      <div className="bp-card" onClick={e => e.stopPropagation()}>
+        <div className="bp-head">
+          <span className="bp-crest">{isHarbor ? "⚓" : "🏛"}</span>
+          <div className="bp-head-txt">
+            <h2>{isHarbor ? "HARBOR" : "BARRACKS"}</h2>
+            <div className="bp-sub">Level {building.level}{building.atMax ? " (max)" : ""}{race ? <> · {BP_EL_GLYPH[race.element || "FIRE"]} {race.name}</> : null}</div>
+          </div>
+          <div className="bp-up-wrap">
+            <button className="bp-up-btn" onClick={() => setShowUp(s => !s)}>
+              {showUp ? "▾" : "▴"} Upgrade{!maxed && ` · Lv ${targetLv}`}</button>
+            {showUp && (
+              <div className="bp-up-pop" onClick={e => e.stopPropagation()}>
+                {maxed ? <div className="bp-up-max">Max level reached</div> : <>
+                  {building.benefit && <div className="bp-up-impr">
+                    <div className="bp-up-impr-head">Lv {targetLv} improvements</div>
+                    {building.benefit.split(" · ").map((p, i) => <div className="bp-up-impr-row" key={i}>↑ {p}</div>)}
+                  </div>}
+                  <div className="bp-up-cost">
+                    <span className={r.wood  < building.cost[0] ? "over" : ""}>🪵 {fmt(building.cost[0])}</span>
+                    <span className={r.stone < building.cost[1] ? "over" : ""}>🪨 {fmt(building.cost[1])}</span>
+                    <span className={r.wheat < building.cost[2] ? "over" : ""}>🌾 {fmt(building.cost[2])}</span>
+                    {building.pop > 0 && <span className={popShort ? "over" : ""}>👥 {building.pop}</span>}
+                    <span>⏱ {clock(building.seconds)}</span>
+                  </div>
+                  <button className="bp-train bp-up-go" disabled={upDisabled}
+                    onClick={() => { onBuild(building.type); setShowUp(false); }}>
+                    {buildQueueFull ? "Queue full" : popShort ? "Need population" : !canAfford ? "Need resources" : "Upgrade now"}</button>
+                </>}
+              </div>
+            )}
+          </div>
+          <button className="bp-close" onClick={onClose}>✕</button>
+        </div>
+
+        {building.level === 0 ? (
+          <div className="bp-empty-build">Build the {isHarbor ? "Harbor" : "Barracks"} first (use Upgrade above) to {isHarbor ? "build ships" : "train troops"} here.</div>
+        ) : (
+        <div className="bp-body">
+          <div className="bp-col">
+            <div className="bp-sec"><span className="bp-bullet" />{isHarbor ? "BUILD FLEET" : "TRAIN TROOPS"}<span className="bp-hint">Hover a unit for stats</span></div>
+            <div className="bp-rows">{rows}</div>
+            <div className="bp-foot">
+              {planned.length === 0
+                ? <span className="bp-foot-hint">Set a quantity to plan a training batch — hover any unit for full stats.</span>
+                : <>
+                    <span className="bp-foot-sum">
+                      <b>{tn}</b> troops · ⏱ {clock(tsec)}
+                      <span className={"bp-chip" + (tw  > r.wood    ? " over" : "")}>🪵 {fmt(tw)}</span>
+                      <span className={"bp-chip" + (ts  > r.stone   ? " over" : "")}>🪨 {fmt(ts)}</span>
+                      <span className={"bp-chip" + (twh > r.wheat   ? " over" : "")}>🌾 {fmt(twh)}</span>
+                      {tsp > 0 && <span className={"bp-chip" + (tsp > r.special ? " over" : "")}>{RES_GLYPH[resKey(r.specialResource)]} {fmt(tsp)}</span>}
+                    </span>
+                    <button className="bp-train" onClick={addAll}>Add all to queue</button>
+                  </>}
+            </div>
+          </div>
+
+          <div className="bp-col bp-qcol">
+            <div className="bp-sec"><span className="bp-bullet" />QUEUE<span className="bp-qcount">{tq.length} / {QMAX}</span></div>
+            <div className="bp-queue">
+              {tq.length === 0 ? <div className="bp-qempty">No troops in training.</div> : tq.map((j, i) => {
+                const rem = remaining(j.finishAt, now);
+                const done = i === 0 && rem != null && rem <= 0;
+                const pct = done ? 100 : rem != null ? Math.round((1 - rem / j.totalSeconds) * 100) : 0;
+                const running = i === 0 && rem != null && rem > 0;
+                const rushSecs = rem ?? j.totalSeconds;
+                return (
+                  <div className="bp-job" key={j.id}>
+                    <span className="bp-job-med">{glyph(j.label)}</span>
+                    <div className="bp-job-body">
+                      <div className="bp-job-top">
+                        <span className={"bp-dot" + (running ? " on" : "")} />
+                        <span className="bp-job-name">{titleCase(j.label)}</span>
+                        <span className="bp-job-qty">×{j.batch ?? 1}</span>
+                        <span className="bp-job-spacer" />
+                        <span className="bp-job-time">{done ? "✓" : rem != null ? clock(rem) : "queued"}</span>
+                        {!done && <button className="bp-job-rush" title={`Rush for ${Math.max(1, Math.ceil(rushSecs / 60))} gold`} onClick={() => onFinish(j.id)}>⚡</button>}
+                        <button className="bp-job-x" onClick={() => onCancel(j.id)}>✕</button>
+                      </div>
+                      <div className="bp-job-bar"><i style={{ width: pct + "%" }} /></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        )}
+      </div>
     </div>
   );
 }

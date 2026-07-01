@@ -2,6 +2,9 @@ package com.polis.api;
 
 import com.polis.config.SecurityConfig;
 import com.polis.game.AllianceService;
+import com.polis.game.AllianceTierService;
+import com.polis.repo.PlayerRepo;
+import com.polis.domain.Player;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -11,12 +14,32 @@ import java.util.Map;
 @RequestMapping("/api/alliances")
 public class AllianceController {
   private final AllianceService alliances;
-  public AllianceController(AllianceService alliances){ this.alliances = alliances; }
+  private final AllianceTierService tierProgress;
+  private final PlayerRepo players;
+  public AllianceController(AllianceService alliances, AllianceTierService tierProgress, PlayerRepo players){
+    this.alliances = alliances; this.tierProgress = tierProgress; this.players = players;
+  }
   private Long me(){ return SecurityConfig.currentPlayerId(); }
 
   public record CreateRequest(String tag, String name){}
   public record InviteRequest(String username){}
   public record PostRequest(String body){}
+  public record EmblemRequest(String emblem){}
+
+  /** Tier-gate progress for the current player's alliance (or empty gate if none). */
+  @GetMapping("/me/tier-progress")
+  public Map<String,Object> myTierProgress(){
+    Long allianceId = players.findById(me()).map(Player::getAllianceId).orElse(null);
+    return tierProgress.view(allianceId);
+  }
+
+  @GetMapping("/{id}/tier-progress")
+  public Map<String,Object> tierProgress(@PathVariable Long id){ return tierProgress.view(id); }
+
+  @PostMapping("/emblem")
+  public Map<String,Object> emblem(@RequestBody EmblemRequest r){
+    alliances.setEmblem(me(), r.emblem()); return Map.of("ok", true);
+  }
 
   @PostMapping
   public Map<String,Object> create(@RequestBody CreateRequest r){
