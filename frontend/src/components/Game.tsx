@@ -25,6 +25,7 @@ import ProfilePanel from "./ProfilePanel";
 import SiegePanel, { RaceChoiceModal } from "./SiegePanel";
 import TroopDetailPanel from "./TroopDetailPanel";
 import SimulatorPanel from "./SimulatorPanel";
+import { CitySwitcher, ManageGroupsPanel, useCityGroups } from "./CityGroups";
 import { useDraggable } from "../useDraggable";
 import { CityMovementsPanel, TravelPreview, HeroPicker, HERO_GLYPH, UNIT_GLYPH } from "../movements";
 import leoImg from "../assets/leo.png";
@@ -124,6 +125,10 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   // rushed job "reappears" and the queue looks inflated until the next poll heals it. Only the latest
   // issued request is allowed to apply its result.
   const refreshSeq = useRef(0);
+
+  // City Groups (per-player organization) — powers the grouped switcher + Manage Groups panel
+  const { view: cityGroupsView, overview: citiesOverview, refresh: refreshGroups } = useCityGroups();
+  const [showGroups, setShowGroups] = useState(false);
 
   const refreshUnreadReports = () => getUnreadReportCount().then(r => setUnreadReports(r.count)).catch(() => {});
   const refreshHeroes = () => getHeroes().then(setHeroes).catch(() => {});
@@ -264,13 +269,12 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
                 onChange={e => setNameDraft(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditing(false); }}
                 onBlur={commitRename} />
-            ) : cities.length > 1 ? (
-              <select className="cs-select" value={active.id} onChange={e => switchCity(Number(e.target.value))}>
-                {cities.map(c => <option key={c.id} value={c.id}>{c.capital ? "★ " : ""}{c.name}</option>)}
-              </select>
-            ) : <span className="cs-name solo">{active.name}</span>}
-            {!editing && <button className="cs-rename" title="Rename city"
-              onClick={() => { setNameDraft(active.name); setEditing(true); }}>✎</button>}
+            ) : (
+              <CitySwitcher cities={cities} groups={cityGroupsView?.groups ?? []} overview={citiesOverview}
+                activeId={active.id} activeName={active.name} onSwitch={switchCity}
+                onStartRename={() => { setNameDraft(active.name); setEditing(true); }}
+                onManage={() => setShowGroups(true)} onOpen={refreshGroups} />
+            )}
           </div>
           {active.race && <RaceBadge race={active.race} />}
         </div>
@@ -350,6 +354,8 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
       {showTroopDetail && <TroopDetailPanel cityId={active.id} cityName={active.name}
         onClose={() => setShowTroopDetail(false)} onChanged={() => { refresh(); bumpMoves(); }} />}
       {showSimulator && <SimulatorPanel onClose={() => setShowSimulator(false)} />}
+      {showGroups && <ManageGroupsPanel view={cityGroupsView} overview={citiesOverview}
+        onClose={() => setShowGroups(false)} onChanged={refreshGroups} setErr={setErr} />}
 
       {showReports && <BattleReports cities={cities} unreadCount={unreadReports}
         onClose={() => setShowReports(false)} onUnreadChange={refreshUnreadReports}

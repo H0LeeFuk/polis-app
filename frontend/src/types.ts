@@ -4,6 +4,15 @@ export interface PlayerDto {
   citySlots: number; ownedCities: number; totalPoints: number; gold: number; alliance?: string;
 }
 export interface CitySummary { id: number; name: string; points: number; capital: boolean; island: string; raceId?: string | null; raceName?: string | null; }
+
+// ---- City Groups (per-player, UI/navigation only) ----
+export interface CityGroup { id: number; name: string; icon: string; sortOrder: number; cityIds: number[]; }
+export interface CityGroupsView { groups: CityGroup[]; iconChoices: string[]; }
+export interface CityOverview {
+  id: number; name: string; capital: boolean; island: string; raceName?: string | null;
+  groupIds: number[]; underAttack: boolean;
+  building?: { type: string; toLevel: number | null } | null;
+}
 export type ResourceId = "WOOD" | "STONE" | "WHEAT" | "COAL" | "CRYSTALS" | "IRON" | "PEARLS";
 export interface Resources {
   wood: number; stone: number; wheat: number; capacity: number;

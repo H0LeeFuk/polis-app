@@ -1630,3 +1630,78 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
 .lines-settings .ls-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:5px 0;font-size:12px}
 .lines-settings .ls-sub{margin:8px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#9aa7bd}
 .lines-settings .ls-color{display:flex;align-items:center;gap:6px}
+
+/* ===== City Groups — grouped switcher + manage panel ===== */
+.cg-switch{position:relative;display:flex;align-items:center;gap:2px}
+.cg-arrow{background:#1c130e;border:1px solid var(--gold-deep);color:var(--gold);width:26px;height:32px;border-radius:8px;
+  font-size:16px;line-height:1;cursor:pointer}
+.cg-arrow:hover:not(:disabled){background:#2c1f16}
+.cg-arrow:disabled{opacity:.35;cursor:default}
+.cg-title{display:flex;align-items:center;gap:7px;background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory);
+  height:32px;padding:0 12px;border-radius:9px;cursor:pointer;font-family:'Cinzel';font-weight:700;font-size:14px;max-width:26vw}
+.cg-title:hover{background:#2c1f16;color:var(--gold)}
+.cg-title-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cg-caret{color:var(--gold);font-size:11px}
+
+.cg-panel{position:absolute;top:calc(100% + 6px);left:0;z-index:50;width:min(460px,80vw);max-height:70vh;overflow:auto;
+  background:linear-gradient(180deg,#211710,#181009);border:1px solid var(--gold-deep);border-radius:14px;
+  padding:12px;box-shadow:0 16px 44px rgba(0,0,0,.6)}
+.cg-panel-top{display:flex;gap:8px;margin-bottom:10px}
+.cg-search{flex:1;background:#160f09;border:1px solid var(--gold-deep);color:var(--ivory);border-radius:9px;padding:8px 11px;font-size:13px}
+.cg-manage{background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory-dim);border-radius:9px;padding:0 12px;font-family:'Cinzel';font-size:12px;cursor:pointer;white-space:nowrap}
+.cg-manage:hover{color:var(--gold);border-color:var(--gold)}
+.cg-filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.cg-chip{display:inline-flex;align-items:center;gap:5px;background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory-dim);
+  border-radius:999px;padding:4px 11px;font-size:12px;cursor:pointer}
+.cg-chip.on{background:var(--gold);color:var(--slip);font-weight:700}
+.cg-chip-ico{font-size:13px}
+
+.cg-sections{display:flex;flex-direction:column;gap:12px}
+.cg-section-head{display:flex;align-items:center;gap:8px;font-family:'Cinzel';font-weight:700;color:var(--gold);font-size:13px;margin-bottom:5px}
+.cg-section-ico{font-size:15px}
+.cg-count{margin-left:auto;font-size:11px;color:var(--ivory-dim);background:#160f09;border:1px solid var(--gold-deep);border-radius:999px;padding:0 8px;font-family:'Cinzel'}
+.cg-city{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;
+  background:rgba(0,0,0,0.22);border:1px solid rgba(255,255,255,0.06);border-radius:9px;padding:7px 11px;margin:4px 0;cursor:pointer}
+.cg-city:hover{background:rgba(42,30,22,0.6);border-color:var(--gold-deep)}
+.cg-city.active{border-color:var(--gold);box-shadow:0 0 0 1px rgba(216,173,83,.25) inset}
+.cg-city-name{font-family:'Cinzel';font-weight:700;color:var(--ivory);font-size:13.5px}
+.cg-meta{display:flex;flex-wrap:wrap;gap:9px;font-size:11px;color:var(--ivory-dim)}
+.cg-warn{color:var(--bad);font-weight:600}
+.cg-build{color:#c9a24e}
+.cg-empty,.cg-empty-row{font-size:12px;color:var(--ivory-dim);padding:6px 2px}
+
+/* manage panel */
+.cg-manage-backdrop{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,0.55)}
+.cg-manage-backdrop > .cg-manage{position:relative;width:min(640px,96%);max-height:88vh;overflow:auto;cursor:default;
+  background:linear-gradient(180deg,#211710,#181009);border:1px solid var(--gold-deep);border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.cg-manage-close{position:absolute;top:12px;right:14px;background:none;border:0;color:var(--ivory-dim);font-size:18px;cursor:pointer}
+.cg-manage h2{margin:0 0 4px;font-family:'Cinzel';color:var(--gold)}
+.cg-sub{font-size:12.5px;color:var(--ivory-dim);margin:0 0 14px}
+.cg-create{background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:14px}
+.cg-icon-picker{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.cg-icon-picker.small{margin-bottom:8px}
+.cg-icon-opt{width:34px;height:34px;font-size:17px;background:#1c130e;border:1px solid var(--gold-deep);border-radius:9px;cursor:pointer}
+.cg-icon-opt.on{border-color:var(--gold);background:#2c1f16;box-shadow:0 0 0 1px var(--gold) inset}
+.cg-create-row{display:flex;gap:8px}
+.cg-input{flex:1;background:#160f09;border:1px solid var(--gold-deep);color:var(--ivory);border-radius:9px;padding:8px 11px;font-size:13px}
+.cg-input.inline{flex:0 1 200px;padding:4px 8px}
+.cg-btn{background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory);border-radius:9px;padding:8px 16px;font-family:'Cinzel';font-weight:700;cursor:pointer}
+.cg-btn.primary{background:linear-gradient(180deg,#3a2a17,#241811);color:var(--gold)}
+.cg-btn:hover:not(:disabled){color:var(--gold)}
+.cg-btn:disabled{opacity:.5;cursor:default}
+.cg-glist{display:flex;flex-direction:column;gap:8px}
+.cg-grow{background:rgba(0,0,0,0.22);border:1px solid rgba(255,255,255,0.07);border-radius:11px;padding:10px 12px}
+.cg-grow-head{display:flex;align-items:center;gap:9px}
+.cg-grow-ico{font-size:18px}
+.cg-grow-name{background:none;border:0;color:var(--ivory);font-family:'Cinzel';font-weight:700;font-size:14px;cursor:pointer;padding:0}
+.cg-grow-name:hover{color:var(--gold)}
+.cg-grow-actions{margin-left:auto;display:flex;gap:4px}
+.cg-ic-btn{width:28px;height:28px;background:#1c130e;border:1px solid var(--gold-deep);color:var(--ivory-dim);border-radius:8px;cursor:pointer;font-size:13px}
+.cg-ic-btn:hover:not(:disabled){color:var(--gold)}
+.cg-ic-btn.danger:hover{color:var(--bad);border-color:var(--bad)}
+.cg-ic-btn:disabled{opacity:.35;cursor:default}
+.cg-assign{margin-top:10px;padding-top:10px;border-top:1px solid #3a2a1d}
+.cg-assign-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.cg-assign-city{display:flex;align-items:center;gap:7px;background:#160f09;border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:6px 9px;font-size:12.5px;color:var(--ivory-dim);cursor:pointer}
+.cg-assign-city.on{color:var(--ivory);border-color:var(--gold-deep)}
+.cg-assign-city input{accent-color:var(--gold)}

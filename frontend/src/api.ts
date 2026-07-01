@@ -7,6 +7,7 @@ import type {
   WorldEndgame, WonderDto, WonderLeader,
   ColossusDto, ColossusDamageRow,
   WatchtowerDto, SpyReportDto, SpyAlertDto, SpyIntel,
+  CityGroupsView, CityOverview,
 } from "./types";
 
 const TOKEN_KEY = "polis_token";
@@ -42,6 +43,20 @@ export const sendMessage = (toPlayerId: number, body: string) =>
 
 const post = (cityId: number, action: string, body: any) =>
   api<{ ok: boolean }>(`/api/cities/${cityId}/${action}`, { method: "POST", body: JSON.stringify(body) });
+
+// ---- City Groups ----
+export const getCityGroups = () => api<CityGroupsView>("/api/players/me/city-groups");
+export const getCitiesOverview = () => api<CityOverview[]>("/api/players/me/cities-overview");
+export const createCityGroup = (name: string, icon: string) =>
+  api<{ id: number }>("/api/players/me/city-groups", { method: "POST", body: JSON.stringify({ name, icon }) });
+export const patchCityGroup = (id: number, patch: { name?: string; icon?: string; sortOrder?: number }) =>
+  api<{ ok: boolean }>(`/api/players/me/city-groups/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const deleteCityGroup = (id: number) =>
+  api<{ ok: boolean }>(`/api/players/me/city-groups/${id}`, { method: "DELETE" });
+export const addCitiesToGroup = (id: number, cityIds: number[]) =>
+  api<{ ok: boolean }>(`/api/players/me/city-groups/${id}/cities`, { method: "POST", body: JSON.stringify({ cityIds }) });
+export const removeCitiesFromGroup = (id: number, cityIds: number[]) =>
+  api<{ ok: boolean }>(`/api/players/me/city-groups/${id}/cities`, { method: "DELETE", body: JSON.stringify({ cityIds }) });
 
 export const doBuild    = (c: number, buildingType: string) => post(c, "build", { buildingType });
 export const doTrain    = (c: number, unitType: string, count: number) => post(c, "train", { unitType, count });
