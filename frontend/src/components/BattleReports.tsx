@@ -15,8 +15,6 @@ const RES_GLYPH: Record<string, string> = {
   COAL: "⬛", CRYSTALS: "💎", IRON: "⛓", PEARLS: "🫧",
 };
 const RES_ORDER = ["WOOD", "STONE", "WHEAT", "COAL", "CRYSTALS", "IRON", "PEARLS"];
-const ELEMENT_GLYPH: Record<string, string> = { FIRE: "🔥", WIND: "🌬", EARTH: "🌍", WATER: "💧" };
-const ELEMENT_ORDER = ["FIRE", "WIND", "EARTH", "WATER"];
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 const glyph = (t: string) => UNIT_GLYPH[t] ?? "⚔";
 const sumVals = (m: Record<string, number> | null | undefined) =>

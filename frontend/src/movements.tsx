@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { getCityMovements, previewAttack, getReinforcements } from "./api";
 import type { Movement, AttackPreview, Hero } from "./types";
 

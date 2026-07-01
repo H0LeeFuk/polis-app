@@ -5,7 +5,6 @@ import { fmtEta, fmtArrival, progressPct, troopSummary, kindMeta, moveKind } fro
 import { useDraggable } from "../useDraggable";
 
 type Filter = "all" | "attack" | "return" | "incoming" | "colony" | "support" | "spy";
-const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 /** Area 3 — full-screen bird's-eye view of every troop movement across the empire. */
 export default function MovementsOverview({ data, now, onClose, onGoCity }: {

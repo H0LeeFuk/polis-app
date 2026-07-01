@@ -6,13 +6,13 @@ import {
   deassignHero, getAltar, runFestival, callCityGuard,
 } from "../api";
 import type { GameState, CityDetail, PlayerDto, InboxMsg, PlayerMovements, UnitDto, Hero, FoundingStatus, Trainable, ShipRole, AltarState, AllianceView, TierProgress, BuildingDto } from "../types";
-import { FoundingBanner, FoundCityModal, RaceBadge, RACES } from "./FoundCity";
+import { FoundingBanner, FoundCityModal, RaceBadge } from "./FoundCity";
 import MissionsPanel from "./MissionsPanel";
 import InventoryModal from "./InventoryModal";
 import { EndgamePanel } from "./WondersPanel";
 import LibraryPanel from "./LibraryPanel";
 import TradePanel from "./TradePanel";
-import { buildingSvg, constructionSvg, emptyPlotSvg } from "../buildings";
+import { buildingSvg } from "../buildings";
 import { PLACEMENTS, PLACEMENT_BY_TYPE, TERRAIN_URL, SCENE_W, SCENE_H, ICON_BASE, type Placement } from "../cityScene";
 import SpyPanel from "./SpyPanel";
 import WorldView from "./WorldView";
@@ -26,7 +26,7 @@ import SiegePanel, { RaceChoiceModal } from "./SiegePanel";
 import TroopDetailPanel from "./TroopDetailPanel";
 import SimulatorPanel from "./SimulatorPanel";
 import { useDraggable } from "../useDraggable";
-import { CityMovementsPanel, TravelPreview, UnitTooltip, HeroPicker, HERO_GLYPH, UNIT_GLYPH } from "../movements";
+import { CityMovementsPanel, TravelPreview, HeroPicker, HERO_GLYPH, UNIT_GLYPH } from "../movements";
 import leoImg from "../assets/leo.png";
 import titaniaImg from "../assets/titania.png";
 
@@ -45,7 +45,7 @@ const HERO_ACCENT: Record<string, { accent: string; glow: string }> = {
   LEO: { accent: "#e0995e", glow: "#e8584a" },
   TITANIA: { accent: "#6fae4f", glow: "#8fe6b0" },
 };
-const heroSilhouette = (accent: string, glow: string, name: string) => {
+const heroSilhouette = (accent: string, _glow: string, name: string) => {
   const s = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 312 460'>
     <defs><radialGradient id='g' cx='50%' cy='30%' r='60%'>
       <stop offset='0%' stop-color='${accent}' stop-opacity='0.32'/>
@@ -63,13 +63,6 @@ const heroSilhouette = (accent: string, glow: string, name: string) => {
 };
 // preload both portraits once so tab switches don't flash
 [leoImg, titaniaImg].forEach(src => { const im = new Image(); im.src = src; });
-const MOVE_BADGE: Record<string, string> = { LAND: "🚶", FLYING: "🕊", SWIMMING: "🌊" };
-const MOVE_LABEL: Record<string, string> = {
-  LAND: "Land — needs a transport ship to cross open water",
-  FLYING: "Flying — crosses water freely",
-  SWIMMING: "Swimming — crosses water freely, slower on land",
-};
-
 const ResIcon = ({ kind }: { kind: string }) => {
   const i: Record<string, React.ReactNode> = {
     wood: <g><rect x="3" y="13" width="18" height="6" rx="3" fill="#8a5a2b" stroke="#5e3a17" strokeWidth="1.2" /><ellipse cx="6" cy="16" rx="2" ry="3" fill="#c98f4e" stroke="#5e3a17" strokeWidth="1.2" /><rect x="4" y="6" width="16" height="6" rx="3" fill="#9c6a36" stroke="#5e3a17" strokeWidth="1.2" /><ellipse cx="6.5" cy="9" rx="2" ry="3" fill="#d6a05c" stroke="#5e3a17" strokeWidth="1.2" /></g>,
@@ -253,8 +246,6 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
     setModal(null); setShowMoves(false); setTab("world");
     setFocusCityId(null); setTimeout(() => setFocusCityId(id), 0);   // re-trigger even if same id
   };
-  const moveCount = moves?.movements.length ?? 0;
-  const hostileInbound = (moves?.summary.incomingThreats ?? 0) > 0;
   const heroesHere = heroes.filter(h => h.unlocked && h.state === "IDLE" && h.stationedCityId === active.id);
   const commitRename = () => {
     const nm = nameDraft.trim();
@@ -335,7 +326,6 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
               onTrain={(t, c) => action(() => doTrain(active.id, t, c))()}
               onCancel={(j) => action(() => doCancel(active.id, j))()}
               onFinish={(j) => action(() => doFinish(active.id, j))()}
-              onFound={() => setTab("world")}
               onCallGuard={action(() => callCityGuard(active.id))} />}
 
             {tab === "world" && <WorldView activeCityId={active.id} myUnits={active.units} heroes={heroes} myPlayerId={player.id} focusCityId={focusCityId} onChanged={() => { refresh(); refreshHeroes(); bumpMoves(); }} setErr={setErr} />}
@@ -928,11 +918,11 @@ function ResourceBar({ active, gold }: { active: CityDetail; gold: number }) {
   );
 }
 
-function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, onFinish, onFound, onCallGuard }: {
+function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, onFinish, onCallGuard }: {
   active: CityDetail; now: number; counts: Record<string, number>;
   setCounts: (c: Record<string, number>) => void;
   onBuild: (t: string) => void; onTrain: (t: string, c: number) => void;
-  onCancel: (j: number) => void; onFinish: (j: number) => void; onFound: () => void;
+  onCancel: (j: number) => void; onFinish: (j: number) => void;
   onCallGuard: () => void;
 }) {
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(null);
@@ -999,7 +989,7 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
         <svg className="city-svg" viewBox={`0 0 ${SCENE_W} ${SCENE_H}`} preserveAspectRatio="xMidYMid meet">
           <image href={TERRAIN_URL} x="0" y="0" width={SCENE_W} height={SCENE_H}
             onClick={deselect} style={{ cursor: "default" }} />
-          {placed.map(({ p, b }) => {
+          {placed.map(({ p }) => {
             const sel = selectedBuilding === p.type;
             const imgX = p.x - p.w / 2;
             const imgY = p.y - p.w * (p.base ?? ICON_BASE);
@@ -1213,30 +1203,6 @@ function ConstructionBar({ jobs, now, onCancel, onFinish }: { jobs: any[]; now: 
             <div className="cbbar"><i style={{ width: pct + "%" }} /></div>
             {canRush && <button className="cbrush" title={`Rush for ${Math.max(1, Math.ceil(rushSecs / 60))} gold`} onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rushSecs / 60))}</button>}
             <a className="cbcancel" onClick={() => onCancel(j.id)}>✕</a>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Queue({ title, jobs, now, onCancel, suffix }: {
-  title: string; jobs: any[]; now: number; onCancel: (j: number) => void; suffix: (j: any) => string;
-}) {
-  if (jobs.length === 0) return null;
-  return (
-    <div className="panel">
-      <h2>{title} queue</h2>
-      {jobs.map(j => {
-        const rem = remaining(j.finishAt, now);
-        const pct = rem != null ? Math.round((1 - rem / j.totalSeconds) * 100) : 0;
-        return (
-          <div className="qrow" key={j.id} style={{ display: "block" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{titleCase(j.label)} {suffix(j)} {j.position > 0 && <span className="pill">queued #{j.position}</span>}</span>
-              <span>{rem != null ? clock(rem) : "waiting"} <a style={{ color: "var(--bad)", marginLeft: 8, cursor: "pointer" }} onClick={() => onCancel(j.id)}>✕</a></span>
-            </div>
-            {rem != null && <div className="bar"><i style={{ width: pct + "%" }} /></div>}
           </div>
         );
       })}
@@ -1486,12 +1452,6 @@ function BarracksPanel({ active, building, freePop, buildQueueFull, queuedSame, 
 }
 
 const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
-const phaseLabel = (p: string) => p === "COLONY" ? "🚢 Colony ship" : p === "OUT" ? "⚔ Attack" : "↩ Returning";
-function etaLabel(arriveAt: string, now: number) {
-  const s = Math.max(0, Math.round((new Date(arriveAt).getTime() - now) / 1000));
-  return clock(s);
-}
-
 /** "Attack Again" from a battle report: re-raid the same target from the active city. */
 function RaidAgainModal({ originCityId, originName, myUnits, heroes, target, onClose, onSend }: {
   originCityId: number; originName: string; myUnits: UnitDto[];

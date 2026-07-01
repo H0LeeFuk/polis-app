@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { getTradeMarket, tradeBuyPreview, tradeBuy, tradeSell, cancelTradeListing } from "../api";
 import type { TradeMarket, BuyPreview } from "../types";
 

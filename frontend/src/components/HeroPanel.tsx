@@ -35,7 +35,7 @@ function countdown(iso: string | null): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m ${s - m * 60}s`;
 }
 
-export default function HeroPanel({ cities, onClose, onChanged, focusHeroKey }: {
+export default function HeroPanel({ onClose, onChanged, focusHeroKey }: {
   cities: CitySummary[]; onClose: () => void; onChanged?: () => void; focusHeroKey?: string;
 }) {
   const win = useDraggable<HTMLDivElement>();

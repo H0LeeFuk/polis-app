@@ -89,7 +89,7 @@ export function FoundCityModal({ islandId, islandName, slotIndex, heroes, fromCi
   startAtRace?: boolean;
   onClose: () => void; onChanged: () => void; setErr: (s: string) => void;
 }) {
-  const [step, setStep] = useState<"send" | "race">(startAtRace ? "race" : "send");
+  const [step] = useState<"send" | "race">(startAtRace ? "race" : "send");
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<AttackPreview | null>(null);
 

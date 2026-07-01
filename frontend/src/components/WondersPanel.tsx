@@ -23,7 +23,7 @@ export interface WonderCtx {
 }
 
 /** A floating endgame status bar shown over the world map: phase, win timer, leaderboard. */
-export function EndgameBar({ now, onOpenWonder }: { now: number; onOpenWonder: (w: WonderDto) => void }) {
+export function EndgameBar({ onOpenWonder }: { now: number; onOpenWonder: (w: WonderDto) => void }) {
   const [st, setSt] = useState<WorldEndgame | null>(null);
   const [board, setBoard] = useState<WonderLeader[]>([]);
   const [open, setOpen] = useState(false);

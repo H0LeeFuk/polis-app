@@ -24,8 +24,6 @@ const rosterFor = (race: string, layer: "SEA" | "LAND") =>
 type SideState = { race: string; troops: Record<string, number>; hero: boolean; heroAttack: number; attackBuff: number; defenseBuff: number };
 const freshSide = (race: string): SideState => ({ race, troops: {}, hero: false, heroAttack: 200, attackBuff: 1, defenseBuff: 1 });
 
-function sumT(t: Record<string, number>) { return Object.values(t).reduce((a, b) => a + (b > 0 ? b : 0), 0); }
-
 /** Build vs. defender; run the REAL combat engine (pure mode) and see the exact outcome. */
 export default function SimulatorPanel({ onClose }: { onClose: () => void }) {
   const [layer, setLayer] = useState<"SEA" | "LAND">("LAND");

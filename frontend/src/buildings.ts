@@ -31,17 +31,17 @@ const ART: Record<string, (s: number) => string> = {
   BARRACKS: (s) => `${house(C.terracotta, s)}<rect x="44" y="64" width="32" height="4" fill="${C.slip}"/>`,
   HARBOR: (s) => `<rect x="30" y="78" width="60" height="12" fill="${C.teal}" stroke="${C.slip}"/>${house(C.stone, s)}
     <rect x="74" y="40" width="4" height="40" fill="${C.dark}"/><polygon points="78,42 78,64 60,52" fill="${C.ivory}" stroke="${C.slip}"/>`,
-  WAREHOUSE: (s) => `${wallBox(38, 58, 44, 32, C.stone)}${roof(34, 58, 52, 12)}<rect x="46" y="66" width="28" height="16" fill="${C.dark}"/>`,
+  WAREHOUSE: (_s) => `${wallBox(38, 58, 44, 32, C.stone)}${roof(34, 58, 52, 12)}<rect x="46" y="66" width="28" height="16" fill="${C.dark}"/>`,
   FARM: (s) => `${house(C.ivory, s)}<rect x="40" y="84" width="40" height="6" fill="${C.gold}"/>
     <circle cx="48" cy="80" r="3" fill="${C.terracotta}"/><circle cx="60" cy="80" r="3" fill="${C.terracotta}"/><circle cx="72" cy="80" r="3" fill="${C.terracotta}"/>`,
   TIMBER: (s) => `${house(C.terracotta, s)}<rect x="30" y="80" width="14" height="4" fill="${C.dark}"/><rect x="33" y="70" width="4" height="14" fill="${C.dark}"/>`,
-  QUARRY: (s) => `<polygon points="40,88 52,62 72,62 84,88" fill="${C.stone}" stroke="${C.slip}" stroke-width="1.5"/>
+  QUARRY: (_s) => `<polygon points="40,88 52,62 72,62 84,88" fill="${C.stone}" stroke="${C.slip}" stroke-width="1.5"/>
     <rect x="50" y="70" width="10" height="8" fill="${C.dark}"/><rect x="64" y="74" width="9" height="6" fill="${C.dark}"/>`,
   MINE: (s) => `${house(C.ivory, s)}<rect x="40" y="84" width="40" height="6" fill="${C.gold}"/>
     <circle cx="48" cy="80" r="3" fill="${C.gold}"/><circle cx="60" cy="80" r="3" fill="${C.gold}"/><circle cx="72" cy="80" r="3" fill="${C.gold}"/>`,
-  EXTRACTOR: (s) => `<polygon points="42,88 60,58 78,88" fill="${C.dark}" stroke="${C.slip}" stroke-width="1.5"/>
+  EXTRACTOR: (_s) => `<polygon points="42,88 60,58 78,88" fill="${C.dark}" stroke="${C.slip}" stroke-width="1.5"/>
     <rect x="54" y="74" width="12" height="14" fill="${C.slip}"/><circle cx="60" cy="68" r="4" fill="${C.teal}"/>`,
-  MARKET: (s) => `<rect x="30" y="84" width="60" height="6" fill="${C.stone}" stroke="${C.slip}"/>${col(38, 60, 24)}${col(58, 60, 24)}${col(78, 60, 24)}
+  MARKET: (_s) => `<rect x="30" y="84" width="60" height="6" fill="${C.stone}" stroke="${C.slip}"/>${col(38, 60, 24)}${col(58, 60, 24)}${col(78, 60, 24)}
     <rect x="34" y="56" width="50" height="5" fill="${C.ivory}" stroke="${C.slip}"/>`,
 };
 
