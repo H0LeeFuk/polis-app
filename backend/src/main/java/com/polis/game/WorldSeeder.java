@@ -2,6 +2,8 @@ package com.polis.game;
 
 import com.polis.domain.*;
 import com.polis.repo.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.core.annotation.Order;
@@ -29,6 +31,7 @@ import java.util.*;
 @Component
 @Order(10)
 public class WorldSeeder implements ApplicationRunner {
+  private static final Logger log = LoggerFactory.getLogger(WorldSeeder.class);
   private final WorldRepo worlds; private final IslandRepo islands; private final CityRepo cities;
   private final PlayerRepo players; private final AllianceRepo alliances;
 
@@ -97,7 +100,7 @@ public class WorldSeeder implements ApplicationRunner {
         }
       }
       if (placedGroups < target)
-        System.out.printf("WorldSeeder: tier %d packed %d/%d groups (band too tight)%n", tier, placedGroups, target);
+        log.warn("tier {} packed {}/{} groups (band too tight)", tier, placedGroups, target);
     }
 
     // ---- FILL leftover open water with loose RED islands, packed (small gaps) ----
@@ -119,7 +122,7 @@ public class WorldSeeder implements ApplicationRunner {
         looseTotal++;
       }
     }
-    System.out.printf("WorldSeeder: packed %d groups, %d loose islands%n", groupId, looseTotal);
+    log.info("packed {} groups, {} loose islands", groupId, looseTotal);
     validatePacking(groupCentres, cx, cy);
 
     seedNpcs(wid, rnd);
@@ -148,8 +151,8 @@ public class WorldSeeder implements ApplicationRunner {
         double[] a = centres.get(i), b = centres.get(j);
         if (Math.hypot(a[0] - b[0], a[1] - b[1]) < MIN_SEP) overlaps++;
       }
-    if (overlaps > 0) System.out.printf("WorldSeeder: WARNING %d overlapping group pairs%n", overlaps);
-    else System.out.println("WorldSeeder: packing OK — no overlapping groups, no boundary crossings");
+    if (overlaps > 0) log.warn("{} overlapping group pairs", overlaps);
+    else log.info("packing OK — no overlapping groups, no boundary crossings");
   }
 
   private void save(Long wid, int nameIdx, boolean resource, boolean spawnable, int tier, int groupId,
