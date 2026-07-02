@@ -1,5 +1,7 @@
 package com.polis.domain;
 
+import java.util.Map;
+
 /** Static catalog of buildings, mirroring the game's balance. */
 public enum BuildingType {
   //         wood stone wheat  mul  time(s) max pop  produces
@@ -30,4 +32,15 @@ public enum BuildingType {
     this.baseWood=w; this.baseStone=s; this.baseWheat=wh; this.mul=mul;
     this.baseTime=t; this.max=max; this.pop=pop; this.produces=produces;
   }
+
+  /** Unlock-gate prerequisites: a building's first construction (level 0→1) requires ALL listed
+   *  buildings to be at or above the specified level. Buildings absent from this map have no gate. */
+  public static final Map<BuildingType, Map<BuildingType, Integer>> PREREQUISITES = Map.of(
+      BARRACKS,   Map.of(SENATE, 3),
+      MARKET,     Map.of(SENATE, 3, WAREHOUSE, 3),
+      LIBRARY,    Map.of(SENATE, 5, MARKET, 3),
+      ALTAR,      Map.of(SENATE, 7, WAREHOUSE, 5),
+      HARBOR,     Map.of(SENATE, 5, BARRACKS, 3),
+      WATCHTOWER, Map.of(SENATE, 10, BARRACKS, 5, LIBRARY, 5)
+  );
 }

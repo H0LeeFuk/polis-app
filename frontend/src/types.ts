@@ -20,7 +20,8 @@ export interface Resources {
   woodProd: number; stoneProd: number; wheatProd: number; specialProd: number;
   otherSpecials: Record<string, number>;
 }
-export interface BuildingDto { type: string; level: number; max: number; pop: number; cost: number[]; seconds: number; atMax: boolean; benefit?: string; }
+export interface MissingReq { type: string; need: number; have: number; }
+export interface BuildingDto { type: string; level: number; max: number; pop: number; cost: number[]; seconds: number; atMax: boolean; benefit?: string; locked?: boolean; missingReqs?: MissingReq[]; }
 export interface QueueJob { id: number; position: number; totalSeconds: number; finishAt: string | null; label: string; toLevel?: number; batch?: number; }
 export interface UnitDto { type: string; count: number; }
 export type Element = "FIRE" | "WIND" | "EARTH" | "WATER";

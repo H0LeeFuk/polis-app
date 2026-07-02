@@ -975,6 +975,13 @@ function CityTab({ active, now, counts, setCounts, busy, onBuild, onTrain, onCan
     GARRISON: "Hold troops and reinforce your city defenses.",
   };
 
+  const BUILDING_LABELS: Record<string, string> = {
+    SENATE: "Town Hall", WAREHOUSE: "Warehouse", FARM: "Farm", TIMBER: "Lumber Mill",
+    QUARRY: "Quarry", MINE: "Mine", EXTRACTOR: "Extractor", BARRACKS: "Barracks",
+    HARBOR: "Harbor", MARKET: "Market", LIBRARY: "Library", ALTAR: "Altar",
+    WATCHTOWER: "Watchtower",
+  };
+
   // Place buildings on the painted island scene (terrain.svg, viewBox 1000x760).
   // Each entry in PLACEMENTS pins a game building type to a fixed ground point;
   // buildings without a painted plot (e.g. WALL, EXTRACTOR) fall through to the
@@ -985,6 +992,7 @@ function CityTab({ active, now, counts, setCounts, busy, onBuild, onTrain, onCan
     .filter((e): e is { p: Placement; b: BuildingDto } => !!e.b);
   // Quick-upgrade affordability for the info panel (mirrors the drawer's logic).
   const upgradeInfo = (b: BuildingDto) => {
+    if (b.locked) return { disabled: true, label: '🔒 Locked' };
     const targetLv = b.level + queuedSame(b.type) + 1;
     const maxed = b.atMax || targetLv > b.max;
     const popShort = b.pop > 0 && freePop < b.pop;
@@ -1056,6 +1064,17 @@ function CityTab({ active, now, counts, setCounts, busy, onBuild, onTrain, onCan
                 </div>
               </div>
               <p className="ci-desc">{buildingInfo[selected.type] || ""}</p>
+              {selected.locked && selected.missingReqs && selected.missingReqs.length > 0 && (
+                <div className="ci-locked-reqs">
+                  <span className="ci-locked-label">🔒 Requires:</span>
+                  {selected.missingReqs.map(r => (
+                    <div key={r.type} className="ci-locked-req">
+                      {BUILDING_LABELS[r.type] ?? r.type} Lv.{r.need}
+                      <span className="ci-locked-have"> (you have {r.have})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="ci-actions">
                 <button className="ci-enter" onClick={() => setDrawerOpen(true)}>Enter</button>
                 <button className="ci-upgrade" disabled={up.disabled} onClick={() => onBuild(selected.type)}>⬆ {up.label}</button>
@@ -1097,7 +1116,17 @@ function CityTab({ active, now, counts, setCounts, busy, onBuild, onTrain, onCan
                 <p className="muted" style={{ marginTop: 4 }}>{buildingInfo[selected.type] || ""}</p>
               </div>
 
-              {selected.atMax
+              {selected.locked && selected.missingReqs && selected.missingReqs.length > 0
+                ? <div className="bld-upgrade-panel bld-locked-panel">
+                    <div className="bld-locked-label">🔒 Locked — requires:</div>
+                    {selected.missingReqs.map(r => (
+                      <div key={r.type} className="bld-locked-req">
+                        {BUILDING_LABELS[r.type] ?? r.type} Lv.{r.need}
+                        <span className="bld-locked-have"> (you have {r.have})</span>
+                      </div>
+                    ))}
+                  </div>
+                : selected.atMax
                 ? <div className="bld-upgrade-panel"><div className="bld-maxed">Max level reached</div></div>
                 : (() => {
                 const targetLv = selected.level + queuedSame(selected.type) + 1;

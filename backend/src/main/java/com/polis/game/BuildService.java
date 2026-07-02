@@ -82,6 +82,19 @@ public class BuildService {
       throw new IllegalStateException("Fairies fly — they have no Harbor.");
     if (type==BuildingType.BARRACKS && c.getRace()==Race.NEWTS)
       throw new IllegalStateException("Newts are aquatic — they have no Barracks; train at the Harbor.");
+    // Unlock-gate: prerequisites are only checked for the first construction (level 0 → 1).
+    if (cityService.level(cityId, type) == 0) {
+      Map<BuildingType, Integer> prereqs = BuildingType.PREREQUISITES.getOrDefault(type, Map.of());
+      if (!prereqs.isEmpty()) {
+        Map<BuildingType, Integer> lvs = cityService.levels(cityId);
+        for (Map.Entry<BuildingType, Integer> req : prereqs.entrySet()) {
+          int have = lvs.getOrDefault(req.getKey(), 0);
+          if (have < req.getValue())
+            throw new IllegalStateException(
+                "Requires " + req.getKey().name() + " level " + req.getValue() + " (you have " + have + ")");
+        }
+      }
+    }
     if (jobs.countByCityIdAndQueueType(cityId, QueueType.BUILDING) >= BUILD_QUEUE_MAX)
       throw new IllegalStateException("Construction queue is full (max " + BUILD_QUEUE_MAX + ")");
     // Effective level = built level + upgrades of this building already queued, so

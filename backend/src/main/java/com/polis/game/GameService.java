@@ -88,6 +88,17 @@ public class GameService {
       b.put("seconds",GameRules.buildSeconds(t,l,senate));
       b.put("atMax", l>=t.max);
       if (l < t.max) b.put("benefit", buildingBenefit(t, l));   // what the next level gives
+      // Unlock-gate: compute locked state and missing requirements for level-0 buildings.
+      if (l == 0) {
+        Map<BuildingType, Integer> prereqs = BuildingType.PREREQUISITES.getOrDefault(t, Map.of());
+        List<Map<String,Object>> missing = new ArrayList<>();
+        for (Map.Entry<BuildingType,Integer> req : prereqs.entrySet()) {
+          int have = lv.getOrDefault(req.getKey(), 0);
+          if (have < req.getValue())
+            missing.add(Map.of("type", req.getKey().name(), "need", req.getValue(), "have", have));
+        }
+        if (!missing.isEmpty()) { b.put("locked", true); b.put("missingReqs", missing); }
+      }
       bld.add(b);
     }
 
