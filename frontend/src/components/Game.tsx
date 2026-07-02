@@ -77,6 +77,14 @@ const ResIcon = ({ kind }: { kind: string }) => {
   return <svg className="resicon" viewBox="0 0 24 24" width="22" height="22">{i[kind]}</svg>;
 };
 
+/** Small gold coin, for inline "N gold" labels (e.g. rush cost). */
+const GoldCoin = ({ size = 12 }: { size?: number }) => (
+  <svg className="gold-coin" viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+    <circle cx="12" cy="12" r="9" fill="#f2c94c" stroke="#b8860b" strokeWidth="1.8" />
+    <circle cx="12" cy="12" r="5.5" fill="none" stroke="#d9a520" strokeWidth="1.4" />
+  </svg>
+);
+
 function remaining(finishAt: string | null, now: number) {
   if (!finishAt) return null;
   return Math.max(0, Math.round((new Date(finishAt).getTime() - now) / 1000));
@@ -115,8 +123,6 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const [showMissions, setShowMissions] = useState(false);
   const [showInv, setShowInv] = useState(false);
   const [claimable, setClaimable] = useState(0);
-  const [activeMission, setActiveMission] = useState<string | null>(null);
-  const [nudgeDismissed, setNudgeDismissed] = useState(false);
   const [focusCityId, setFocusCityId] = useState<number | null>(null);   // jump-to-city on world map (from profile)
   const polling = useRef<number>();
   // Monotonic refresh sequence: getState calls from the 3s poll, a rush/cancel action, and city
@@ -125,6 +131,12 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   // rushed job "reappears" and the queue looks inflated until the next poll heals it. Only the latest
   // issued request is allowed to apply its result.
   const refreshSeq = useRef(0);
+  // Mutation gate: a queue order (rush/cancel/build/train) and the 3s poll must never interleave.
+  // While an order is in flight we PAUSE the poll and the expiry auto-refresh, then run a single
+  // authoritative refresh once it settles — so the queue can never render a pre-rush snapshot that
+  // "reappears" a rushed job. `busy` also disables the queue buttons to block double-submits.
+  const mutating = useRef(0);
+  const [busy, setBusy] = useState(false);
 
   // City Groups (per-player organization) — powers the grouped switcher + Manage Groups panel
   const { view: cityGroupsView, overview: citiesOverview, refresh: refreshGroups } = useCityGroups();
@@ -135,8 +147,6 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   const refreshFounding = () => getFoundingStatus().then(s => setFounding(s.founding)).catch(() => {});
   const refreshMissions = () => getMissions().then(m => {
     setClaimable(m.missions.filter(x => x.status === "COMPLETED").length);
-    const first = m.missions.find(x => x.status === "ACTIVE");
-    setActiveMission(first ? `${first.title} — ${first.description}` : null);
   }).catch(() => {});
 
   useEffect(() => { if (!err) return; const t = setTimeout(() => setErr(""), 3500); return () => clearTimeout(t); }, [err]);
@@ -176,7 +186,8 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => { refresh(); }, []);
   useEffect(() => {
-    polling.current = window.setInterval(() => refresh(), 3000);
+    // skip the poll while a queue order is in flight — the order runs its own authoritative refresh
+    polling.current = window.setInterval(() => { if (mutating.current === 0) refresh(); }, 3000);
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => { clearInterval(polling.current); clearInterval(t); };
   }, [activeCityId]);
@@ -186,7 +197,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
   // until the next 3s poll. Guarded per (jobId, finishAt) so it fires once, never in a loop.
   const lastExpiryKey = useRef("");
   useEffect(() => {
-    if (!state) return;
+    if (!state || mutating.current > 0) return;   // don't race an in-flight order's own refresh
     const heads = [state.active.queues.BUILDING[0], state.active.queues.BARRACKS[0], state.active.queues.HARBOR[0]];
     for (const j of heads) {
       if (j?.finishAt && new Date(j.finishAt).getTime() <= now) {
@@ -239,7 +250,14 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 
   const action = (fn: () => Promise<any>) => async () => {
     setErr("");
-    try { await fn(); await refresh(); } catch (e: any) { setErr(e.message); }
+    mutating.current++; setBusy(true);
+    try { await fn(); }
+    catch (e: any) { setErr(e.message); }
+    finally {
+      // always reconcile with the server (success OR failure) so the queue reflects the true state,
+      // then lift the gate. The refreshSeq guard makes this the authoritative last-write.
+      try { await refresh(); } finally { if (--mutating.current <= 0) { mutating.current = 0; setBusy(false); } }
+    }
   };
   const switchCity = (id: number) => { setEditing(false); setActiveCityId(id); refresh(id); };
   const goToCity = (id: number | null) => {
@@ -283,7 +301,6 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 
         <div className="topbar-right">
           <PlayerCrest player={player} onClick={() => setModal("profile")} />
-          <button className="logout" onClick={onLogout}>log out</button>
         </div>
       </div>
 
@@ -292,16 +309,6 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 
       {founding && <FoundingBanner founding={founding} now={now}
         onChoose={() => { setTab("world"); setChooseRace(true); }} />}
-
-      {!nudgeDismissed && activeMission && (
-        <div className="quest-bar">
-          <span className="quest-flag">🏳</span>
-          <span className="quest-label">Next Quest</span>
-          <span className="quest-text">{activeMission}</span>
-          <button className="quest-link" onClick={() => setShowMissions(true)}>View missions</button>
-          <button className="quest-x" onClick={() => setNudgeDismissed(true)}>✕</button>
-        </div>
-      )}
 
       <div className="game-shell">
         <SideNav
@@ -321,11 +328,15 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
                 {tab === "city" ? "🌐 World View" : "🏠 City View"}
               </button>
             </div>
+            <button className="stage-quest-btn" title="Missions" onClick={() => setShowMissions(true)}>
+              <span className="sqb-ico">🏳</span>
+              {claimable > 0 && <span className="nav-pip">{claimable}</span>}
+            </button>
           </div>
           <div className="stage-body">
             {/* NO key on active.id: keep the open building panel/drawer across city switches — it
                 re-scopes to the current city (selected building is re-derived from `active`). */}
-            {tab === "city" && <CityTab active={active} now={now} counts={counts} setCounts={setCounts}
+            {tab === "city" && <CityTab active={active} now={now} counts={counts} setCounts={setCounts} busy={busy}
               onBuild={(t) => action(() => doBuild(active.id, t))()}
               onTrain={(t, c) => action(() => doTrain(active.id, t, c))()}
               onCancel={(j) => action(() => doCancel(active.id, j))()}
@@ -395,7 +406,7 @@ export default function Game({ onLogout }: { onLogout: () => void }) {
 
       {modal === "rankings" && <Modal title="Rankings" onClose={() => setModal(null)}><Rankings onGoCity={goToCityOnMap} /></Modal>}
       {modal === "profile" && <ProfilePanel player={player} cities={cities}
-        faction={active.race?.name ?? "—"} onClose={() => setModal(null)} onGoCity={goToCityOnMap} />}
+        faction={active.race?.name ?? "—"} onClose={() => setModal(null)} onGoCity={goToCityOnMap} onLogout={onLogout} />}
       {modal === "alliance" && <Modal title="Alliance" onClose={() => setModal(null)}>
         <AlliancePanel player={player} onChanged={() => refresh()} setErr={setErr} />
       </Modal>}
@@ -443,7 +454,10 @@ function TroopsPanel({ units, trainable, onDetails }: { units: { type: string; c
     <div className="side-card troops-panel">
       <div className="sc-head">
         <span className="sc-title">⚔ Troops</span>
-        <span className="sc-sub">{sum(troops)} in city · <button className="tp-details" title="Troops abroad & foreign troops here" onClick={onDetails}>🔍 Details</button></span>
+        <span className="tp-head-right">
+          <span className="sc-sub">{sum(troops)} in city</span>
+          <button className="cm-expand" title="Troops detail — armies abroad & foreign troops here" onClick={onDetails}>⤢</button>
+        </span>
       </div>
       {troops.length === 0
         ? <p className="muted tp-empty">No ground troops. Train them in the Barracks.</p>
@@ -472,7 +486,6 @@ function SideNav({ unreadReports, claimable, heroPts, serverLine, onReports, onM
       <ServerClock />
       <div className="nav-group">Command</div>
       <Item icon="📜" label="Reports" onClick={onReports} badge={unreadReports} hostile />
-      <Item icon="🏳" label="Missions" onClick={onMissions} badge={claimable} />
       <Item icon="🛡" label="Heroes" onClick={onHeroes} badge={heroPts} />
       <Item icon="🏰" label="Bandit Tower" onClick={onTower} />
       <Item icon="🎒" label="Inventory" onClick={onInventory} />
@@ -924,9 +937,9 @@ function ResourceBar({ active, gold }: { active: CityDetail; gold: number }) {
   );
 }
 
-function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, onFinish, onCallGuard }: {
+function CityTab({ active, now, counts, setCounts, busy, onBuild, onTrain, onCancel, onFinish, onCallGuard }: {
   active: CityDetail; now: number; counts: Record<string, number>;
-  setCounts: (c: Record<string, number>) => void;
+  setCounts: (c: Record<string, number>) => void; busy: boolean;
   onBuild: (t: string) => void; onTrain: (t: string, c: number) => void;
   onCancel: (j: number) => void; onFinish: (j: number) => void;
   onCallGuard: () => void;
@@ -989,71 +1002,78 @@ function CityTab({ active, now, counts, setCounts, onBuild, onTrain, onCancel, o
 
   return (
     <div className="city-view">
-      {/* painted island scene — terrain base + clickable building groups, all in
-          one viewBox so they scale together with the container width */}
-      <div className="city-scene">
-        <svg className="city-svg" viewBox={`0 0 ${SCENE_W} ${SCENE_H}`} preserveAspectRatio="xMidYMid meet">
-          <image href={TERRAIN_URL} x="0" y="0" width={SCENE_W} height={SCENE_H}
-            onClick={deselect} style={{ cursor: "default" }} />
-          {placed.map(({ p }) => {
-            const sel = selectedBuilding === p.type;
-            const imgX = p.x - p.w / 2;
-            const imgY = p.y - p.w * (p.base ?? ICON_BASE);
-            return (
-              <g key={p.type}
-                className={"bld-grp" + (sel ? " sel" : "")}
-                style={{ transformOrigin: `${p.x}px ${p.y}px` }}
-                onClick={(e) => { e.stopPropagation(); setSelectedBuilding(p.type); }}>
-                {sel && <ellipse className="bld-ring" cx={p.x} cy={p.y}
-                  rx={p.w * 0.34} ry={p.w * 0.34 * 0.32} />}
-                <image href={p.icon} x={imgX} y={imgY} width={p.w} height={p.w} />
-              </g>
-            );
-          })}
-        </svg>
-
-        {/* building name labels — HTML overlay, not svg <text> */}
-        <div className="city-labels">
-          {placed.map(({ p, b }) => (
-            <span key={p.type} className="city-label"
-              style={{ left: `${(p.x / SCENE_W) * 100}%`, top: `${((p.y + 13) / SCENE_H) * 100}%` }}>
-              {p.name}{constructing.has(p.type) ? " 🔨" : b.level > 0 ? ` · ${b.level}` : ""}
-            </span>
-          ))}
+      {/* island stage — flex:1 region that scales the whole island to fit. The terrain,
+          every building AND its level badge live in ONE svg viewBox, so they share a
+          coordinate space and can never drift or overlap at any size; preserveAspectRatio
+          letterboxes the island (as sea) inside whatever box this area happens to be. */}
+      <div className="city-stage-area">
+        <div className="city-scene">
+          <svg className="city-svg" viewBox={`0 0 ${SCENE_W} ${SCENE_H}`} preserveAspectRatio="xMidYMid meet">
+            <image href={TERRAIN_URL} x="0" y="0" width={SCENE_W} height={SCENE_H}
+              onClick={deselect} style={{ cursor: "default" }} />
+            {placed.map(({ p, b }) => {
+              const sel = selectedBuilding === p.type;
+              const isBuilding = constructing.has(p.type);
+              const imgX = p.x - p.w / 2;
+              const imgY = p.y - p.w * (p.base ?? ICON_BASE);
+              // Compact label: a small level badge anchored to the building's ground point in
+              // viewBox units — it scales with the island and stays pinned, so labels never
+              // collide. Full name shows via the native <title> on hover and the info panel on tap.
+              const badge = isBuilding ? "🔨" : b.level > 0 ? String(b.level) : "+";
+              return (
+                <g key={p.type}
+                  className={"bld-grp" + (sel ? " sel" : "")}
+                  style={{ transformOrigin: `${p.x}px ${p.y}px` }}
+                  onClick={(e) => { e.stopPropagation(); setSelectedBuilding(p.type); }}>
+                  <title>{p.name}{isBuilding ? " · upgrading" : b.level > 0 ? ` · Level ${b.level}` : " · not built"}</title>
+                  {sel && <ellipse className="bld-ring" cx={p.x} cy={p.y}
+                    rx={p.w * 0.34} ry={p.w * 0.34 * 0.32} />}
+                  <image href={p.icon} x={imgX} y={imgY} width={p.w} height={p.w} />
+                  <g className="bld-badge-g" transform={`translate(${p.x} ${p.y + 12})`}>
+                    <rect className={"bld-badge-bg" + (sel ? " sel" : "") + (isBuilding ? " building" : "")}
+                      x={-19} y={-15} width={38} height={26} rx={13} />
+                    <text className="bld-badge-tx" x={0} y={-1} textAnchor="middle" dominantBaseline="central">{badge}</text>
+                  </g>
+                </g>
+              );
+            })}
+          </svg>
         </div>
-      </div>
 
-      {/* construction queue bar (bottom-centre) */}
-      <ConstructionBar jobs={active.queues.BUILDING} now={now} onCancel={onCancel} onFinish={onFinish} />
-
-      {/* selected-building info panel (bottom-left) */}
-      {selected && (() => {
-        const sp = PLACEMENT_BY_TYPE[selected.type];
-        const up = upgradeInfo(selected);
-        return (
-          <div className="city-info">
-            <button className="ci-close" onClick={deselect}>✕</button>
-            <div className="ci-head">
-              {sp && <img className="ci-thumb" src={sp.icon} alt="" />}
-              <div className="ci-titles">
-                <h3>{sp?.name || titleCase(selected.type)}</h3>
-                <div className="ci-sub">Level {selected.level}{selected.atMax ? " (max)" : ""} · {sp?.tag || titleCase(selected.type)}</div>
+        {/* selected-building info — floats in the top-left letterbox gutter of the island area,
+            dismissible; sits over sea, never the build queue or action bar (those are docked below) */}
+        {selected && (() => {
+          const sp = PLACEMENT_BY_TYPE[selected.type];
+          const up = upgradeInfo(selected);
+          return (
+            <div className="city-info">
+              <button className="ci-close" onClick={deselect}>✕</button>
+              <div className="ci-head">
+                {sp && <img className="ci-thumb" src={sp.icon} alt="" />}
+                <div className="ci-titles">
+                  <h3>{sp?.name || titleCase(selected.type)}</h3>
+                  <div className="ci-sub">Level {selected.level}{selected.atMax ? " (max)" : ""} · {sp?.tag || titleCase(selected.type)}</div>
+                </div>
+              </div>
+              <p className="ci-desc">{buildingInfo[selected.type] || ""}</p>
+              <div className="ci-actions">
+                <button className="ci-enter" onClick={() => setDrawerOpen(true)}>Enter</button>
+                <button className="ci-upgrade" disabled={up.disabled} onClick={() => onBuild(selected.type)}>⬆ {up.label}</button>
               </div>
             </div>
-            <p className="ci-desc">{buildingInfo[selected.type] || ""}</p>
-            <div className="ci-actions">
-              <button className="ci-enter" onClick={() => setDrawerOpen(true)}>Enter</button>
-              <button className="ci-upgrade" disabled={up.disabled} onClick={() => onBuild(selected.type)}>⬆ {up.label}</button>
-            </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
+      </div>
 
-      {/* primary action toolbar */}
-      <div className="city-action-bar">
-        <button className="cab-btn" onClick={() => { setSelectedBuilding("BARRACKS"); setDrawerOpen(true); }}><span className="cab-ico">⚔</span>Recruit</button>
-        <button className="cab-btn" onClick={() => setShowMarket(true)}><span className="cab-ico">🔁</span>Trade</button>
-        <button className="cab-btn" onClick={() => setShowSpy(true)}><span className="cab-ico">🕵</span>Spy</button>
+      {/* reserved dock — action buttons + build queue live OUTSIDE the island area so they
+          can never cover it. Wraps to two rows when narrow; the queue scrolls horizontally. */}
+      <div className="city-dock">
+        <div className="city-action-bar">
+          <button className="cab-btn" onClick={() => { setSelectedBuilding("BARRACKS"); setDrawerOpen(true); }}><span className="cab-ico">⚔</span>Recruit</button>
+          <button className="cab-btn" onClick={() => setShowMarket(true)}><span className="cab-ico">🔁</span>Trade</button>
+          <button className="cab-btn" onClick={() => setShowSpy(true)}><span className="cab-ico">🕵</span>Spy</button>
+        </div>
+        <ConstructionBar jobs={active.queues.BUILDING} now={now} busy={busy} onCancel={onCancel} onFinish={onFinish} />
       </div>
 
       {/* Barracks/Harbor: dedicated dark training modal (own look, not the parchment drawer) */}
@@ -1182,16 +1202,21 @@ const HammerIcon = () => (
 );
 
 const BUILD_QUEUE_SLOTS = 5;   // matches server-side BUILD_QUEUE_MAX
-function ConstructionBar({ jobs, now, onCancel, onFinish }: { jobs: any[]; now: number; onCancel: (j: number) => void; onFinish: (j: number) => void; }) {
-  // Sort by position so the running head is always slot 0, then drive "running vs queued" off the
-  // slot INDEX (not the raw position value) — the bar can then only ever show ONE active countdown,
-  // immune to any stray/duplicate position in the data.
-  const shown = [...jobs].sort((a, b) => a.position - b.position).slice(0, BUILD_QUEUE_SLOTS);
+function ConstructionBar({ jobs, now, busy, onCancel, onFinish }: { jobs: any[]; now: number; busy: boolean; onCancel: (j: number) => void; onFinish: (j: number) => void; }) {
+  // Render defensively so a transient/torn snapshot can NEVER show a duplicate or a second runner:
+  //  1) de-dupe by job id (a stale poll can't paint the same job twice),
+  //  2) sort by position and cap at the queue size,
+  //  3) drive "running vs queued" off the slot INDEX, so only slot 0 ever shows a countdown.
+  const seen = new Set<number>();
+  const shown = [...jobs]
+    .sort((a, b) => a.position - b.position)
+    .filter(j => (seen.has(j.id) ? false : (seen.add(j.id), true)))
+    .slice(0, BUILD_QUEUE_SLOTS);
   return (
     <div className="city-build-bar">
       {Array.from({ length: BUILD_QUEUE_SLOTS }).map((_, i) => {
         const j = shown[i];
-        if (!j) return <div className="cbslot empty" key={i}><HammerIcon /></div>;
+        if (!j) return <div className="cbslot empty" key={"e" + i}><HammerIcon /></div>;
         const rem = remaining(j.finishAt, now);
         // a running head whose timer has elapsed is DONE (awaiting the server sweep) — never show it
         // as a 0:00 slot with a live rush button, which read as a second "running" job.
@@ -1206,9 +1231,10 @@ function ConstructionBar({ jobs, now, onCancel, onFinish }: { jobs: any[]; now: 
               ? <span className="cbart"><img src={PLACEMENT_BY_TYPE[j.label].icon} alt={titleCase(j.label)} /></span>
               : <span className="cbart" dangerouslySetInnerHTML={{ __html: buildingSvg(j.label, j.toLevel || 1) }} />}
             <span className="cbtime">{i === 0 ? (done ? "✓" : rem != null ? clock(rem) : "…") : `#${i}`}</span>
+            {j.toLevel != null && <span className="cblv">Lv {j.toLevel}</span>}
             <div className="cbbar"><i style={{ width: pct + "%" }} /></div>
-            {canRush && <button className="cbrush" title={`Rush for ${Math.max(1, Math.ceil(rushSecs / 60))} gold`} onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rushSecs / 60))}</button>}
-            <a className="cbcancel" onClick={() => onCancel(j.id)}>✕</a>
+            {canRush && <button className="cbrush" disabled={busy} title={`Rush for ${Math.max(1, Math.ceil(rushSecs / 60))} gold`} onClick={() => onFinish(j.id)}>⚡{Math.max(1, Math.ceil(rushSecs / 60))}</button>}
+            <a className={"cbcancel" + (busy ? " disabled" : "")} onClick={() => { if (!busy) onCancel(j.id); }}>✕</a>
           </div>
         );
       })}
@@ -1327,7 +1353,7 @@ function BarracksPanel({ active, building, freePop, buildQueueFull, queuedSame, 
             </div>
             <button className="bp-max" disabled={maxTrain <= 0} onClick={() => setQty(u.type, maxTrain)}>MAX</button>
             <button className="bp-train" disabled={req <= 0 || over || maxTrain <= 0}
-              onClick={() => onTrain(u.type, actual)}>Train</button>
+              onClick={() => { onTrain(u.type, actual); setQty(u.type, 0); }}>Train</button>
           </div>
         ) : <span className="bp-research">🔒 Research needed</span>}
         {hover === u.type && statPop(u)}
@@ -1440,7 +1466,12 @@ function BarracksPanel({ active, building, freePop, buildQueueFull, queuedSame, 
                         <span className="bp-job-qty">×{j.batch ?? 1}</span>
                         <span className="bp-job-spacer" />
                         <span className="bp-job-time">{done ? "✓" : rem != null ? clock(rem) : "queued"}</span>
-                        {!done && <button className="bp-job-rush" title={`Rush for ${Math.max(1, Math.ceil(rushSecs / 60))} gold`} onClick={() => onFinish(j.id)}>⚡</button>}
+                        {!done && (() => {
+                          const goldCost = Math.max(1, Math.ceil(rushSecs / 60));   // matches server rushCost: 1 gold / min remaining
+                          return <button className="bp-job-rush" title={`Rush for ${goldCost} gold`} onClick={() => onFinish(j.id)}>
+                            {goldCost}<GoldCoin />
+                          </button>;
+                        })()}
                         <button className="bp-job-x" onClick={() => onCancel(j.id)}>✕</button>
                       </div>
                       <div className="bp-job-bar"><i style={{ width: pct + "%" }} /></div>

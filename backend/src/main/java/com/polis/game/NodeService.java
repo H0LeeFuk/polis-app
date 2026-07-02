@@ -109,6 +109,11 @@ public class NodeService {
     m.put("garrisonPop", pop);
     m.put("garrisonCap", cap);
     m.put("ratePerHour", Math.round(NodeRules.ratePerHour(n.getLevel(), pop)));
+    // Per-payout-cycle (10 min) generation for this single resource. `ratePer10Min` is what the
+    // current garrison yields; `maxRatePer10Min` is the node's rated output at full garrison — shown
+    // so an UNCLAIMED node still advertises what it can generate (instead of a bare 0).
+    m.put("ratePer10Min", Math.round(NodeRules.ratePerHour(n.getLevel(), pop) / 6.0));
+    m.put("maxRatePer10Min", Math.round(NodeRules.ratePerHour(n.getLevel(), cap) / 6.0));
     m.put("controlSince", n.getControlSince()==null ? null : n.getControlSince().toString());
 
     // per-player garrison + share

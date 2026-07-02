@@ -17,7 +17,7 @@ public class Player {
   @Column(name="combat_points_total") private int combatPointsTotal = 0; // lifetime war score (rankings) — never spent
   @Column(name="culture_points") private int culturePoints = 0;          // toward the next level
   @Column(name="culture_points_total") private int culturePointsTotal = 0; // lifetime (prestige/rankings)
-  private int gold = 500;   // premium currency: rush construction/training
+  private int gold = 0;     // premium currency: rush construction/training — earned in-game, starts empty
   @Column(name="is_npc") private boolean npc = false;
   private Instant createdAt = Instant.now();
 }

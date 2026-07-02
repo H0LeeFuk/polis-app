@@ -20,9 +20,9 @@ type CityRow = { id: number; name: string; points: number; raceName: string | nu
  * Player profile card. Shows the logged-in player when passed {@code player}+{@code cities}, or another
  * player's public profile when passed {@code playerId} (e.g. clicking a name in the rankings).
  */
-export default function ProfilePanel({ player, cities, onClose, playerId, onGoCity }: {
+export default function ProfilePanel({ player, cities, onClose, playerId, onGoCity, onLogout }: {
   player?: PlayerDto; cities?: CitySummary[]; faction?: string; onClose: () => void; playerId?: number;
-  onGoCity?: (cityId: number) => void;
+  onGoCity?: (cityId: number) => void; onLogout?: () => void;
 }) {
   const isSelf = playerId == null;
   const [pub, setPub] = useState<PublicProfile | null>(null);
@@ -125,6 +125,12 @@ export default function ProfilePanel({ player, cities, onClose, playerId, onGoCi
           ))}
           {sorted.length === 0 && <div className="profile-city-row muted">No cities.</div>}
         </div>
+
+        {isSelf && onLogout && (
+          <footer className="profile-foot">
+            <button className="profile-logout" onClick={onLogout}>Log out</button>
+          </footer>
+        )}
       </div>
     </div>
   );

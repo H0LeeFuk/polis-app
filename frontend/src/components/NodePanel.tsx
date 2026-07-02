@@ -81,7 +81,7 @@ export function ResourceIslandModal({ islandId, islandName, ctx, onClose }: {
                         ? `${n.controllingAllianceEmblem ?? ""} held by ${n.controllingAllianceName ?? "?"}`
                         : titleCase(n.status)}</small>
                     </span>
-                    <span className="node-row-res">{RES_GLYPH[n.producedResource]} {n.ratePerHour}/h</span>
+                    <span className="node-row-res">{RES_GLYPH[n.producedResource]} {fmtN(n.maxRatePer10Min)}/10min</span>
                   </div>
                 ))}
               </div>}
@@ -206,7 +206,8 @@ export default function NodePanel({ nodeId, ctx, onClose, onChanged }: {
               <div><strong>Status</strong><span className={"node-badge tone-" + statusTone(node)}>{titleCase(node.status)}</span></div>
               <div><strong>Controller</strong><span>{node.controllingAllianceName
                 ? <>{node.controllingAllianceEmblem} {node.controllingAllianceName}</> : "Unclaimed"}</span></div>
-              <div><strong>Produces</strong><span>{RES_GLYPH[node.producedResource]} {node.ratePerHour}/h</span></div>
+              <div><strong>Produces</strong><span>{RES_GLYPH[node.producedResource]} {fmtN(node.maxRatePer10Min)}/10min
+                {node.status === "CONTROLLED" && node.garrisonPop < node.garrisonCap && <small className="muted"> · now {fmtN(node.ratePer10Min)}</small>}</span></div>
               <div><strong>Garrison</strong><span>{node.garrisonPop} / {node.garrisonCap} pop</span></div>
             </div>
             {node.status === "CONTROLLED" && (
@@ -257,9 +258,15 @@ function TroopSelector({ myUnits, counts, setCounts, label }: {
   myUnits: UnitDto[]; counts: Record<string, number>; setCounts: (c: Record<string, number>) => void; label: string;
 }) {
   if (myUnits.length === 0) return <p className="muted">No troops in your active city.</p>;
+  const allSelected = myUnits.every(u => (counts[u.type] || 0) >= u.count);
+  const selectAll = () => setCounts({ ...counts, ...Object.fromEntries(myUnits.map(u => [u.type, u.count])) });
+  const clearAll = () => setCounts({ ...counts, ...Object.fromEntries(myUnits.map(u => [u.type, 0])) });
   return (
     <>
-      <p className="muted">{label}</p>
+      <p className="muted node-sel-head">{label}
+        <button className="node-selectall" onClick={allSelected ? clearAll : selectAll}>
+          {allSelected ? "Clear" : "Select all"}</button>
+      </p>
       {myUnits.map(u => (
         <div key={u.type} className="raid-row">
           <span>{glyph(u.type)} {titleCase(u.type)} <small className="muted">({u.count})</small></span>

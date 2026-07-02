@@ -347,7 +347,7 @@ export interface ResourceNode {
   level: number; status: NodeStatus;
   controllingPlayerId: number | null;
   controllingAllianceId: number | null; controllingAllianceName: string | null; controllingAllianceEmblem: string | null;
-  garrisonPop: number; garrisonCap: number; ratePerHour: number;
+  garrisonPop: number; garrisonCap: number; ratePerHour: number; ratePer10Min: number; maxRatePer10Min: number;
   controlSince: string | null;
   holders: NodeHolder[]; myPop: number; mySharePct: number; viewerControls: boolean; name: string;
 }

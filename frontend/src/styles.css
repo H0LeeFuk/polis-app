@@ -13,10 +13,10 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .fullscreen-view{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;border:1px solid #3a2a1d;border-radius:12px;padding:0;background:#17100bcc}
 
 /* top bar */
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid #3a2a1d;position:relative}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:4px 14px;border-bottom:1px solid #3a2a1d;position:relative}
 .topbar-left{display:flex;align-items:center;gap:14px;min-width:0}
-.topbar-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;text-align:right;min-width:0}
-.brand{font-family:'Cinzel';font-weight:900;font-size:22px;color:var(--gold);letter-spacing:.12em}
+.topbar-right{display:flex;flex-direction:row;align-items:center;gap:12px;text-align:right;min-width:0}
+.brand{font-family:'Cinzel';font-weight:900;font-size:20px;color:var(--gold);letter-spacing:.12em}
 .cityswitch{display:flex;align-items:center;gap:4px;min-width:0}
 .cs-name{font-family:'Cinzel';font-weight:700;font-size:14px;color:var(--ivory);background:#1c130e;border:1px solid var(--gold-deep);
   border-right:0;border-radius:11px 0 0 11px;padding:7px 15px;max-width:24vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -33,6 +33,8 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .crest.clickable{cursor:pointer;border-radius:10px;padding:2px 6px;transition:background .12s}
 .crest.clickable:hover{background:rgba(232,201,127,0.12)}
 .crest-shield{position:relative;flex:0 0 auto;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4))}
+/* compact crest so the topbar stays short — the shield svg is the tallest topbar element */
+.crest-shield svg{display:block;width:40px;height:43px}
 .crest-lv{position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);background:#1c130e;border:1px solid var(--gold);color:var(--gold);font-family:'Cinzel';font-weight:700;font-size:10px;padding:1px 7px;border-radius:999px;white-space:nowrap}
 .crest-meta{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}
 .crest-name{font-family:'Cinzel';font-weight:700;font-size:14px;color:var(--ivory)}
@@ -42,10 +44,11 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .logout{background:none;border:0;color:var(--ivory-dim);font-size:11px;text-decoration:underline}
 
 /* resource bar */
-.resbar{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:0;padding:0;min-width:320px}
-.rescard{display:flex;align-items:center;gap:8px;background:#0f0a07cc;border:1px solid #4a3625;padding:8px 12px;border-radius:12px;min-width:104px}
-.rescard .resicon{flex:0 0 auto;filter:drop-shadow(0 1px 1px #0006)}
-.rescard-val{font-weight:700;font-size:14px;color:var(--ivory);font-family:'Cinzel'}
+.resbar{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin:0;padding:0;min-width:260px}
+.rescard{display:flex;align-items:center;gap:5px;background:#0f0a07cc;border:1px solid #4a3625;padding:4px 8px;border-radius:10px;min-width:72px}
+.rescard .resicon{flex:0 0 auto;width:18px;height:18px;filter:drop-shadow(0 1px 1px #0006)}
+.rescard .resicon-emoji{font-size:15px}
+.rescard-val{font-weight:700;font-size:12.5px;color:var(--ivory);font-family:'Cinzel'}
 .rescard-val small{font-size:11px;color:var(--ivory-dim);font-weight:600}
 .rescard.full .rescard-val{color:var(--bad)}
 .chip{display:flex;align-items:center;gap:7px;background:#0f0a07cc;border:1px solid #4a3625;padding:8px 12px;border-radius:12px;min-width:104px}
@@ -77,19 +80,31 @@ button{font-family:'Spectral',serif;cursor:pointer}
 /* fullscreen view container */
 .fullscreen-view{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;border:1px solid #3a2a1d;border-radius:12px;padding:0;background:#17100bcc}
 
-.city-view{position:relative;width:100%;height:100%;overflow:hidden;background:linear-gradient(180deg,#3f8593 6px,#234e59 calc(100% - 88px));display:flex;align-items:center;justify-content:center;padding:6px 6px 88px;box-sizing:border-box}
-/* painted island scene — height-driven contain so the whole island (incl. harbor)
-   stays visible and clickable; svg + label overlay share one aspect-matched box */
-.city-scene{position:relative;height:100%;width:auto;max-width:100%;aspect-ratio:1000/760;margin:auto}
+/* City View = vertical stack: island stage (scales to fit) + reserved dock (actions + queue),
+   so the UI can never cover the island at any width. */
+/* full-bleed map: the sea gradient fills the whole stage (no letterbox bars), and the action
+   bar + build queue float ON TOP of it (see .city-dock). */
+.city-view{position:relative;width:100%;height:100%;overflow:hidden;background:linear-gradient(180deg,#3f8593 0,#234e59 100%);box-sizing:border-box}
+/* island stage fills the entire view and scales the island to fit. Terrain + buildings + level
+   badges all live in ONE svg viewBox, so they scale as one unit and can never drift/overlap;
+   preserveAspectRatio centres the island, the gradient reading as surrounding sea edge-to-edge. */
+.city-stage-area{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px;box-sizing:border-box;overflow:hidden}
+.city-scene{position:relative;width:100%;height:100%}
 .city-svg{display:block;width:100%;height:100%}
 .bld-grp{cursor:pointer;transition:transform .12s ease}
 .bld-grp:hover{transform:scale(1.07);filter:drop-shadow(0 6px 7px rgba(0,0,0,.4))}
 .bld-grp.sel{filter:drop-shadow(0 4px 6px rgba(0,0,0,.45))}
 .bld-ring{fill:none;stroke:#e0a14a;stroke-width:4;opacity:.95;filter:drop-shadow(0 0 6px rgba(224,161,74,.6))}
-.city-labels{position:absolute;inset:0;pointer-events:none}
-.city-label{position:absolute;transform:translateX(-50%);white-space:nowrap;font-family:'Cinzel';font-weight:700;font-size:clamp(9px,1.35vw,15px);color:#fff;text-shadow:0 1px 2px #000,0 0 4px rgba(0,0,0,.7);pointer-events:none}
-/* selected-building info panel (bottom-left) */
-.city-info{position:absolute;left:16px;bottom:16px;z-index:14;width:288px;max-width:42vw;background:rgba(21,15,10,.96);border:1px solid #e0995e;border-radius:14px;padding:14px 16px;box-shadow:0 10px 32px rgba(0,0,0,.55)}
+/* compact level badge — anchored to its building in viewBox units, so it scales with the
+   island and stays pinned; badges never collide (buildings are spaced far wider apart). */
+.bld-badge-g{pointer-events:none}
+.bld-badge-bg{fill:#1c130e;stroke:#d8ad53;stroke-width:2;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55))}
+.bld-badge-bg.building{fill:#2f5d34;stroke:#8fd64a}
+.bld-badge-bg.sel{fill:#d8ad53;stroke:#fff}
+.bld-badge-tx{fill:#f3e6c4;font-family:'Cinzel',serif;font-weight:800;font-size:17px}
+.bld-grp.sel .bld-badge-tx{fill:#1c130e}
+/* selected-building info — floats in the island area's top-left gutter (over sea), dismissible */
+.city-info{position:absolute;left:12px;top:12px;z-index:14;width:280px;max-width:min(80%,300px);max-height:calc(100% - 24px);overflow:auto;background:rgba(21,15,10,.96);border:1px solid #e0995e;border-radius:14px;padding:14px 16px;box-shadow:0 10px 32px rgba(0,0,0,.55)}
 .ci-close{position:absolute;top:8px;right:10px;background:none;border:none;color:#a59c8c;font-size:15px;cursor:pointer}
 .ci-head{display:flex;gap:12px;align-items:center}
 .ci-thumb{width:54px;height:54px;flex:0 0 auto;object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))}
@@ -120,7 +135,15 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .city-name-tag{position:absolute;top:14px;left:18px;background:rgba(20,14,10,0.78);border:1px solid rgba(218,160,83,0.5);border-radius:12px;padding:8px 14px;z-index:7}
 .city-name-tag strong{display:block;font-family:'Cinzel';font-size:18px;color:var(--gold);letter-spacing:.05em}
 .city-name-tag small{color:var(--ivory-dim);font-size:11px}
-.city-build-bar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:8px;z-index:8;padding:7px 9px;background:rgba(20,14,10,0.55);border:1px solid rgba(218,160,83,0.35);border-radius:14px}
+/* dock floats ON TOP of the full-bleed map — actions bottom-left, build queue bottom-right,
+   each in its own translucent pill so it reads over the sea. The container ignores pointer
+   events (so the sea stays clickable to deselect); only the pills are interactive. */
+.city-dock{position:absolute;left:0;right:0;bottom:0;z-index:8;display:flex;align-items:flex-end;
+  justify-content:space-between;gap:12px;padding:10px 12px;pointer-events:none;flex-wrap:wrap}
+.city-action-bar,.city-build-bar{pointer-events:auto}
+.city-build-bar{display:flex;gap:8px;padding:7px 9px;background:rgba(20,14,10,0.55);
+  border:1px solid rgba(218,160,83,0.35);border-radius:14px;
+  overflow-x:auto;overflow-y:hidden;max-width:72%;flex:0 1 auto;justify-content:flex-end}
 .cbslot{position:relative;width:64px;height:60px;border-radius:10px;background:linear-gradient(#f3e6c4,#e2cf9f);border:1px solid #b89a5c;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .cbslot.active{box-shadow:0 0 0 2px var(--gold),0 2px 6px rgba(0,0,0,0.4)}
 .cbslot.empty{background:linear-gradient(#efe2bf,#d9c592);opacity:0.8}
@@ -135,7 +158,12 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .cbbar i{display:block;height:100%;background:linear-gradient(#8fd64a,#5fa524)}
 .cbcancel{position:absolute;top:0;right:3px;color:var(--bad);font-size:11px;cursor:pointer;font-weight:700}
 .cbrush{position:absolute;bottom:9px;right:2px;background:#f2c94c;color:#5a3e08;border:1px solid #b8860b;border-radius:7px;font-size:9px;font-weight:700;padding:1px 3px;cursor:pointer;line-height:1.1}
-.cbrush:hover{background:#ffd95e}
+.cbrush:hover:not(:disabled){background:#ffd95e}
+.cbrush:disabled{opacity:.45;cursor:default}
+.cbcancel.disabled{opacity:.4;cursor:default}
+/* target upgrade level, bottom-left of the slot (e.g. "Lv 4") */
+.cblv{position:absolute;bottom:8px;left:3px;background:#1c130e;color:var(--gold);border:1px solid #b8860b;border-radius:6px;
+  font-family:'Cinzel',serif;font-weight:700;font-size:9px;line-height:1.1;padding:1px 4px;letter-spacing:.02em}
 .rescard.premium{background:linear-gradient(#2a2008cc,#1c1404cc);border-color:#b8860b}
 .gold-btn{background:#f2c94c;color:#5a3e08;border:1px solid #b8860b;padding:2px 7px;font-size:11px}
 .gold-btn:hover{background:#ffd95e}
@@ -253,8 +281,9 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .bp-job-qty{font-size:12px;color:#8b877f}
 .bp-job-spacer{flex:1}
 .bp-job-time{font-size:11.5px;color:#8b877f;font-variant-numeric:tabular-nums}
-.bp-job-rush{background:none;border:0;color:#d8ad53;font-size:13px;cursor:pointer;padding:0 2px}
+.bp-job-rush{display:inline-flex;align-items:center;gap:3px;background:none;border:0;color:#d8ad53;font-size:12px;font-weight:700;cursor:pointer;padding:0 3px;font-variant-numeric:tabular-nums}
 .bp-job-rush:hover{color:#f2c94c}
+.gold-coin{flex:0 0 auto;display:block}
 .bp-job-x{background:none;border:0;color:#a05149;font-size:13px;cursor:pointer;padding:0 2px}
 .bp-job-x:hover{color:#d8574a}
 .bp-job-bar{height:5px;border-radius:3px;background:#0b0b10;border:1px solid rgba(150,158,182,0.12);margin-top:6px;overflow:hidden}
@@ -372,6 +401,11 @@ button{font-family:'Spectral',serif;cursor:pointer}
 .island{position:absolute;transform:translate(-50%,-50%);text-align:center;cursor:pointer}
 .raid-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #2a1f15}
 .raid-row input{width:80px}
+/* troop selector header with a Select all / Clear toggle (resource-node send) */
+.node-sel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px}
+.node-selectall{background:none;border:1px solid var(--gold-deep);color:var(--gold);border-radius:7px;
+  padding:2px 9px;font-family:'Cinzel',serif;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap}
+.node-selectall:hover{background:rgba(232,201,127,0.12);border-color:var(--gold)}
 .msg-input{width:100%;background:#0f0a07;border:1px solid #4a3625;border-radius:10px;color:var(--ivory);padding:10px;font-family:inherit;resize:vertical}
 .msg-row{border:1px solid #2a1f15;border-radius:10px;padding:10px;margin-bottom:8px}
 .msg-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
@@ -1017,24 +1051,26 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
 .game-shell{flex:1;min-height:0;display:grid;grid-template-columns:208px minmax(0,1fr) 312px;gap:12px;padding-top:12px;overflow:hidden}
 .game-shell.no-info{grid-template-columns:208px minmax(0,1fr)}
 
-/* left nav rail */
-.side-nav{display:flex;flex-direction:column;gap:3px;overflow:auto;padding-right:2px}
-.nav-group{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
-  opacity:.85;margin:12px 8px 4px;display:flex;align-items:center;gap:6px}
+/* left nav rail — compact & height-responsive so every command fits without a scrollbar on
+   normal viewports; row padding shrinks with viewport height (clamp) and only when the screen
+   is genuinely too short does overflow:auto kick in. */
+.side-nav{display:flex;flex-direction:column;gap:2px;overflow:auto;padding-right:2px}
+.nav-group{font-family:'Cinzel',serif;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+  opacity:.85;margin:clamp(4px,1vh,10px) 8px 3px;display:flex;align-items:center;gap:6px}
 .nav-group:first-child{margin-top:2px}
 .nav-group::before{content:"◆";font-size:8px;color:var(--gold-deep)}
-.nav-item{position:relative;display:flex;align-items:center;gap:11px;background:rgba(26,19,14,0.55);border:1px solid transparent;
-  border-radius:11px;padding:10px 13px;color:var(--ivory);font-family:'Cinzel',serif;font-size:13.5px;font-weight:600;
-  letter-spacing:.04em;text-align:left;transition:background .12s,border-color .12s,color .12s}
+.nav-item{position:relative;display:flex;align-items:center;gap:10px;background:rgba(26,19,14,0.55);border:1px solid transparent;
+  border-radius:10px;padding:clamp(5px,0.95vh,10px) 12px;color:var(--ivory);font-family:'Cinzel',serif;font-size:12.5px;font-weight:600;
+  letter-spacing:.03em;text-align:left;transition:background .12s,border-color .12s,color .12s}
 .nav-item:hover{background:rgba(42,30,22,0.95);border-color:var(--gold-deep);color:var(--gold)}
-.nav-ico{font-size:16px;width:20px;text-align:center;flex:0 0 auto}
+.nav-ico{font-size:15px;width:19px;text-align:center;flex:0 0 auto}
 .nav-lbl{flex:1;text-transform:uppercase;font-size:12.5px}
 .nav-pip{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--gold);color:var(--slip);
   font-family:'Cinzel';font-weight:700;font-size:11px;line-height:20px;text-align:center}
 .nav-pip.hostile{background:var(--bad);color:#fff}
-.nav-foot{margin-top:auto;padding:12px 10px 4px;font-size:11px;color:var(--ivory-dim);font-family:'Cinzel',serif;
+.nav-foot{margin-top:auto;padding:clamp(6px,1vh,12px) 10px 2px;font-size:11px;color:var(--ivory-dim);font-family:'Cinzel',serif;
   border-top:1px solid #2a1f15}
-.server-clock{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:6px 10px;margin-bottom:4px;
+.server-clock{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:5px 10px;margin-bottom:3px;
   background:rgba(20,14,10,0.6);border:1px solid #2a1f15;border-radius:9px;font-family:'Cinzel',serif}
 .sc-clock-day{font-size:11px;color:var(--ivory-dim);letter-spacing:.04em}
 .sc-clock-time{font-size:14px;font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums}
@@ -1048,6 +1084,12 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
   font-family:'Cinzel',serif;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
 .map-tab:hover{background:#2c1f16;color:var(--gold)}
 .map-tab.active{background:var(--gold);color:var(--slip);border-color:var(--gold)}
+/* compact missions button — right side of the stage bar (replaces the old top quest bar + nav item) */
+.stage-quest-btn{position:relative;display:flex;align-items:center;gap:5px;background:#1c130e;border:1px solid var(--gold-deep);
+  color:var(--ivory);border-radius:9px;padding:6px 10px;line-height:1;cursor:pointer}
+.stage-quest-btn:hover{background:#2c1f16;border-color:var(--gold);color:var(--gold)}
+.sqb-ico{font-size:16px;line-height:1}
+.stage-quest-btn .nav-pip{min-width:16px;height:16px;font-size:9px;line-height:16px;padding:0 4px}
 .map-loc{font-family:'Cinzel',serif;font-size:13px;color:var(--gold);background:rgba(20,14,10,0.7);
   border:1px solid var(--gold-deep);border-radius:10px;padding:6px 13px;white-space:nowrap}
 .stage-body{position:relative;flex:1;min-height:0;overflow:hidden}
@@ -1148,11 +1190,10 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
 .hc-bar > i{display:block;height:100%;background:linear-gradient(90deg,#d8ad53,#f2c94c)}
 .hero-card.empty{gap:8px}
 
-/* bottom action toolbar (centre stage) */
-.city-action-bar{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:9;display:flex;gap:8px;
-  padding:8px 10px;background:rgba(20,14,10,0.78);border:1px solid rgba(218,160,83,0.4);border-radius:16px;
-  box-shadow:0 6px 20px rgba(0,0,0,0.4)}
-.cab-btn{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:74px;background:#1c130e;
+/* action toolbar — floats bottom-left over the map, in its own translucent pill */
+.city-action-bar{display:flex;gap:8px;flex:0 0 auto;background:rgba(20,14,10,0.72);
+  border:1px solid rgba(218,160,83,0.4);border-radius:16px;padding:7px 9px;box-shadow:0 6px 20px rgba(0,0,0,0.4)}
+.cab-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:74px;min-height:56px;background:#1c130e;
   border:1px solid var(--gold-deep);color:var(--ivory);border-radius:11px;padding:9px 10px;
   font-family:'Cinzel',serif;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
 .cab-btn:hover{background:#2c1f16;color:var(--gold)}
@@ -1161,8 +1202,6 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
 .cab-ico{font-size:20px}
 .cab-btn.gold{background:linear-gradient(180deg,#e8c25f,#caa23f);color:var(--slip);border-color:#b8860b}
 .cab-btn.gold:hover{background:linear-gradient(180deg,#f2cf6e,#d8ad53);color:var(--slip)}
-/* construction queue sits at the very bottom; action toolbar floats above it */
-.city-build-bar{bottom:14px}
 
 /* enriched founding banner */
 .founding-banner{margin:8px 0 0;padding:12px 18px;gap:14px;
@@ -1196,6 +1235,36 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
   .nav-item{justify-content:center;padding:11px 0}
   .nav-ico{width:auto}
   .hero-float{width:258px}   /* match the narrower info column */
+}
+
+/* ── Mobile / narrow: stack the shell into one scrolling column so the City View
+   (island + reserved dock) gets the full width and nothing is squeezed off-screen. ── */
+@media(max-width:820px){
+  html,body,#root{overflow:auto}
+  .app{height:auto;min-height:100%;overflow:visible;padding:8px}
+  .game-shell{grid-template-columns:1fr;overflow:visible;padding-top:8px;gap:10px}
+  .game-shell.no-info{grid-template-columns:1fr}
+  /* map stage first and tall enough to render the island + dock comfortably */
+  .stage{order:1;height:min(76vh,600px)}
+  .side-info{order:2;overflow:visible;padding-bottom:12px}
+  /* nav collapses to a wrapping row of icon buttons below the map */
+  .side-nav{order:3;flex-direction:row;flex-wrap:wrap;overflow:visible;gap:6px;padding:0}
+  .side-nav .nav-group,.side-nav .nav-foot,.side-nav .server-clock{display:none}
+  .nav-item{flex:0 0 auto;width:46px;height:46px;padding:0}
+  /* hero card drops into the flow instead of floating over the map */
+  .hero-float{position:static;order:4;width:auto}
+  .hero-float.empty{width:auto}
+  /* selected-building info becomes a bottom sheet (conventional on mobile) instead of a
+     corner overlay, so it reads clearly and leaves the upper island visible */
+  .city-info{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-width:none;max-height:56%}
+}
+
+/* very small phones: tighten the dock so actions + queue fit without covering the island */
+@media(max-width:480px){
+  .cab-btn{min-width:60px;font-size:11px}
+  .cbslot{width:54px;height:52px}
+  .cbart{width:44px;height:44px}
+  .city-dock{padding:7px 8px;gap:8px}
 }
 
 /* ============================================================ */
@@ -1450,6 +1519,11 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
 .profile-close{position:absolute;top:14px;right:14px;z-index:2;width:30px;height:30px;line-height:1;
   border:none;background:transparent;color:#8a7a70;font-size:18px;border-radius:7px;transition:.15s}
 .profile-close:hover{color:#f1e3d6;background:rgba(255,255,255,0.06)}
+/* log out — moved off the topbar into the profile card footer */
+.profile-foot{padding:12px 24px 16px;border-top:1px solid rgba(255,255,255,0.07);display:flex;justify-content:flex-end;flex:0 0 auto}
+.profile-logout{background:rgba(210,96,58,0.14);border:1px solid var(--bad);color:#f0b6a0;border-radius:9px;
+  padding:8px 18px;font-family:'Cinzel',serif;font-weight:700;font-size:13px;letter-spacing:.04em;cursor:pointer}
+.profile-logout:hover{background:rgba(210,96,58,0.26);color:#fff}
 
 .profile-head{display:flex;align-items:center;gap:18px;padding:22px 24px;
   background:linear-gradient(135deg,#2a1c13,#17100d);border-bottom:1px solid rgba(224,161,74,0.16)}
@@ -1561,6 +1635,8 @@ th{color:var(--gold);font-family:'Cinzel';font-size:12px}
 .tp-details{background:none;border:1px solid rgba(232,201,127,0.35);color:#e0c89a;border-radius:6px;
   padding:1px 7px;font-size:11px;cursor:pointer;margin-left:4px}
 .tp-details:hover{background:rgba(232,201,127,0.12)}
+/* troops header right group: count + a square expand button matching the Movements panel */
+.tp-head-right{display:flex;align-items:center;gap:8px}
 .td-tabs{display:flex;gap:6px;margin-bottom:10px}
 .td-tab{flex:1;padding:7px;border:1px solid #3a2c1e;background:rgba(255,255,255,0.03);color:#cbb890;
   border-radius:8px;cursor:pointer;font-size:13px}
